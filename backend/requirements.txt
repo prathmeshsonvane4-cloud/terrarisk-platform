@@ -1,4 +1,25 @@
 fastapi==0.139.0
 uvicorn[standard]==0.50.0
 pydantic-settings==2.14.2
+pydantic[email]==2.13.4
 python-dotenv==1.2.2
+
+# Database (Blueprint §04 — PostgreSQL + PostGIS, async)
+sqlalchemy==2.0.51
+alembic==1.18.5
+geoalchemy2==0.20.0
+asyncpg==0.31.0
+shapely==2.1.2
+
+# Auth (Blueprint §01/§03 — minimal login, bearer JWT)
+bcrypt==5.0.0
+pyjwt==2.13.0
+
+# Earth Engine adapter (Blueprint §06)
+earthengine-api==1.7.34
+
+# Testing
+pytest==9.1.1
+pytest-asyncio==1.4.0
+httpx==0.28.1
+aiosqlite==0.22.1

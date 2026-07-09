@@ -22,6 +22,17 @@ env/
 backend/app/uploads/
 
 # ==========================================
+# Secrets — never commit credentials
+# ==========================================
+
+# GCP/Earth Engine service-account keys, wherever they end up. The real fix
+# is keeping the key file outside the repo entirely (see .env's
+# GEE_SERVICE_ACCOUNT_JSON_PATH) — this is a backstop, not the primary control.
+*service-account*.json
+terrarisk-platform-*.json
+*.key
+
+# ==========================================
 # Node.js / Next.js
 # ==========================================
 

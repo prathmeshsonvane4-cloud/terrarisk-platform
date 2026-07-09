@@ -1,0 +1,26 @@
+name: terrarisk
+
+# Local development database only. One service, deliberately — M0 needs
+# somewhere to run migrations and test against PostGIS locally, nothing
+# more (Blueprint §10 M0 scope; CI/deploy infrastructure is M5+).
+services:
+  postgis:
+    image: postgis/postgis:16-3.4
+    container_name: terrarisk-postgis
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: terrarisk
+      POSTGRES_PASSWORD: terrarisk
+      POSTGRES_DB: terrarisk
+    ports:
+      - "5432:5432"
+    volumes:
+      - terrarisk_postgis_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U terrarisk -d terrarisk"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  terrarisk_postgis_data:

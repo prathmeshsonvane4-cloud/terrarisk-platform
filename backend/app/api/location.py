@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from app.services.location_service.service import LocationService
+from app.services.climate_engine.location_service.service import LocationService
 
 router = APIRouter(prefix="/locations", tags=["Locations"])
 

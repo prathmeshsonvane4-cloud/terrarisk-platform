@@ -1,8 +1,10 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import JSONResponse
 
-from app.api.upload import router as upload_router
+from app.api.auth import router as auth_router
 from app.api.district import router as district_router
 from app.api.location import router as location_router
+from app.api.upload import router as upload_router
 
 app = FastAPI(
     title="TerraRisk Credit Intelligence API",
@@ -10,10 +12,26 @@ app = FastAPI(
     version="0.1.0",
 )
 
-# Register API Routers
-app.include_router(upload_router)
-app.include_router(district_router)
-app.include_router(location_router)
+# Versioned from the first endpoint (Blueprint §03 / CTO review finding):
+# free to enforce now, a breaking change to retrofit once anything external
+# depends on an unversioned URL.
+API_V1_PREFIX = "/api/v1"
+
+app.include_router(auth_router, prefix=API_V1_PREFIX)
+app.include_router(upload_router, prefix=API_V1_PREFIX)
+app.include_router(district_router, prefix=API_V1_PREFIX)
+app.include_router(location_router, prefix=API_V1_PREFIX)
+
+
+@app.exception_handler(HTTPException)
+async def _http_exception_handler(request: Request, exc: HTTPException) -> JSONResponse:
+    """Single error envelope (Blueprint §03) — every failure response has
+    the same {"error": {"code", "message"}} shape, regardless of endpoint."""
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"error": {"code": exc.status_code, "message": exc.detail}},
+        headers=getattr(exc, "headers", None),
+    )
 
 
 @app.get("/")
@@ -22,12 +40,10 @@ async def root():
         "application": "TerraRisk Credit Intelligence",
         "version": "0.1.0",
         "status": "running",
-        "message": "Welcome to TerraRisk API"
+        "message": "Welcome to TerraRisk API",
     }
 
 
 @app.get("/health")
 async def health():
-    return {
-        "status": "healthy"
-    }
+    return {"status": "healthy"}
