@@ -14,6 +14,11 @@ env/
 
 .env
 .env.*
+# Template files are meant to be committed — .env.* above would otherwise
+# silently swallow them too (found during M0 verification: backend/.env.example
+# had never actually been tracked, since the repo's first commit).
+!.env.example
+!**/.env.example
 
 .pytest_cache/
 .mypy_cache/

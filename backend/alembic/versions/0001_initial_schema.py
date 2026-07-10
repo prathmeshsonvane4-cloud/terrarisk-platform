@@ -214,12 +214,14 @@ def upgrade() -> None:
         sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
     )
 
-    # Spatial indexes — every geometry column gets a GIST index (Blueprint §04).
-    op.execute("CREATE INDEX ix_admin_boundary_geometry ON admin_boundary USING GIST (geometry)")
-    op.execute(
-        "CREATE INDEX ix_admin_boundary_geometry_simplified ON admin_boundary USING GIST (geometry_simplified)"
-    )
-    op.execute("CREATE INDEX ix_farm_polygon_geometry ON farm_polygon USING GIST (geometry)")
+    # No explicit spatial-index statements here: GeoAlchemy2's Geometry type
+    # auto-creates a GIST index (named idx_<table>_<column>) for every
+    # geometry column the moment op.create_table runs, via its own DDL
+    # event listener. Adding explicit CREATE INDEX statements on top of that
+    # (as an earlier version of this migration did) produced duplicate GIST
+    # indexes on admin_boundary.geometry, admin_boundary.geometry_simplified,
+    # and farm_polygon.geometry — verified and removed after running this
+    # migration against a live PostGIS instance during M0 verification.
 
 
 def downgrade() -> None:

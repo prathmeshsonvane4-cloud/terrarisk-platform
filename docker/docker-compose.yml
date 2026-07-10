@@ -13,7 +13,12 @@ services:
       POSTGRES_PASSWORD: terrarisk
       POSTGRES_DB: terrarisk
     ports:
-      - "5432:5432"
+      # Host port 5433, not the default 5432 — this machine already has an
+      # old, unrelated native PostgreSQL process bound to 127.0.0.1:5432
+      # (predates this project), which silently intercepts "localhost"
+      # connections. Remapping avoids the conflict without touching that
+      # unrelated process. The container's internal port stays 5432.
+      - "5433:5432"
     volumes:
       - terrarisk_postgis_data:/var/lib/postgresql/data
     healthcheck:
