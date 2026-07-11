@@ -795,3 +795,97 @@ port or a deployed URL later).
 **Future migration path.** When a deployed (non-localhost) frontend URL
 exists, `FRONTEND_ORIGIN` is one environment variable to update — no
 code change.
+
+---
+
+### Real Latur village dataset sourced from OpenStreetMap, not Bhuvan/LGD
+
+**Decision.** The M0 placeholder fixture (4 invented "Sample Village N"
+rows) is replaced with 872 real admin boundaries — 1 state, 1 district,
+10 talukas, 860 villages — for Latur district, built by
+`backend/scripts/fetch_latur_villages_osm.py` from OpenStreetMap data and
+loaded via the existing `load_admin_boundaries.py`. State, district, and
+taluka are real OSM administrative *polygons* (cross-checked against the
+`ref:LGD:*` codes embedded in their OSM tags, which trace to India's
+official Local Government Directory). Villages are real OSM place
+*names and point locations* (`place=village`/`town`/`city` nodes,
+point-in-polygon assigned to their real containing taluka) — each
+wrapped in a small synthetic ~150m square, since `admin_boundary.geometry`
+is a `NOT NULL MULTIPOLYGON` column and no schema change was in scope for
+this milestone. The square is a standard GIS placeholder-extent
+technique; it is not a claim about the village's true cadastral shape.
+
+**Reason.** Verified directly, not assumed: OpenStreetMap has real
+polygon boundaries for Latur district and its 10 talukas, but **zero**
+village-level administrative polygons anywhere in the district (confirmed
+with a district-wide Overpass count query, not a spot check). India's
+authoritative village boundaries live in Bhuvan/ISRO's government GIS
+portal, which has no scriptable bulk-download API reachable from this
+environment — acquiring it is a manual, out-of-session task. Rather than
+ship the M2A demo against 4 fake village names (which fails the demo's
+actual purpose — an officer searching for a village they recognize) or
+block P1 entirely on external data delivery, this is the deliberate
+middle ground: every name, taluka/district assignment, and approximate
+location is real and independently checkable (e.g. Killari — the 1993
+Latur earthquake epicenter — correctly resolves to Ausa taluka at its
+real coordinates); only the polygon *shape* for villages is synthetic.
+
+**Alternatives considered.** Waiting for a real Bhuvan/LGD export before
+starting P1 (blocks the milestone on an external, manual data-acquisition
+task with no committed timeline); keeping the M0 sample fixture's 4
+invented villages (fails the demo's own purpose); a bare `Point` geometry
+for villages (rejected — would require changing `admin_boundary.geometry`
+off `NOT NULL MULTIPOLYGON`, a schema change out of P1's scope, for a
+data-quality improvement the map/search flow doesn't actually need yet,
+since Blueprint §05 only requires a *centroid* for search/map-recenter,
+not a rendered boundary — the boundary-overlay layer is already deferred
+to M2B in the approved M2A spec).
+
+**Trade-offs.** Village *boundary shapes* are not real — acceptable
+because M2A never renders them (search returns only a centroid; the
+overlay layer is M2B+). Coverage depends on OSM's community-contributed
+place-node data for rural Marathwada, which is broad (860 villages
+across all 10 talukas) but not guaranteed complete against LGD's full
+official village count — a village an officer searches for during the
+pilot could, in principle, be missing. This is named, tracked debt, not
+a silent gap.
+
+**Future migration path.** Full official coverage and real village
+polygons: source a real Bhuvan/LGD export and point
+`load_admin_boundaries.py --file` at it — zero code change, per the
+loader's existing source-agnostic design. Tracked as pre-pilot data
+debt, to close before the actual pilot bank engagement (M6), not before the
+M2A demo.
+
+---
+
+### `load_admin_boundaries.py` existence check now scoped to the full `(level, name, parent_id)` tuple
+
+**Decision.** The loader's already-loaded check
+(`backend/scripts/load_admin_boundaries.py`) now matches on
+`level == X AND name == Y AND parent_id == Z`, not `level == X AND name
+== Y` alone.
+
+**Reason.** Real bug, found running the loader against real data for the
+first time: 51+ real Latur village names repeat across different talukas
+(e.g. more than one village named "Wadgaon" — a genuinely common pattern
+in Indian administrative data, exactly what the Blueprint's `village_branch_lookup`
+design already anticipated: "duplicate village names across talukas...
+requiring the fuller tuple, not fuzzy string guessing"). The loader's
+own existence check didn't follow that same rule — checking level+name
+only caused it to treat a real, distinct village in a second taluka as
+an already-loaded duplicate of the first and silently skip inserting it.
+59 real villages were dropped on the first load attempt before this fix;
+zero were dropped after. The table's own unique constraint
+(`uq_admin_boundary_level_name_parent`) already covers `(level, name,
+parent_id)` — the loader's check simply hadn't matched it. Never
+triggered before because the M0 sample fixture had no repeated names at
+any level.
+
+**Alternatives considered.** None — this is a straightforward correctness
+fix matching the loader's check to the table's own constraint and the
+Blueprint's own stated business rule; no design choice to weigh.
+
+**Trade-offs.** None identified.
+
+**Future migration path.** None anticipated.

@@ -8,6 +8,7 @@ from app.api.auth import router as auth_router
 from app.api.farms import router as farms_router
 from app.api.jobs import router as jobs_router
 from app.api.reports import router as reports_router
+from app.api.villages import router as villages_router
 from app.core.config import get_settings
 from app.core.logging import configure_logging
 
@@ -38,6 +39,7 @@ app.add_middleware(
 API_V1_PREFIX = "/api/v1"
 
 app.include_router(auth_router, prefix=API_V1_PREFIX)
+app.include_router(villages_router, prefix=API_V1_PREFIX)
 app.include_router(farms_router, prefix=API_V1_PREFIX)
 app.include_router(jobs_router, prefix=API_V1_PREFIX)
 app.include_router(reports_router, prefix=API_V1_PREFIX)

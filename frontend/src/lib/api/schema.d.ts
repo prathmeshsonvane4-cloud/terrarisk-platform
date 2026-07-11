@@ -21,6 +21,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/villages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Search Villages */
+        get: operations["search_villages_api_v1_villages_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/farms": {
         parameters: {
             query?: never;
@@ -364,6 +381,28 @@ export interface components {
             /** Context */
             ctx?: Record<string, never>;
         };
+        /** VillageCentroid */
+        VillageCentroid: {
+            /** Lat */
+            lat: number;
+            /** Lon */
+            lon: number;
+        };
+        /** VillageSearchResult */
+        VillageSearchResult: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+            /** Taluka */
+            taluka: string;
+            /** District */
+            district: string;
+            centroid: components["schemas"]["VillageCentroid"];
+        };
     };
     responses: never;
     parameters: never;
@@ -393,6 +432,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["LoginResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    search_villages_api_v1_villages_get: {
+        parameters: {
+            query: {
+                q: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VillageSearchResult"][];
                 };
             };
             /** @description Validation Error */

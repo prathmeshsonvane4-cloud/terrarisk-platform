@@ -17,7 +17,12 @@ inserted — this script sorts by level for that reason rather than relying
 on file order.
 
 Usage:
-    python scripts/load_admin_boundaries.py --file scripts/fixtures/sample_admin_boundaries.geojson
+    python scripts/load_admin_boundaries.py --file scripts/fixtures/latur_villages_osm.geojson
+
+(scripts/fixtures/sample_admin_boundaries.geojson — 4 invented placeholder
+villages — remains for offline/no-network schema smoke-testing only; the
+M2A demo dataset is latur_villages_osm.geojson, built by
+scripts/fetch_latur_villages_osm.py. See docs/DECISIONS.md.)
 """
 
 import argparse
@@ -79,14 +84,28 @@ async def load(file_path: Path) -> None:
             parent_level = BoundaryLevel(props["parent_level"]) if props.get("parent_level") else None
             parent_name = props.get("parent_name")
 
+            parent_id = await _resolve_parent_id(session, parent_level, parent_name)
+
+            # Matches the table's own uq_admin_boundary_level_name_parent
+            # constraint (level, name, parent_id) — not level+name alone.
+            # Real Latur data has 51+ village names that repeat across
+            # different talukas (e.g. more than one "Wadgaon"); checking
+            # level+name only would treat the second taluka's real,
+            # distinct village as a duplicate of the first and silently
+            # drop it. Found running this loader against real OSM-sourced
+            # data for the first time (M2A P1) — the M0 sample fixture had
+            # no repeated names, so this never triggered before.
             existing = await session.execute(
-                select(AdminBoundary.id).where(AdminBoundary.level == level, AdminBoundary.name == name)
+                select(AdminBoundary.id).where(
+                    AdminBoundary.level == level,
+                    AdminBoundary.name == name,
+                    AdminBoundary.parent_id == parent_id,
+                )
             )
             if existing.scalar_one_or_none() is not None:
                 skipped += 1
                 continue
 
-            parent_id = await _resolve_parent_id(session, parent_level, parent_name)
             geom = _to_multipolygon(shape(feature["geometry"]))
 
             boundary = AdminBoundary(
