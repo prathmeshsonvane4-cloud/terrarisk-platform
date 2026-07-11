@@ -1,11 +1,11 @@
 import uuid
 
-from sqlalchemy import Boolean, Enum, ForeignKey, String, Uuid
+from sqlalchemy import Boolean, ForeignKey, String, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database.base import Base
 from app.models.enums import UserRole
-from app.models.mixins import CreatedAtMixin, UUIDPrimaryKeyMixin
+from app.models.mixins import CreatedAtMixin, UUIDPrimaryKeyMixin, pg_enum
 
 
 class AppUser(Base, UUIDPrimaryKeyMixin, CreatedAtMixin):
@@ -17,7 +17,7 @@ class AppUser(Base, UUIDPrimaryKeyMixin, CreatedAtMixin):
     email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     full_name: Mapped[str] = mapped_column(String(255), nullable=False)
-    role: Mapped[UserRole] = mapped_column(Enum(UserRole, name="user_role"), nullable=False)
+    role: Mapped[UserRole] = mapped_column(pg_enum(UserRole, "user_role"), nullable=False)
     branch_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid(as_uuid=True), ForeignKey("branch.id"), nullable=True
     )

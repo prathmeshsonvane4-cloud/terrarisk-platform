@@ -1,12 +1,12 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, Enum, ForeignKey, Text, Uuid, func
+from sqlalchemy import DateTime, ForeignKey, Text, Uuid, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database.base import Base
 from app.models.enums import JobStatus, JobType
-from app.models.mixins import CreatedAtMixin, UUIDPrimaryKeyMixin
+from app.models.mixins import CreatedAtMixin, UUIDPrimaryKeyMixin, pg_enum
 
 
 class Job(Base, UUIDPrimaryKeyMixin, CreatedAtMixin):
@@ -17,8 +17,8 @@ class Job(Base, UUIDPrimaryKeyMixin, CreatedAtMixin):
 
     __tablename__ = "job"
 
-    type: Mapped[JobType] = mapped_column(Enum(JobType, name="job_type"), nullable=False)
-    status: Mapped[JobStatus] = mapped_column(Enum(JobStatus, name="job_status"), nullable=False, default=JobStatus.PENDING)
+    type: Mapped[JobType] = mapped_column(pg_enum(JobType, "job_type"), nullable=False)
+    status: Mapped[JobStatus] = mapped_column(pg_enum(JobStatus, "job_status"), nullable=False, default=JobStatus.PENDING)
     entity_id: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True), nullable=True)
     created_by: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("app_user.id"), nullable=False)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)

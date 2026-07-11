@@ -51,17 +51,31 @@ class SatelliteDataProvider(ABC):
     def get_index_time_series(
         self, geometry_geojson: dict, index: SatelliteIndex, start: date, end: date
     ) -> list[IndexObservation]:
-        """NDVI / MNDWI / NDMI observations for a polygon over a date range.
-
-        M0 proves the connection and this interface shape with a single
-        period computation; monthly compositing and full Sentinel-2 QA-band
-        cloud masking across many periods is M1 scope (Blueprint §10).
+        """NDVI / MNDWI / NDMI monthly composite observations for a polygon
+        over a date range, one entry per calendar month (M1: 36 for the
+        approved 3-year/monthly-composite methodology). Cloud-contaminated
+        pixels are masked before compositing per the approved cloud
+        threshold; a month with no usable pixels is omitted rather than
+        returned as a false zero — callers must treat missing months as
+        missing, never as zero (see docs/DECISIONS.md).
         """
 
     @abstractmethod
     def get_rainfall_series(self, geometry_geojson: dict, start: date, end: date) -> list[IndexObservation]:
-        """Rainfall totals for a polygon over a date range, for the
-        SPI-style anomaly used in drought scoring (Blueprint §07)."""
+        """Monthly rainfall totals for a polygon over a date range, one
+        entry per calendar month — the actual (not normal) rainfall used
+        alongside get_rainfall_climatology() for the SPI-style anomaly used
+        in drought/flood/water scoring (Blueprint §07)."""
+
+    @abstractmethod
+    def get_rainfall_climatology(self, geometry_geojson: dict) -> dict[int, float]:
+        """Long-term average rainfall for each calendar month (1-12),
+        computed from the rainfall product's own historical record — the
+        approved "CHIRPS historical mean" baseline (docs/DECISIONS.md).
+        Compared against the *same calendar month* in get_rainfall_series(),
+        never against an annual average, since rainfall here is highly
+        monsoon-seasonal.
+        """
 
     @abstractmethod
     def get_water_history(self, geometry_geojson: dict) -> WaterHistorySummary:

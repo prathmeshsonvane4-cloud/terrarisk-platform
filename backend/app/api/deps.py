@@ -51,3 +51,23 @@ def require_role(*allowed_roles: UserRole) -> Callable[[AppUser], Awaitable[AppU
         return user
 
     return _check
+
+
+async def user_can_access_owned_resource(db: AsyncSession, current_user: AppUser, owner_id: UUID) -> bool:
+    """Shared owner-or-same-branch authorization check, used by every
+    endpoint that scopes a resource to whoever created/drew it (jobs,
+    reports — see app/api/jobs.py and app/api/reports.py). Consolidated
+    here after a Staff Engineer review found the same check duplicated in
+    both places with only the resource type differing.
+
+    Callers should treat a False result as a 404, not a 403 — a resource
+    that exists but belongs to someone else must be indistinguishable from
+    one that doesn't exist at all, to avoid leaking valid resource ids to
+    an unauthorized caller.
+    """
+    if current_user.id == owner_id:
+        return True
+    if current_user.branch_id is None:
+        return False
+    owner = await db.get(AppUser, owner_id)
+    return owner is not None and owner.branch_id == current_user.branch_id

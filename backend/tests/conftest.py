@@ -1,10 +1,21 @@
 import os
 
+from dotenv import load_dotenv
+
 # Settings are read at import time by app.database.base (engine creation is
-# lazy, but get_settings() itself is not) — these must be set before any
-# `app.*` module is imported anywhere in the test session. A real DATABASE_URL
-# is never required for the M0 test suite: DDL-compile tests work offline,
-# and the auth test substitutes its own SQLite engine via dependency override.
+# lazy, but get_settings() itself is not) — these must be resolved before any
+# `app.*` module is imported anywhere in the test session.
+#
+# Load the real backend/.env first (if present) so local integration tests
+# (e.g. test_report_generator.py) connect to the real local PostGIS instance
+# rather than a placeholder. load_dotenv() never overrides a variable already
+# present in the environment, so this is safe to call unconditionally. Only
+# after that do the setdefault() calls below fill in safe placeholders for
+# whatever remains unset — e.g. a fresh CI checkout with no .env and no
+# secrets, where only the fully-offline tests (DDL compile, pure unit tests)
+# are expected to run; anything needing a real DATABASE_URL skips itself
+# cleanly (see the db_session fixture in test_report_generator.py).
+load_dotenv()
 os.environ.setdefault("DATABASE_URL", "postgresql+asyncpg://user:pass@localhost/db")
 os.environ.setdefault("JWT_SECRET", "test-secret-do-not-use-in-production")
 

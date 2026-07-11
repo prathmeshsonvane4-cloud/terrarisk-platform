@@ -6,6 +6,9 @@ real PostGIS database is still the authoritative check and should be done
 wherever this suite runs with Docker available.
 """
 
+import enum
+
+from sqlalchemy import Enum as SAEnum
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.schema import CreateTable
 
@@ -61,6 +64,30 @@ def test_geometry_columns_use_srid_4326():
     assert admin_boundary.c.geometry.type.srid == 4326
     assert admin_boundary.c.geometry_simplified.type.srid == 4326
     assert farm_polygon.c.geometry.type.srid == 4326
+
+
+def test_every_enum_column_binds_by_value_not_by_member_name():
+    """Regression test for a real M1 bug: SQLAlchemy's Enum type binds
+    using the Python member name ("VILLAGE") by default, but every native
+    Postgres enum type here was created (Alembic migration 0001) with the
+    lowercase *values* ("village") as its only valid labels. Without
+    values_callable (see app.models.mixins.pg_enum), an insert of
+    BoundaryLevel.VILLAGE fails against real Postgres with "invalid input
+    value for enum boundary_level: VILLAGE" — DDL compilation alone never
+    catches this, because it only validates that CREATE TABLE renders, not
+    that bound parameter values match the column's accepted labels.
+    """
+    for table_name, table in Base.metadata.tables.items():
+        for column in table.columns:
+            if not isinstance(column.type, SAEnum) or column.type.enum_class is None:
+                continue
+            enum_cls: type[enum.Enum] = column.type.enum_class
+            expected_labels = {member.value for member in enum_cls}
+            actual_labels = set(column.type.enums)
+            assert actual_labels == expected_labels, (
+                f"{table_name}.{column.name} binds enum labels {actual_labels}, "
+                f"expected values {expected_labels} (bug: bound by .name, not .value)"
+            )
 
 
 def test_farmer_identity_is_the_only_table_with_pii_columns():

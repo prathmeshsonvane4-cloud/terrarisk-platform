@@ -1,13 +1,13 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, Enum, Float, ForeignKey, Uuid
+from sqlalchemy import DateTime, Float, ForeignKey, Uuid
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database.base import Base
 from app.models.enums import RiskBand, RiskEntityType, RiskFactor
-from app.models.mixins import CreatedAtMixin, UUIDPrimaryKeyMixin
+from app.models.mixins import CreatedAtMixin, UUIDPrimaryKeyMixin, pg_enum
 
 
 class ConfigWeight(Base, UUIDPrimaryKeyMixin, CreatedAtMixin):
@@ -43,11 +43,11 @@ class RiskScore(Base, UUIDPrimaryKeyMixin):
     __tablename__ = "risk_score"
 
     entity_type: Mapped[RiskEntityType] = mapped_column(
-        Enum(RiskEntityType, name="risk_entity_type"), nullable=False, index=True
+        pg_enum(RiskEntityType, "risk_entity_type"), nullable=False, index=True
     )
     entity_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), nullable=False, index=True)
     overall_score: Mapped[float] = mapped_column(Float, nullable=False)
-    overall_band: Mapped[RiskBand] = mapped_column(Enum(RiskBand, name="risk_band"), nullable=False)
+    overall_band: Mapped[RiskBand] = mapped_column(pg_enum(RiskBand, "risk_band"), nullable=False)
     confidence: Mapped[float] = mapped_column(Float, nullable=False)
 
     # Distinguishes rule-engine vs a future ML-sourced score — without this,
@@ -71,9 +71,9 @@ class RiskFactorScore(Base, UUIDPrimaryKeyMixin, CreatedAtMixin):
     __tablename__ = "risk_factor_score"
 
     risk_score_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("risk_score.id"), nullable=False)
-    factor: Mapped[RiskFactor] = mapped_column(Enum(RiskFactor, name="risk_factor"), nullable=False)
+    factor: Mapped[RiskFactor] = mapped_column(pg_enum(RiskFactor, "risk_factor"), nullable=False)
     value: Mapped[float] = mapped_column(Float, nullable=False)
-    band: Mapped[RiskBand] = mapped_column(Enum(RiskBand, name="risk_factor_band"), nullable=False)
+    band: Mapped[RiskBand] = mapped_column(pg_enum(RiskBand, "risk_factor_band"), nullable=False)
     raw_inputs: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
 
 
@@ -92,9 +92,9 @@ class RiskRollup(Base, UUIDPrimaryKeyMixin):
     __tablename__ = "risk_rollup"
 
     entity_type: Mapped[RiskEntityType] = mapped_column(
-        Enum(RiskEntityType, name="rollup_entity_type"), nullable=False, index=True
+        pg_enum(RiskEntityType, "rollup_entity_type"), nullable=False, index=True
     )
     entity_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), nullable=False, index=True)
     exposure_amount: Mapped[float] = mapped_column(Float, nullable=False)
-    risk_band: Mapped[RiskBand] = mapped_column(Enum(RiskBand, name="rollup_risk_band"), nullable=False)
+    risk_band: Mapped[RiskBand] = mapped_column(pg_enum(RiskBand, "rollup_risk_band"), nullable=False)
     computed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

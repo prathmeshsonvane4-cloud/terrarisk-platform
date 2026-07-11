@@ -1,13 +1,13 @@
 import uuid
 from datetime import date
 
-from sqlalchemy import Date, Enum, Float, Uuid
+from sqlalchemy import Date, Float, Uuid
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database.base import Base
 from app.models.enums import RiskEntityType, SatelliteIndexType
-from app.models.mixins import CreatedAtMixin, UUIDPrimaryKeyMixin
+from app.models.mixins import CreatedAtMixin, UUIDPrimaryKeyMixin, pg_enum
 
 
 class SatelliteObservation(Base, UUIDPrimaryKeyMixin, CreatedAtMixin):
@@ -24,11 +24,11 @@ class SatelliteObservation(Base, UUIDPrimaryKeyMixin, CreatedAtMixin):
     __tablename__ = "satellite_observation"
 
     entity_type: Mapped[RiskEntityType] = mapped_column(
-        Enum(RiskEntityType, name="observation_entity_type"), nullable=False, index=True
+        pg_enum(RiskEntityType, "observation_entity_type"), nullable=False, index=True
     )
     entity_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), nullable=False, index=True)
     index_type: Mapped[SatelliteIndexType] = mapped_column(
-        Enum(SatelliteIndexType, name="satellite_index_type"), nullable=False
+        pg_enum(SatelliteIndexType, "satellite_index_type"), nullable=False
     )
     period_start: Mapped[date] = mapped_column(Date, nullable=False)
     period_end: Mapped[date] = mapped_column(Date, nullable=False)

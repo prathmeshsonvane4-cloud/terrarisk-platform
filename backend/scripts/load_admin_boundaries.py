@@ -23,7 +23,14 @@ Usage:
 import argparse
 import asyncio
 import json
+import sys
 from pathlib import Path
+
+# Running this file directly (`python scripts/load_admin_boundaries.py`)
+# only puts scripts/ on sys.path, not the backend/ root — without this,
+# `from app...` below fails with ModuleNotFoundError. Must run before any
+# app.* import.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from geoalchemy2.shape import from_shape
 from shapely.geometry import MultiPolygon, Polygon, shape

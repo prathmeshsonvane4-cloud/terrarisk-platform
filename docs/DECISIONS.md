@@ -381,3 +381,165 @@ enablement, service account creation) than reusing an existing account.
 
 **Future migration path.** None anticipated — this is the intended
 long-term setup, not a placeholder.
+
+---
+
+## M1-level implementation decisions
+
+### `pg_enum()` helper — bind Postgres enum columns by value, not member name
+
+**Decision.** Every enum-typed column uses a shared `pg_enum(enum_cls, name)`
+helper (`backend/app/models/mixins.py`) instead of SQLAlchemy's raw `Enum(...)`.
+
+**Reason.** SQLAlchemy's `Enum` type binds and reads using the Python enum's
+*member name* ("VILLAGE") by default. Every native Postgres enum type in
+this schema was created (migration 0001) with the lowercase *values*
+("village") as its only valid labels. Without `values_callable`, inserting
+`BoundaryLevel.VILLAGE` failed against real Postgres with "invalid input
+value for enum boundary_level: VILLAGE" — a real bug caught during M1
+integration testing against a live database, masked throughout M0 because
+the only enum-bearing table exercised then (`app_user`) ran against SQLite,
+where the mismatch happened to be self-consistent on both write and read.
+
+**Alternatives considered.** Fixing each `Enum(...)` call site individually
+with its own `values_callable` lambda (works, but repeats the same fix
+twelve times across six files with no single place to catch a regression).
+
+**Trade-offs.** None identified.
+
+**Future migration path.** None anticipated — `pg_enum()` is now the only
+way enum columns are declared in this codebase; a permanent regression
+test (`test_every_enum_column_binds_by_value_not_by_member_name` in
+`backend/tests/test_schema_ddl.py`) checks every table's enum columns
+against their Python enum's values, so this class of bug cannot silently
+reappear.
+
+---
+
+### `asyncio.to_thread()` around every Earth Engine SDK call
+
+**Decision.** Every call into `SatelliteDataProvider`'s methods from
+`report_generator.py` and the report-trigger background task
+(`app/api/reports.py`) is wrapped in `asyncio.to_thread(...)`, never called
+directly.
+
+**Reason.** The `earthengine-api` Python SDK performs blocking network I/O
+with no async variant. `generate_farm_report()` runs as a FastAPI
+`BackgroundTask` on the same single event loop as the rest of the API — a
+direct (unwrapped) call to a real GEE request would block that event loop,
+and therefore every other concurrent request the API is serving, for
+however long that call takes. Found during the M1 final Staff Engineer
+review, not part of the original implementation — a genuine async-
+correctness bug, not a hypothetical one.
+
+**Alternatives considered.** Running the whole background job in a separate
+process or thread pool from the start (more infrastructure than warranted
+at MVP volume; `asyncio.to_thread()` solves the specific blocking-call
+problem without a bigger architectural change).
+
+**Trade-offs.** Each GEE call now costs a thread-pool hop; negligible next
+to the GEE network round-trip time itself.
+
+**Future migration path.** None anticipated — this is the correct
+long-term pattern for any synchronous SDK call from async code, not an M1-
+specific workaround.
+
+---
+
+### Postgres advisory lock for the report-trigger race condition
+
+**Decision.** `trigger_report` (`app/api/reports.py`) acquires a
+transaction-scoped advisory lock (`pg_advisory_xact_lock`, keyed on the
+farm id) before checking for an in-flight report job.
+
+**Reason.** The "check for an existing job, then insert a new one" sequence
+was a genuine TOCTOU race: two concurrent `POST` requests for the same farm
+could both pass the "no job in flight" check before either transaction
+committed, creating two simultaneous report jobs (and wasting Earth Engine
+quota on the duplicate). Found during the M1 final Staff Engineer review.
+
+**Alternatives considered.** A partial unique index on `job (entity_id,
+type) WHERE status IN ('pending','running')`, which would prevent this at
+the database-constraint level — the more conventional fix, but a schema
+change, which the M1 workflow requires stopping to confirm before making.
+The advisory lock achieves the same correctness guarantee entirely in
+application code, with zero schema impact, so it was applied directly as
+part of "fix any issue found" rather than deferred.
+
+**Trade-offs.** A concurrent second request now waits (briefly) for the
+lock rather than failing fast; acceptable since the two outcomes converge
+to the same correct result (one job created, one 409) either way.
+Advisory locks require the same Postgres session to release them, which
+`async with AsyncSessionLocal()`'s transaction boundary already guarantees.
+
+**Future migration path.** If report-trigger volume ever grows enough that
+lock contention becomes a measurable latency concern, the partial-unique-
+index approach above remains available as a schema-level alternative —
+revisit then, not preemptively.
+
+---
+
+### `httpx.AsyncClient` + `ASGITransport` for all API tests, session-scoped event loop
+
+**Decision.** Every API integration test uses `httpx.AsyncClient(transport=
+ASGITransport(app=app))` rather than FastAPI's `TestClient`, and
+`backend/pytest.ini` sets `asyncio_default_fixture_loop_scope = session` /
+`asyncio_default_test_loop_scope = session`.
+
+**Reason.** Two related async-testing bugs, both found and fixed during
+M1: (1) `app.database.base` creates its async engine — and asyncpg
+connection pool — once at import time; asyncpg connections are bound to
+the event loop that created them, and pytest-asyncio's default per-
+function event loop caused the first DB-touching test in a run to pass and
+every subsequent one to silently fail to connect. (2) Starlette's
+`TestClient` runs the ASGI app through `anyio`'s `BlockingPortal` in a
+separate internal thread/event loop, which corrupts the same connection
+pool when a test also opens sessions directly via `AsyncSessionLocal()` in
+pytest-asyncio's own loop — surfaced as "Future ... attached to a
+different loop". Standardizing on one event loop for the whole test
+session, and one HTTP client that shares it, eliminates both classes of
+failure at once.
+
+**Alternatives considered.** A fresh engine per test (avoids the loop
+mismatch without changing pytest config, but means every test pays full
+connection-pool startup cost, and doesn't fix the `TestClient` thread
+issue on its own — both changes were needed together).
+
+**Trade-offs.** None identified — this is a strict fix, not a compromise.
+
+**Future migration path.** None anticipated. M0's `test_auth.py` and
+`test_health.py` were migrated to the same pattern during the M1 final
+review for consistency and to remove Starlette's `TestClient` deprecation
+warning, not because they had the bug themselves (they didn't mix
+`TestClient` with direct shared-engine sessions).
+
+---
+
+### Redundant unique index on `app_user.email` (migration 0002)
+
+**Decision.** A new migration (`0002_drop_dup_email_idx.py`) drops the
+`app_user_email_key` unique constraint, keeping `ix_app_user_email`.
+
+**Reason.** The M0 migration declared uniqueness on `app_user.email` twice
+— once via column-level `unique=True` (Postgres auto-named it
+`app_user_email_key`, backing a formal `UNIQUE CONSTRAINT`) and again via
+an explicit `op.create_index(..., unique=True)` immediately after (a
+separate plain unique index, `ix_app_user_email`). Both physically
+enforced the same rule — confirmed via `alembic check`, which flagged the
+mismatch against the current model, and via direct inspection of
+`pg_indexes` — but it was pure redundancy: two indexes maintained on every
+`app_user` write for no benefit. Found during the M1 final verification
+pass.
+
+**Alternatives considered.** Editing migration 0001 directly — explicitly
+rejected; migration 0001 is frozen (M0's approved deliverable) and already
+applied, so the only correct fix is an additive migration.
+
+**Trade-offs.** None — this is a pure cleanup with no functional change
+(re-verified: duplicate-email inserts are still rejected, now via
+`ix_app_user_email` alone).
+
+**Future migration path.** None anticipated. `ix_app_user_email` matches
+this codebase's naming convention for every other index
+(`ix_admin_boundary_*`, `ix_farm_polygon_*`, etc.) and is what the current
+`AppUser` model actually represents, so no further drift is expected here.

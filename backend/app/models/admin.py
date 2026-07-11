@@ -1,12 +1,12 @@
 import uuid
 
 from geoalchemy2 import Geometry
-from sqlalchemy import Enum, ForeignKey, String, UniqueConstraint, Uuid
+from sqlalchemy import ForeignKey, String, UniqueConstraint, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database.base import Base
 from app.models.enums import BoundaryLevel
-from app.models.mixins import CreatedAtMixin, UUIDPrimaryKeyMixin
+from app.models.mixins import CreatedAtMixin, UUIDPrimaryKeyMixin, pg_enum
 
 
 class AdminBoundary(Base, UUIDPrimaryKeyMixin, CreatedAtMixin):
@@ -20,7 +20,7 @@ class AdminBoundary(Base, UUIDPrimaryKeyMixin, CreatedAtMixin):
     __tablename__ = "admin_boundary"
     __table_args__ = (UniqueConstraint("level", "name", "parent_id", name="uq_admin_boundary_level_name_parent"),)
 
-    level: Mapped[BoundaryLevel] = mapped_column(Enum(BoundaryLevel, name="boundary_level"), nullable=False, index=True)
+    level: Mapped[BoundaryLevel] = mapped_column(pg_enum(BoundaryLevel, "boundary_level"), nullable=False, index=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     parent_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid(as_uuid=True), ForeignKey("admin_boundary.id"), nullable=True, index=True
