@@ -543,3 +543,152 @@ applied, so the only correct fix is an additive migration.
 this codebase's naming convention for every other index
 (`ix_admin_boundary_*`, `ix_farm_polygon_*`, etc.) and is what the current
 `AppUser` model actually represents, so no further drift is expected here.
+
+---
+
+### GEE service account IAM roles — `Service Usage Consumer` + `Earth Engine Resource Viewer`, nothing more
+
+**Decision.** The `terrarisk-gee-adapter@terrarisk-platform.iam.gserviceaccount.com`
+service account is granted exactly two IAM roles on the `terrarisk-platform`
+GCP project: **Service Usage Consumer** (`roles/serviceusage.serviceUsageConsumer`)
+and **Earth Engine Resource Viewer** (`roles/earthengine.viewer`, pre-existing
+from M0). No write-capable Earth Engine role (`roles/earthengine.writer`) is
+granted.
+
+**Reason.** The live GEE integration tests (`tests/services/test_gee_provider.py`)
+failed at M1 verification time with a `403 PERMISSION_DENIED` /
+`USER_PROJECT_DENIED` error from `ee.Initialize()`:
+
+```
+Caller does not have required permission to use project terrarisk-platform.
+Grant the caller the roles/serviceusage.serviceUsageConsumer role...
+```
+
+This is reproducible and diagnosable directly from the error text — Earth
+Engine's Cloud API backend requires `serviceusage.services.use` permission
+on whichever project is passed to `ee.Initialize(credentials, project=...)`,
+separately from any Earth Engine-specific role, so that API calls can be
+quota/billing-attributed to that project. The pre-existing `earthengine.viewer`
+role (granted during M0) authenticates the service account and authorizes
+reading Earth Engine assets, but does not itself grant permission to *use*
+the project for that purpose — hence the separate 403 despite EE access
+already being nominally configured.
+
+Granting only `serviceusage.serviceUsageConsumer` (least privilege — the
+adapter's M1 workload is entirely `get_index_time_series` /
+`get_rainfall_series` / `get_rainfall_climatology` / `get_water_history`,
+all reads, no `ee.batch.Export.*` or asset-writing calls anywhere in
+`gee_provider.py`) was sufficient: all 9 tests in `test_gee_provider.py`,
+including the three live-network ones, pass with no further permission
+errors. `earthengine.writer` was deliberately *not* granted pre-emptively.
+
+**Alternatives considered.** Granting `earthengine.writer` alongside
+`serviceusage.serviceUsageConsumer` up front, on the theory that a future
+milestone (SAR export tasks, per the reserved-but-unimplemented
+`get_sar_backscatter_series` seam) will eventually need write access —
+rejected under least-privilege: grant it when a concrete write-capable
+method is actually implemented and a real 403 names it as missing, not
+speculatively.
+
+**Trade-offs.** None identified for M1's read-only scope. The moment a
+future milestone adds an Earth Engine write operation (e.g. exporting a
+composite image, per the SAR seam), expect a new `403` naming
+`earthengine.writer` (or a narrower resource-specific role) explicitly —
+diagnose and grant only that role then, following the same
+reproduce-first methodology used here rather than assuming.
+
+**Future migration path.** Reproduce this exact setup for any new
+environment (staging, a second developer's local `.env`) by: (1)
+registering the GCP project for Earth Engine at
+`https://code.earthengine.google.com/register`, (2) creating the service
+account and granting it `roles/earthengine.viewer`, (3) granting it
+`roles/serviceusage.serviceUsageConsumer` on the same project, (4) waiting
+a few minutes for IAM propagation. Steps 1-2 were already done in M0;
+step 3 is the fix this entry documents.
+
+---
+
+### Removal of pre-Blueprint stub endpoints (`climate_engine`, portfolio CSV upload)
+
+**Decision.** `app/api/location.py`, `app/api/district.py`,
+`app/services/climate_engine/` (both files), and `app/api/upload.py` are
+deleted, along with their router registrations in `app/main.py` and one
+obsolete regression test in `tests/test_health.py`
+(`test_locations_endpoint_no_longer_crashes_on_import`, which only
+asserted the now-removed `/locations/states` route didn't crash on
+import).
+
+**Reason.** These four routes (`/api/v1/locations/states`,
+`/api/v1/locations/districts`, `/api/v1/district/report`,
+`/api/v1/upload/csv`) predate `docs/Engineering_Blueprint_v1.md` — they
+are leftover scaffold from the original `initialize TerraRisk MVP
+architecture` commit — and were never brought in line with it. Found
+during M1 final production-readiness verification: exercising the live
+server showed `GET /api/v1/locations/states` returning `200 OK` with body
+`null` (the backing `LocationService.get_states()` is a bare `pass`),
+and `POST /api/v1/upload/csv` unconditionally returns
+`{"success": true, ...}` regardless of file content, with no parsing or
+validation. None of the four appear in the Blueprint's §03 API surface
+for M1 or M3 (Service 2's real district/village-lookup endpoints are
+specified there as reading `risk_rollup` / `village_branch_lookup`, which
+this scaffold never touched), and none were covered by any test other
+than the one asserting the import itself didn't crash.
+
+Leaving live routes that return fabricated success/empty responses in the
+API surface is a real integration hazard the moment a real client (the
+M2/M4 frontend, or a bank's own integration) calls one expecting real
+data — worse than a `404`, which at least fails loudly.
+
+**Alternatives considered.** Disabling the router registrations only
+(routes 404, code stays) — rejected in favor of full removal: the code
+had zero real implementation to preserve, and keeping unreferenced dead
+files invites someone re-wiring them by habit later under the mistaken
+impression they're a starting point.
+
+**Trade-offs.** None — this is a pure deletion of code with no working
+behavior to lose. Service 2's real portfolio-upload and district/village
+lookup endpoints are M3 scope per the roadmap and will be built fresh
+against `village_branch_lookup` / `risk_rollup`, per the Blueprint.
+
+**Future migration path.** M3 ("Service 2: backend core") implements the
+real CSV upload + validation workflow and the real
+`/risk/districts · /branches · /villages` rollup-query endpoints per
+Blueprint §03/§10 — from scratch, not by resurrecting this scaffold.
+
+---
+
+### IDOR fix — `GET /farms/{farm_id}` missing owner-or-branch authorization
+
+**Decision.** `get_farm` (`app/api/farms.py`) now calls the same
+`user_can_access_owned_resource(db, current_user, farm.drawn_by)` check
+already used by `get_job` and `get_report`, returning `404` (not `403`)
+on failure — identical pattern, identical not-found-vs-forbidden
+rationale.
+
+**Reason.** Found during the M1 final security review: `get_farm`
+depended only on `get_current_user` (any authenticated, active user of
+any role) with no ownership or branch scoping, while its sibling
+endpoints (`get_job`, `get_report`) both enforce owner-or-same-branch
+access via the shared `deps.py` helper. Any authenticated user who
+learned a `farm_id` belonging to a different officer/branch — e.g. from a
+shared link, browser history, or a former colleague's session — could
+read that farm's village, area, drawing officer's user id, and creation
+date with no authorization check at all. Verified directly by reading
+the endpoint (not just inferred from the review) before fixing it, and a
+new regression test
+(`test_get_farm_rejects_user_outside_owner_or_branch` in
+`tests/test_farms.py`) proves the fix, mirroring the existing
+`test_get_report_rejects_user_outside_owner_or_branch` /
+`test_unrelated_user_gets_404_not_403` tests for the other two endpoints.
+
+**Alternatives considered.** None — this is a straightforward application
+of the exact pattern already established and tested for the two sibling
+endpoints in this same milestone; no design choice to weigh.
+
+**Trade-offs.** None identified — strict correctness fix, no behavior
+change for legitimate same-owner/same-branch access.
+
+**Future migration path.** None anticipated. This closes the gap; any
+future new resource-scoped `GET` endpoint should use
+`user_can_access_owned_resource` from the start, per the pattern all
+three of `farms.py`/`jobs.py`/`reports.py` now share consistently.

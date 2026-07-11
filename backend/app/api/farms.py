@@ -17,7 +17,7 @@ from geoalchemy2.shape import from_shape
 from sqlalchemy import cast, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user, require_role
+from app.api.deps import get_current_user, require_role, user_can_access_owned_resource
 from app.database.session import get_db
 from app.models.admin import AdminBoundary
 from app.models.enums import BoundaryLevel, UserRole
@@ -81,6 +81,9 @@ async def get_farm(
     db: AsyncSession = Depends(get_db),
 ) -> FarmResponse:
     farm = await db.get(FarmPolygon, farm_id)
-    if farm is None:
+    if farm is None or not await user_can_access_owned_resource(db, current_user, farm.drawn_by):
+        # Same not-found-vs-forbidden guard as jobs/reports (app/api/deps.py) —
+        # a farm that exists but belongs to another branch must be
+        # indistinguishable from one that doesn't exist at all.
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Farm not found")
     return FarmResponse.model_validate(farm)

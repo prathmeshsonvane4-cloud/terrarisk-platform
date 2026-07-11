@@ -76,17 +76,25 @@ async def village_and_users():
             role=UserRole.RISK_OFFICER,
             is_active=True,
         )
-        db.add_all([village, officer, risk_officer])
+        outsider = AppUser(
+            email=f"outsider-{uuid4().hex[:8]}@example.com",
+            password_hash=hash_password("correct-password"),
+            full_name="Different Officer",
+            role=UserRole.CREDIT_OFFICER,
+            is_active=True,
+        )
+        db.add_all([village, officer, risk_officer, outsider])
         await db.commit()
         await db.refresh(village)
         await db.refresh(officer)
         await db.refresh(risk_officer)
+        await db.refresh(outsider)
 
-    yield {"village": village, "officer": officer, "risk_officer": risk_officer}
+    yield {"village": village, "officer": officer, "risk_officer": risk_officer, "outsider": outsider}
 
     async with AsyncSessionLocal() as db:
         await db.execute(delete(FarmPolygon).where(FarmPolygon.village_id == village.id))
-        await db.execute(delete(AppUser).where(AppUser.id.in_([officer.id, risk_officer.id])))
+        await db.execute(delete(AppUser).where(AppUser.id.in_([officer.id, risk_officer.id, outsider.id])))
         await db.execute(delete(AdminBoundary).where(AdminBoundary.id == village.id))
         await db.commit()
 
@@ -247,3 +255,26 @@ async def test_get_farm_returns_created_farm(api_client, village_and_users):
     response = await api_client.get(f"/api/v1/farms/{farm_id}", headers={"Authorization": f"Bearer {token}"})
     assert response.status_code == 200
     assert response.json()["id"] == farm_id
+
+
+@pytest.mark.asyncio
+async def test_get_farm_rejects_user_outside_owner_or_branch(api_client, village_and_users):
+    """A farm drawn by one officer must not be readable by an unrelated
+    officer with no shared branch — same not-found-vs-forbidden guard as
+    jobs/reports (app/api/deps.py::user_can_access_owned_resource)."""
+    officer_token = await _login(api_client, village_and_users["officer"].email)
+    create_response = await api_client.post(
+        "/api/v1/farms",
+        headers={"Authorization": f"Bearer {officer_token}"},
+        json={
+            "village_id": str(village_and_users["village"].id),
+            "geometry": {"type": "Polygon", "coordinates": [_VALID_SQUARE]},
+        },
+    )
+    farm_id = create_response.json()["id"]
+
+    outsider_token = await _login(api_client, village_and_users["outsider"].email)
+    response = await api_client.get(
+        f"/api/v1/farms/{farm_id}", headers={"Authorization": f"Bearer {outsider_token}"}
+    )
+    assert response.status_code == 404

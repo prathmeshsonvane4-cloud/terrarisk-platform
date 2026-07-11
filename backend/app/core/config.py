@@ -16,7 +16,12 @@ class Settings(BaseSettings):
     app_name: str = "TerraRisk Credit Intelligence API"
     app_version: str = "0.1.0"
     environment: str = "development"
-    debug: bool = True
+    # Secure by default: verbose SQL logging (app/database/base.py echoes
+    # every statement + bound parameter value when this is True) must be an
+    # explicit opt-in via .env, never a silent default a deployer forgot to
+    # turn off — bound parameters can carry PII (farmer_identity fields)
+    # once populated.
+    debug: bool = False
 
     database_url: str
 
