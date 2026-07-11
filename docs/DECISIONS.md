@@ -889,3 +889,108 @@ Blueprint's own stated business rule; no design choice to weigh.
 **Trade-offs.** None identified.
 
 **Future migration path.** None anticipated.
+
+---
+
+### Mapping stack implementation — MapLibre GL JS + Terra Draw + Esri World Imagery (M2A P2)
+
+**Decision.** The interactive farm map (`components/map/base-map.tsx`,
+`features/farm-drawing/farm-map.tsx`) is built on MapLibre GL JS with
+Terra Draw (`terra-draw` + `terra-draw-maplibre-gl-adapter`) for polygon
+drawing/editing, over Esri World Imagery raster tiles. The tile URL is
+env-swappable (`NEXT_PUBLIC_MAP_TILE_URL`, `src/config.ts`); Esri's
+required attribution is always rendered. Drawing enforces a
+single-polygon rule (leaving draw mode the moment the first boundary
+closes), rejects self-intersections at finish/commit via Terra Draw's
+`ValidateNotSelfIntersecting`, and allows vertex-level editing only —
+whole-feature dragging is disabled, since sliding an entire boundary off
+its field is a data hazard with no legitimate use.
+
+**Reason.** Stack chosen in the approved M2A specification (GPU-rendered
+modern cartography; Terra Draw is the actively maintained drawing layer;
+MapLibre's vector data-driven styling is also what M4's choropleths
+need, so this choice is made once). Officers must recognize their actual
+field, so a real satellite basemap is non-negotiable; Esri World Imagery
+is free with attribution for dev/demo use.
+
+**Alternatives considered.** Leaflet (+leaflet-draw): simplest, but
+raster-first with effectively unmaintained drawing plugins, and reads
+dated for a product whose first impression is the map. OpenLayers: the
+most capable and least approachable — its power (projections, WMS,
+topology editing) is exactly what this MVP doesn't need, paid for in
+learning curve and bundle weight.
+
+**Trade-offs.** (1) `/farms/new` first-load JS grew to ~460kB — that is
+MapLibre's GL engine; accepted because the map *is* the page, and a
+dynamic import would only defer the cost, not remove it. (2) Esri World
+Imagery's terms require review before commercial deployment — a named
+line item on the commercial checklist next to the GEE license; the URL
+being one env variable makes a provider swap a config change. (3) GL
+canvas contents are not directly assertable by E2E tooling; `BaseMap`
+therefore sets `data-map-loaded` / `data-map-idle` attributes from
+MapLibre's own lifecycle events ("idle" = all in-view tiles fetched and
+rendered) as a permanent testability hook — this is how map health was
+actually verified in P2, and what the M2B Playwright suite will assert.
+(4) Found during live verification: throttling draw-event state reports
+with `requestAnimationFrame` silently freezes in hidden/backgrounded
+tabs (browsers stop delivering frames entirely); replaced with a 50ms
+timer throttle, which keeps firing (clamped) in hidden tabs.
+
+**Future migration path.** Provider swap = one env variable. The
+boundary-overlay layer (village polygons on the map) is deferred M2B
+scope per the approved spec, and slots into `BaseMap` as an additional
+source/layer without structural change.
+
+---
+
+### Client-side polygon area is a preview from `@turf/area` — never the recorded value
+
+**Decision.** The live area shown while drawing (`lib/geo.ts`
+`ringAreaHectares`, displayed as "X ha (Y acres)") is computed
+client-side with `@turf/area` (geodesic). The value recorded on the farm
+row remains exclusively the server's PostGIS `ST_Area` computation
+(`app/api/farms.py`), exactly as M1 built it.
+
+**Reason.** Blueprint §05: the client's number is a preview for the
+officer's confirmation decision, "never trusted as the record of truth."
+Officers need immediate feedback while tracing; the server needs to stay
+the sole authority. `@turf/area` implements the same class of geodesic
+algorithm PostGIS uses on geography types, so preview and record agree
+closely — but if they ever disagree, the server's number is the record,
+and the UI copy says so explicitly.
+
+**Alternatives considered.** Round-tripping each draw change to the
+server for authoritative live area (correct number, but a network call
+per vertex drag — unacceptable latency for a drawing interaction, and
+pointless load); planar shoelace area computed by hand (wrong by ~2-3%
+at field scale in WGS84 degrees without projection handling — a
+misleading preview is worse than none).
+
+**Trade-offs.** One small, well-scoped dependency (`@turf/area`).
+
+**Future migration path.** None anticipated.
+
+---
+
+### Vitest as the frontend unit-test runner
+
+**Decision.** `vitest` (node environment, no DOM) runs the frontend's
+pure-logic tests (`src/**/*.test.ts` — geometry construction, geodesic
+area sanity, formatting), via `npm test`.
+
+**Reason.** P2 introduced the first frontend logic that can be silently
+wrong (ring closing, backend-contract geometry shape, m²→ha conversion,
+ha→acres display). The approved M2A testing strategy already named
+Vitest for exactly this class of test; P2 is simply the phase where the
+need materialized.
+
+**Alternatives considered.** Jest (heavier setup with Next/ESM, slower,
+no advantage here); deferring all testing to manual E2E (leaves unit
+conversions — the classic silent-failure class — unguarded).
+
+**Trade-offs.** None significant — node-environment-only keeps it fast;
+jsdom/component testing is deliberately excluded until something needs
+it (manual E2E covers browser behavior per the M2A spec).
+
+**Future migration path.** The M2B Playwright E2E suite complements
+(not replaces) these tests.
