@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { ringAreaHectares, toFarmGeometry } from "./geo";
+import {
+  farmAreaBoundsIssue,
+  MAX_FARM_AREA_HA,
+  MIN_FARM_AREA_HA,
+  ringAreaHectares,
+  toFarmGeometry,
+} from "./geo";
 
 // A ~1.1km × ~1.1km square near Latur (18.4°N) — 0.01° of longitude is
 // ~1.05km at this latitude, so the true geodesic area is ~117 ha.
@@ -53,5 +59,24 @@ describe("ringAreaHectares", () => {
         [76.46, 18.4],
       ]),
     ).toBe(0);
+  });
+});
+
+describe("farmAreaBoundsIssue", () => {
+  it("accepts a typical smallholder farm", () => {
+    expect(farmAreaBoundsIssue(2.5)).toBeNull();
+  });
+
+  it("accepts the exact bounds (mirroring the server's inclusive check)", () => {
+    expect(farmAreaBoundsIssue(MIN_FARM_AREA_HA)).toBeNull();
+    expect(farmAreaBoundsIssue(MAX_FARM_AREA_HA)).toBeNull();
+  });
+
+  it("blocks a degenerate speck below the minimum", () => {
+    expect(farmAreaBoundsIssue(0.001)).toMatch(/too small/);
+  });
+
+  it("blocks a whole-taluka mis-trace above the maximum", () => {
+    expect(farmAreaBoundsIssue(5000)).toMatch(/larger than a single farm/);
   });
 });

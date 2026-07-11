@@ -35,10 +35,25 @@ interface FarmMapProps {
   /** Fired with the current ring on every draw/edit change (null when the
    * boundary is removed), and `complete` once drawing has finished. */
   onPolygonChange: (ring: Ring | null, complete: boolean) => void;
+  /** Hides every drawing control and forces static mode — set while a
+   * submission is in flight and after the farm is saved, so the geometry
+   * on screen can never drift from what the server recorded. */
+  locked?: boolean;
+  /** Incrementing this clears any drawn boundary (used by "Draw another
+   * farm" after a save) — an imperative act expressed as data so the page
+   * never needs a ref into map internals. Initial value never triggers. */
+  clearSignal?: number;
   className?: string;
 }
 
-export function FarmMap({ village, hasPolygon, onPolygonChange, className }: FarmMapProps) {
+export function FarmMap({
+  village,
+  hasPolygon,
+  onPolygonChange,
+  locked = false,
+  clearSignal = 0,
+  className,
+}: FarmMapProps) {
   const mapRef = useRef<maplibregl.Map | null>(null);
   const drawRef = useRef<TerraDraw | null>(null);
   const markerRef = useRef<maplibregl.Marker | null>(null);
@@ -160,6 +175,28 @@ export function FarmMap({ village, hasPolygon, onPolygonChange, className }: Far
     map.flyTo({ center, zoom: VILLAGE_ZOOM, duration: 2500, essential: true });
   }, [village]);
 
+  // Entering the locked state (submit in flight / farm saved) forces the
+  // map out of any draw/edit mode so no interaction can mutate geometry
+  // the server is recording or has recorded.
+  useEffect(() => {
+    if (locked) {
+      drawRef.current?.setMode("static");
+      setUiMode("static");
+    }
+  }, [locked]);
+
+  // "Draw another farm": the page bumps clearSignal after a save; skip the
+  // mount-time initial value so a fresh page never self-clears.
+  const lastClearSignalRef = useRef(clearSignal);
+  useEffect(() => {
+    if (clearSignal === lastClearSignalRef.current) return;
+    lastClearSignalRef.current = clearSignal;
+    drawRef.current?.clear();
+    onPolygonChangeRef.current(null, false);
+    drawRef.current?.setMode("static");
+    setUiMode("static");
+  }, [clearSignal]);
+
   // Unmount cleanup: stop Terra Draw before BaseMap removes the map, and
   // drop any queued throttled report.
   useEffect(() => {
@@ -207,53 +244,55 @@ export function FarmMap({ village, hasPolygon, onPolygonChange, className }: Far
         className="absolute inset-0"
       />
 
-      <div className="absolute top-3 left-3 z-10 flex flex-col items-start gap-2">
-        {uiMode === "static" && !hasPolygon && (
-          <Button size="sm" onClick={enterDrawMode} disabled={!village}>
-            Draw farm boundary
-          </Button>
-        )}
-        {uiMode === "static" && hasPolygon && (
-          <div className="flex gap-2">
-            <Button size="sm" variant="outline" onClick={enterEditMode}>
-              Edit boundary
+      {!locked && (
+        <div className="absolute top-3 left-3 z-10 flex flex-col items-start gap-2">
+          {uiMode === "static" && !hasPolygon && (
+            <Button size="sm" onClick={enterDrawMode} disabled={!village}>
+              Draw farm boundary
             </Button>
-            <Button size="sm" variant="destructive" onClick={deleteBoundary}>
-              Delete
-            </Button>
-          </div>
-        )}
-        {uiMode === "polygon" && (
-          <>
-            <Button size="sm" variant="outline" onClick={cancelDrawing}>
-              Cancel drawing
-            </Button>
-            <p className="max-w-60 rounded-lg bg-background/90 px-2.5 py-1.5 text-xs">
-              Click to place points around the field. Click the first point to finish. Esc cancels.
-            </p>
-          </>
-        )}
-        {uiMode === "select" && (
-          <>
+          )}
+          {uiMode === "static" && hasPolygon && (
             <div className="flex gap-2">
-              <Button size="sm" onClick={exitToStatic}>
-                Done editing
+              <Button size="sm" variant="outline" onClick={enterEditMode}>
+                Edit boundary
               </Button>
               <Button size="sm" variant="destructive" onClick={deleteBoundary}>
                 Delete
               </Button>
             </div>
+          )}
+          {uiMode === "polygon" && (
+            <>
+              <Button size="sm" variant="outline" onClick={cancelDrawing}>
+                Cancel drawing
+              </Button>
+              <p className="max-w-60 rounded-lg bg-background/90 px-2.5 py-1.5 text-xs">
+                Click to place points around the field. Click the first point to finish. Esc cancels.
+              </p>
+            </>
+          )}
+          {uiMode === "select" && (
+            <>
+              <div className="flex gap-2">
+                <Button size="sm" onClick={exitToStatic}>
+                  Done editing
+                </Button>
+                <Button size="sm" variant="destructive" onClick={deleteBoundary}>
+                  Delete
+                </Button>
+              </div>
+              <p className="max-w-60 rounded-lg bg-background/90 px-2.5 py-1.5 text-xs">
+                Click the boundary to select it, then drag points to adjust. Drag a midpoint to add detail.
+              </p>
+            </>
+          )}
+          {!village && (
             <p className="max-w-60 rounded-lg bg-background/90 px-2.5 py-1.5 text-xs">
-              Click the boundary to select it, then drag points to adjust. Drag a midpoint to add detail.
+              Search and select a village to begin.
             </p>
-          </>
-        )}
-        {!village && (
-          <p className="max-w-60 rounded-lg bg-background/90 px-2.5 py-1.5 text-xs">
-            Search and select a village to begin.
-          </p>
-        )}
-      </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

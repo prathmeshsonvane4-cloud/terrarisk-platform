@@ -40,3 +40,23 @@ export function ringAreaHectares(ring: Ring): number {
   const geometry = toFarmGeometry(ring);
   return turfArea({ type: "Feature", properties: {}, geometry }) / SQUARE_METERS_PER_HECTARE;
 }
+
+// Mirrors app/api/farms.py's server-side plausibility bounds. UX-only
+// pre-validation: catching a whole-taluka mis-trace before the round trip
+// beats surfacing a 422 after it. The server check remains authoritative —
+// if these constants ever drift from the backend's, the effect is a
+// slightly worse error message, never a wrongly-accepted farm.
+export const MIN_FARM_AREA_HA = 0.01;
+export const MAX_FARM_AREA_HA = 1000;
+
+/** Returns a human-readable blocker if the preview area is outside the
+ * plausible single-farm range, or null if it's submittable. */
+export function farmAreaBoundsIssue(hectares: number): string | null {
+  if (hectares < MIN_FARM_AREA_HA) {
+    return "This boundary is too small to be a farm — zoom in and redraw around the field.";
+  }
+  if (hectares > MAX_FARM_AREA_HA) {
+    return "This boundary is far larger than a single farm — it may trace a whole village or taluka. Redraw around one field.";
+  }
+  return null;
+}

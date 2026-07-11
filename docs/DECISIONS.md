@@ -994,3 +994,59 @@ it (manual E2E covers browser behavior per the M2A spec).
 
 **Future migration path.** The M2B Playwright E2E suite complements
 (not replaces) these tests.
+
+*(Superseded in part by the M2A P3 entry below: one jsdom-based
+integration test now exists, for the specific reason documented there.
+The node-environment default for pure-logic tests stands.)*
+
+---
+
+### Real-stack integration test for the farm-creation flow, with the GL map as the only mocked seam (M2A P3)
+
+**Decision.** `page.integration.test.ts` (jsdom, opt-in via pragma)
+renders the real `/farms/new` page component and drives the real local
+stack end to end: real login, real `GET /villages` (through the real
+300ms debounce), a real `POST /farms` over HTTP, asserting the saved
+panel displays the *server's* recorded area, that the map locks after
+saving, and that the workflow restarts. Exactly one seam is mocked:
+`FarmMap`, whose mock fires the same `onPolygonChange(ring, complete)`
+callback with a real Killari-area ring that the real map fires on
+drawing completion. The test skips cleanly (like the backend suite's
+PostGIS-gated tests) when the local stack or the seeded test officer
+isn't available.
+
+**Reason.** A WebGL map cannot initialize without rendered animation
+frames — jsdom has none, the embedded preview pane delivers none (P2
+finding), and a real browser delivers none while its window is hidden
+or minimized. During P3 verification this made human-in-the-loop
+confirmation unreliable in practice: three user-reported successful
+save runs produced zero database rows (ground truth checked after each),
+while the API path proven directly via curl worked perfectly. Rather
+than continue a flaky manual loop, the click-through gap was closed
+with a repeatable machine-run test of everything downstream of the
+canvas. The canvas-drawing seam itself was verified in a real visible
+browser during P2 (map load + all-tiles-rendered via the data-map-idle
+hook; draw/edit flow confirmed hands-on).
+
+**Alternatives considered.** Continuing user-driven verification
+(demonstrated unreliable here, and unrepeatable); Playwright now
+(planned for M2B — heavier install, and it would face the same
+GL-in-headless constraints without extra flags/GPU setup); mocking the
+HTTP layer instead of the map (tests far less — the point is proving
+the real request/response/persistence path).
+
+**Trade-offs.** (1) The test depends on the local stack (backend +
+PostGIS + a seeded `p3-e2e@example.com` officer) and silently skips
+without it — CI (M5) must provision that stack for the test to count
+there. (2) Each run persists one farm row for the test officer in the
+dev database. (3) Written with `React.createElement` instead of JSX:
+Next.js pins tsconfig `"jsx": "preserve"`, and this Vitest runs on
+rolldown-vite, where the fix is the `oxc.jsx` config override (added)
+— but `@vitejs/plugin-react` itself is blocked by a Babel 7-vs-8 peer
+conflict via the shadcn CLI package, so the test file avoids JSX
+syntax to stay dependency-free.
+
+**Future migration path.** M2B's Playwright suite adds true
+click-the-canvas coverage in a real headed browser (using the
+`data-map-loaded`/`data-map-idle` hooks from P2); this integration test
+remains as the fast, stack-level regression check.
