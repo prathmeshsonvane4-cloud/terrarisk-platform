@@ -44,6 +44,7 @@ async def test_login_with_correct_credentials_returns_token(client_with_seeded_u
     assert body["role"] == "credit_officer"
     assert body["expires_in"] > 0
     assert len(body["access_token"]) > 20
+    assert body["full_name"] == "Test Officer"
 
 
 @pytest.mark.asyncio

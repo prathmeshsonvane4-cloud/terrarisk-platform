@@ -25,4 +25,4 @@ async def login(payload: LoginRequest, db: AsyncSession = Depends(get_db)) -> Lo
         raise invalid_credentials
 
     token, expires_in = create_access_token(user_id=user.id, role=user.role.value)
-    return LoginResponse(access_token=token, role=user.role, expires_in=expires_in)
+    return LoginResponse(access_token=token, role=user.role, expires_in=expires_in, full_name=user.full_name)

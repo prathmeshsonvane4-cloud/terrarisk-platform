@@ -32,6 +32,12 @@ class Settings(BaseSettings):
     gee_project_id: str | None = None
     gee_service_account_json_path: str | None = None
 
+    # M2A (Blueprint §10 M2) — the Next.js frontend's origin, and only that
+    # origin: no wildcard, since requests carry a bearer token. Defaults to
+    # the local Next.js dev server so `npm run dev` works out of the box;
+    # override per-environment via .env, never hardcode a second origin in.
+    frontend_origin: str = "http://localhost:3000"
+
 
 @lru_cache
 def get_settings() -> Settings:

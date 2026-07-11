@@ -7,7 +7,7 @@ The complete implementation blueprint for TerraRisk's two MVP services — Farme
 
 | | |
 |---|---|
-| **First customer** | DCCB Latur |
+| **First customer** | District Cooperative Bank (pilot) |
 | **Data pipeline** | Google Earth Engine (abstracted) |
 | **Data store** | PostgreSQL + PostGIS |
 | **Stack** | FastAPI · Next.js |
@@ -303,11 +303,11 @@ Seven milestones, sequential. Git convention throughout: Conventional Commits (`
 - **Objective:** Close the gaps a real bank stakeholder would notice.
 - **Deliverables:** PII-separation audit · CSV edge cases · geometry simplification tuning · minimal CI (lint + unit tests) · confidence-score display · data lineage footer
 - **Testing:** CI green on lint + the M1/M3 unit tests
-- **Definition of done:** Platform is presentable to DCCB Latur without an embarrassing gap
+- **Definition of done:** Platform is presentable to the pilot bank without an embarrassing gap
 
-### M6 — DCCB Latur pilot (~1 week + ongoing)
+### M6 — pilot bank engagement (~1 week + ongoing)
 
-- **Objective:** First contact with a real bank officer, on real Latur farms.
+- **Objective:** First contact with a real bank officer, on real farms in the pilot district.
 - **Deliverables:** Real Latur boundary data in place of any placeholder · 2–3 real officer accounts onboarded · a handful of real farms walked end to end
 - **Definition of done:** First real pilot session completed and feedback captured
 

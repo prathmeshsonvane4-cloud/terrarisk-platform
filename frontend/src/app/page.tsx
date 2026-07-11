@@ -1,21 +1,18 @@
-import { About } from "@/components/landing/about";
-import { Contact } from "@/components/landing/contact";
-import { Features } from "@/components/landing/features";
-import { Footer } from "@/components/landing/footer";
-import { Header } from "@/components/landing/header";
-import { Hero } from "@/components/landing/hero";
+"use client";
 
-export default function Home() {
-  return (
-    <div className="flex min-h-screen flex-col">
-      <Header />
-      <main className="flex-1">
-        <Hero />
-        <Features />
-        <About />
-        <Contact />
-      </main>
-      <Footer />
-    </div>
-  );
+import { useRouter } from "next/navigation";
+import { useEffect } from "react";
+
+import { useAuth } from "@/features/auth/auth-context";
+
+export default function RootPage() {
+  const { session, isInitialized } = useAuth();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (!isInitialized) return;
+    router.replace(session ? "/farms/new" : "/login");
+  }, [isInitialized, session, router]);
+
+  return null;
 }

@@ -1,6 +1,7 @@
 import logging
 
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.api.auth import router as auth_router
@@ -10,13 +11,25 @@ from app.api.reports import router as reports_router
 from app.core.config import get_settings
 from app.core.logging import configure_logging
 
-configure_logging(level="DEBUG" if get_settings().debug else "INFO")
+settings = get_settings()
+configure_logging(level="DEBUG" if settings.debug else "INFO")
 logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title="TerraRisk Credit Intelligence API",
     description="Climate Risk Intelligence Platform for Financial Institutions",
     version="0.1.0",
+)
+
+# M2A: the Next.js frontend is a separate origin. A single explicit origin,
+# never a wildcard — requests carry a bearer token in the Authorization
+# header, and allow_credentials is left False since the token travels in a
+# header, not a cookie, so no cross-site cookie exposure is possible either way.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[settings.frontend_origin],
+    allow_methods=["GET", "POST"],
+    allow_headers=["Authorization", "Content-Type"],
 )
 
 # Versioned from the first endpoint (Blueprint §03 / CTO review finding):
