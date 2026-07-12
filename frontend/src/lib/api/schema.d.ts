@@ -298,6 +298,41 @@ export interface components {
             /** Full Name */
             full_name: string;
         };
+        /**
+         * ObservationPoint
+         * @description One monthly composited value from the satellite_observation cache —
+         *     real persisted data from the generation run, never recomputed at read
+         *     time (Blueprint §03: report reads never trigger a live GEE call).
+         */
+        ObservationPoint: {
+            /**
+             * Period Start
+             * Format: date
+             */
+            period_start: string;
+            /** Value */
+            value: number;
+        };
+        /**
+         * ReportFarmContext
+         * @description Farm identity block for the report header and map panel (Blueprint
+         *     §08 "Farm information": provenance for anything entering a bank's
+         *     file).
+         */
+        ReportFarmContext: {
+            /** Geometry */
+            geometry: {
+                [key: string]: unknown;
+            };
+            /** Village Name */
+            village_name: string;
+            /** Taluka Name */
+            taluka_name: string;
+            /** District Name */
+            district_name: string;
+            /** Officer Name */
+            officer_name: string;
+        };
         /** ReportGenerateRequest */
         ReportGenerateRequest: {
             /**
@@ -339,6 +374,26 @@ export interface components {
             computed_at: string;
             /** Factors */
             factors: components["schemas"]["FactorScoreResponse"][];
+            farm: components["schemas"]["ReportFarmContext"];
+            series: components["schemas"]["ReportSeries"];
+        };
+        /**
+         * ReportSeries
+         * @description The monthly series the dashboard charts (M2A P5). All four cached
+         *     index types are included even though the M2A dashboard charts only
+         *     NDVI and rainfall — MNDWI/NDMI back the M2B factor drill-downs with
+         *     no further payload change. A month missing from a list was
+         *     unobservable (cloud-blanked or not yet published), never zero.
+         */
+        ReportSeries: {
+            /** Ndvi */
+            ndvi: components["schemas"]["ObservationPoint"][];
+            /** Mndwi */
+            mndwi: components["schemas"]["ObservationPoint"][];
+            /** Ndmi */
+            ndmi: components["schemas"]["ObservationPoint"][];
+            /** Rainfall */
+            rainfall: components["schemas"]["ObservationPoint"][];
         };
         /** ReportTriggerResponse */
         ReportTriggerResponse: {

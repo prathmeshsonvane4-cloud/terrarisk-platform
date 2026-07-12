@@ -65,9 +65,32 @@ async def scenario():
         pytest.skip("local PostGIS not reachable — start docker/docker-compose.yml")
 
     async with AsyncSessionLocal() as db:
+        # Full district -> taluka -> village hierarchy: get_report's M2A P5
+        # farm-context enrichment joins two parent levels, so a parentless
+        # village would fail — the fixture mirrors real loaded data.
+        district = AdminBoundary(
+            level=BoundaryLevel.DISTRICT,
+            name=f"Test District {uuid4().hex[:8]}",
+            geometry=from_shape(
+                Polygon([(75.5, 17.5), (77.0, 17.5), (77.0, 19.0), (75.5, 19.0), (75.5, 17.5)]), srid=4326
+            ),
+        )
+        db.add(district)
+        await db.flush()
+        taluka = AdminBoundary(
+            level=BoundaryLevel.TALUKA,
+            name=f"Test Taluka {uuid4().hex[:8]}",
+            parent_id=district.id,
+            geometry=from_shape(
+                Polygon([(75.8, 17.8), (76.8, 17.8), (76.8, 18.8), (75.8, 18.8), (75.8, 17.8)]), srid=4326
+            ),
+        )
+        db.add(taluka)
+        await db.flush()
         village = AdminBoundary(
             level=BoundaryLevel.VILLAGE,
             name=f"Test Village {uuid4().hex[:8]}",
+            parent_id=taluka.id,
             geometry=from_shape(
                 Polygon([(76.0, 18.0), (76.5, 18.0), (76.5, 18.5), (76.0, 18.5), (76.0, 18.0)]), srid=4326
             ),
@@ -102,7 +125,14 @@ async def scenario():
         await db.refresh(outsider)
         await db.refresh(config)
 
-    yield {"village": village, "officer": officer, "outsider": outsider, "config": config}
+    yield {
+        "village": village,
+        "taluka": taluka,
+        "district": district,
+        "officer": officer,
+        "outsider": outsider,
+        "config": config,
+    }
 
     async with AsyncSessionLocal() as db:
         farm_ids = (
@@ -124,7 +154,7 @@ async def scenario():
         await db.execute(delete(FarmPolygon).where(FarmPolygon.village_id == village.id))
         await db.execute(delete(ConfigWeight).where(ConfigWeight.id == config.id))
         await db.execute(delete(AppUser).where(AppUser.id.in_([officer.id, outsider.id])))
-        await db.execute(delete(AdminBoundary).where(AdminBoundary.id == village.id))
+        await db.execute(delete(AdminBoundary).where(AdminBoundary.id.in_([village.id, taluka.id, district.id])))
         await db.commit()
 
 
@@ -175,6 +205,19 @@ async def test_full_service_1_workflow_end_to_end(api_client, scenario):
     assert 0.0 <= report["overall_score"] <= 100.0
     assert report["overall_band"] in ("low", "moderate", "high", "very_high")
     assert {f["factor"] for f in report["factors"]} == {f.value for f in RiskFactor}
+    # Every factor ships its raw driver inputs (Blueprint §07 explainability).
+    assert all(f["raw_inputs"] for f in report["factors"])
+
+    # M2A P5 enrichment: farm context + cached observation series, all from
+    # persisted data — the dashboard and PDF render from this one payload.
+    assert report["farm"]["village_name"] == scenario["village"].name
+    assert report["farm"]["taluka_name"] == scenario["taluka"].name
+    assert report["farm"]["district_name"] == scenario["district"].name
+    assert report["farm"]["officer_name"] == "Test Officer"
+    assert report["farm"]["geometry"]["type"] == "Polygon"
+    assert len(report["series"]["ndvi"]) > 0
+    assert len(report["series"]["rainfall"]) > 0
+    assert all(point["value"] is not None for point in report["series"]["ndvi"])
 
 
 @pytest.mark.asyncio

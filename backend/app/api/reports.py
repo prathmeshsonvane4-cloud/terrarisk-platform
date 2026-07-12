@@ -11,20 +11,33 @@ the Service 1 workflow (Blueprint §01):
 from __future__ import annotations
 
 import asyncio
+import json
 from uuid import UUID
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
+from geoalchemy2.functions import ST_AsGeoJSON
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
 from app.api.deps import get_current_user, require_role, user_can_access_owned_resource
 from app.database.session import get_db
-from app.models.enums import JobStatus, JobType, RiskEntityType, UserRole
+from app.models.admin import AdminBoundary
+from app.models.enums import JobStatus, JobType, RiskEntityType, SatelliteIndexType, UserRole
 from app.models.farm import FarmPolygon
 from app.models.job import Job
 from app.models.risk import RiskFactorScore, RiskScore
+from app.models.satellite import SatelliteObservation
 from app.models.user import AppUser
-from app.schemas.report import FactorScoreResponse, ReportGenerateRequest, ReportResponse, ReportTriggerResponse
+from app.schemas.report import (
+    FactorScoreResponse,
+    ObservationPoint,
+    ReportFarmContext,
+    ReportGenerateRequest,
+    ReportResponse,
+    ReportSeries,
+    ReportTriggerResponse,
+)
 from app.services.reporting.report_generator import generate_farm_report
 from app.services.risk.engine import RiskEngine
 from app.services.satellite.gee_provider import GeeProvider
@@ -129,6 +142,50 @@ async def get_report(
         await db.execute(select(RiskFactorScore).where(RiskFactorScore.risk_score_id == risk_score.id))
     ).scalars().all()
 
+    # M2A P5 enrichment — everything below is already-persisted data
+    # (admin hierarchy, officer of record, the drawn geometry, and the
+    # satellite_observation cache written during generation). No
+    # recomputation, no live GEE call, per Blueprint §03.
+    taluka = aliased(AdminBoundary)
+    district = aliased(AdminBoundary)
+    context_row = (
+        await db.execute(
+            select(
+                AdminBoundary.name.label("village_name"),
+                taluka.name.label("taluka_name"),
+                district.name.label("district_name"),
+                ST_AsGeoJSON(FarmPolygon.geometry).label("geometry_json"),
+            )
+            .select_from(FarmPolygon)
+            .join(AdminBoundary, FarmPolygon.village_id == AdminBoundary.id)
+            .join(taluka, AdminBoundary.parent_id == taluka.id)
+            .join(district, taluka.parent_id == district.id)
+            .where(FarmPolygon.id == farm.id)
+        )
+    ).one()
+    officer = await db.get(AppUser, farm.drawn_by)
+
+    observation_rows = (
+        await db.execute(
+            select(SatelliteObservation)
+            .where(
+                SatelliteObservation.entity_type == RiskEntityType.FARM,
+                SatelliteObservation.entity_id == farm.id,
+            )
+            .order_by(SatelliteObservation.period_start)
+        )
+    ).scalars().all()
+    series_by_type: dict[SatelliteIndexType, list[ObservationPoint]] = {
+        SatelliteIndexType.NDVI: [],
+        SatelliteIndexType.MNDWI: [],
+        SatelliteIndexType.NDMI: [],
+        SatelliteIndexType.RAINFALL: [],
+    }
+    for observation in observation_rows:
+        bucket = series_by_type.get(observation.index_type)
+        if bucket is not None:
+            bucket.append(ObservationPoint(period_start=observation.period_start, value=observation.value))
+
     return ReportResponse(
         id=risk_score.id,
         farm_id=farm.id,
@@ -140,4 +197,17 @@ async def get_report(
         model_version=risk_score.model_version,
         computed_at=risk_score.computed_at,
         factors=[FactorScoreResponse.model_validate(f) for f in factor_rows],
+        farm=ReportFarmContext(
+            geometry=json.loads(context_row.geometry_json),
+            village_name=context_row.village_name,
+            taluka_name=context_row.taluka_name,
+            district_name=context_row.district_name,
+            officer_name=officer.full_name if officer else "Unknown officer",
+        ),
+        series=ReportSeries(
+            ndvi=series_by_type[SatelliteIndexType.NDVI],
+            mndwi=series_by_type[SatelliteIndexType.MNDWI],
+            ndmi=series_by_type[SatelliteIndexType.NDMI],
+            rainfall=series_by_type[SatelliteIndexType.RAINFALL],
+        ),
     )

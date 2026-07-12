@@ -1099,3 +1099,45 @@ report shows confidence 94.4%: exactly one skipped month out of 36).
 (`test_rainfall_series_over_a_current_window_skips_unpublished_months`)
 uses the report generator's exact window arithmetic, so this class of
 bug fails the suite rather than a demo.
+
+---
+
+### Report dashboard — recharts for time series; all prose from fixed templates over engine outputs (M2A P5)
+
+**Decision.** The report page renders from a single `GET
+/reports/{id}` whose payload was extended to carry the farm context
+(geometry, village/taluka/district, officer, area) and the monthly
+observation series alongside the existing score/factor data. Charts
+use recharts (NDVI line, rainfall bar; one validated hue per
+single-series chart, risk-band status colors never used for data
+series). Every sentence of prose — the overall narrative
+(`narrative.ts`) and the per-factor driver lines (`drivers.ts`) — is a
+fixed template composed ONLY from the engine's persisted outputs and
+`raw_inputs`: highest/lowest factor is stated as an arithmetic fact,
+never a causal claim, and a missing raw input shortens the sentence
+instead of guessing. The farm map (`report-map.tsx`) is read-only:
+saved boundary on satellite imagery, fitted with padding, no drawing
+controls. The lineage footer names the three source datasets, the
+model version, generation time, and confidence.
+
+**Reason.** Blueprint §08 — the report is decision support for a
+credit officer, so it must never assert a cause the backend didn't
+compute; template-only prose makes "no invented causes" testable
+(`report-text.test.ts` pins the exact sentences). One payload keeps
+the dashboard renderable from a single fetch with no client-side
+joins. recharts is React-native and SVG-based, so chart output is
+assertable in jsdom without a canvas.
+
+**Alternatives considered.** Hand-rolled SVG charts (more code to
+maintain for two chart types); LLM-generated narrative (unverifiable,
+can invent causes — rejected outright for a lending document);
+separate endpoints for series/farm context (extra round trips, shared
+loading states for no benefit).
+
+**Trade-offs.** recharts adds a dependency (~100KB gz) for two chart
+types; fixed templates read plainly and are English-only until the
+localization pass. Live verification of this phase (score 42/100
+moderate, confidence 97%, 35-month series, Killari farm) matched the
+API payload field-for-field; the one defect found was a hardcoded
+"th" ordinal suffix ("31th percentile"), fixed with a regression
+test.
