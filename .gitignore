@@ -26,6 +26,9 @@ env/
 # Uploads
 backend/app/uploads/
 
+# Rendered report PDF cache (M2A P6) — regenerable artifacts, never source
+backend/var/
+
 # ==========================================
 # Secrets — never commit credentials
 # ==========================================

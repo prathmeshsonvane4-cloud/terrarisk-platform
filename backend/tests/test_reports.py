@@ -316,3 +316,98 @@ async def test_get_report_rejects_user_outside_owner_or_branch(api_client, scena
         f"/api/v1/reports/{risk_score_id}", headers={"Authorization": f"Bearer {outsider_token}"}
     )
     assert response.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# M2A P6 — PDF export endpoint. The map tile fetch is always stubbed out
+# (no network in tests); the full tile path is covered by manual live
+# verification, and the renderer itself by test_report_pdf.py.
+# ---------------------------------------------------------------------------
+
+
+@pytest_asyncio.fixture
+def pdf_environment(monkeypatch, tmp_path):
+    """No live tile fetches, and a per-test cache directory so caching
+    behavior is observable and tests never poison each other."""
+    monkeypatch.setattr("app.api.reports.fetch_map_snapshot", lambda geometry: None)
+    from app.core.config import get_settings
+
+    monkeypatch.setattr(get_settings(), "report_pdf_cache_dir", str(tmp_path / "pdf_cache"))
+    return tmp_path / "pdf_cache"
+
+
+async def _generate_report(api_client, scenario) -> tuple[str, str]:
+    """Full trigger flow; returns (officer token, risk_score_id)."""
+    token = await _login(api_client, scenario["officer"].email)
+    farm_id = await _create_farm(api_client, token, scenario["village"].id)
+    trigger_response = await api_client.post(
+        f"/api/v1/farms/{farm_id}/reports", headers={"Authorization": f"Bearer {token}"}, json={}
+    )
+    job_id = trigger_response.json()["job_id"]
+    job_response = await api_client.get(f"/api/v1/jobs/{job_id}", headers={"Authorization": f"Bearer {token}"})
+    return token, job_response.json()["entity_id"]
+
+
+@pytest.mark.asyncio
+async def test_report_pdf_download(api_client, scenario, pdf_environment):
+    token, risk_score_id = await _generate_report(api_client, scenario)
+
+    response = await api_client.get(
+        f"/api/v1/reports/{risk_score_id}/pdf", headers={"Authorization": f"Bearer {token}"}
+    )
+    assert response.status_code == 200, response.text
+    assert response.headers["content-type"] == "application/pdf"
+    assert response.content.startswith(b"%PDF")
+    disposition = response.headers["content-disposition"]
+    assert "attachment" in disposition
+    assert scenario["village"].name.split()[0] in disposition  # village in the filename
+
+
+@pytest.mark.asyncio
+async def test_report_pdf_is_rendered_once_then_served_from_cache(
+    api_client, scenario, pdf_environment, monkeypatch
+):
+    token, risk_score_id = await _generate_report(api_client, scenario)
+
+    import app.api.reports as reports_module
+
+    real_render = reports_module.render_report_pdf
+    render_calls = 0
+
+    def counting_render(report, map_png):
+        nonlocal render_calls
+        render_calls += 1
+        return real_render(report, map_png)
+
+    monkeypatch.setattr(reports_module, "render_report_pdf", counting_render)
+
+    first = await api_client.get(
+        f"/api/v1/reports/{risk_score_id}/pdf", headers={"Authorization": f"Bearer {token}"}
+    )
+    second = await api_client.get(
+        f"/api/v1/reports/{risk_score_id}/pdf", headers={"Authorization": f"Bearer {token}"}
+    )
+    assert first.status_code == second.status_code == 200
+    assert render_calls == 1, "second request must be served from the disk cache"
+    assert first.content == second.content
+    assert len(list(pdf_environment.iterdir())) == 1  # exactly the cache file, no leftover temps
+
+
+@pytest.mark.asyncio
+async def test_report_pdf_rejects_user_outside_owner_or_branch(api_client, scenario, pdf_environment):
+    _, risk_score_id = await _generate_report(api_client, scenario)
+
+    outsider_token = await _login(api_client, scenario["outsider"].email)
+    response = await api_client.get(
+        f"/api/v1/reports/{risk_score_id}/pdf", headers={"Authorization": f"Bearer {outsider_token}"}
+    )
+    assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_report_pdf_returns_404_for_unknown_id(api_client, scenario, pdf_environment):
+    token = await _login(api_client, scenario["officer"].email)
+    response = await api_client.get(
+        f"/api/v1/reports/{uuid4()}/pdf", headers={"Authorization": f"Bearer {token}"}
+    )
+    assert response.status_code == 404

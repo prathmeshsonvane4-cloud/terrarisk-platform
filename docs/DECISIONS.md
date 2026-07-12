@@ -1141,3 +1141,52 @@ moderate, confidence 97%, 35-month series, Killari farm) matched the
 API payload field-for-field; the one defect found was a hardcoded
 "th" ordinal suffix ("31th percentile"), fixed with a regression
 test.
+
+---
+
+### PDF export — server-side reportlab render from the shared payload; prose templates mirrored and pinned by twin tests (M2A P6)
+
+**Decision.** `GET /reports/{id}/pdf` (Blueprint §API) renders the PDF
+server-side with reportlab + matplotlib from the same
+`_load_report_response()` the JSON endpoint uses — one loader, one
+owner-or-branch guard, so the two views can't diverge on data or
+access. The map panel stitches the SAME Esri World Imagery tiles the
+dashboard renders (config.ts MAP_TILE_URL) and draws the boundary in
+the same style; on tile-fetch failure it degrades to the real boundary
+on a neutral panel with an explicit "imagery unavailable" note — never
+fabricated content. All prose comes from `report_text.py`, a
+deliberate Python mirror of `narrative.ts`/`drivers.ts` (including a
+`js_round` matching JS `Math.round` half-away-from-zero, so PDF and
+dashboard can't disagree on x.5 values); `test_report_text.py` asserts
+the IDENTICAL strings `report-text.test.ts` asserts, so a template
+change on one side fails the other side's copy of the test. Rendered
+PDFs are cached to disk keyed `{risk_score_id}-v{PDF_LAYOUT_VERSION}`
+— a risk score row is immutable once computed, so the cache never
+expires; layout changes bump the version constant instead of
+invalidating files. Content assertions in `test_report_pdf.py` go
+through pypdf text extraction — what a reader of the document sees.
+
+**Reason.** Blueprint §08: the PDF is what actually enters the loan
+file, rendered from the same payload as the dashboard ("two views of
+one artifact"). Server-side rendering keeps the artifact reproducible
+and cacheable per report id, independent of any officer's browser.
+
+**Alternatives considered.** Headless-Chromium printing of the actual
+report page (pixel-perfect parity and no template mirroring, but adds
+a browser runtime + auth plumbing to the server, and P2/P3 already
+established WebGL maps don't initialize headless — the map would need
+a static fallback anyway); WeasyPrint (HTML→PDF, but requires GTK
+native libraries on Windows dev machines); client-side jsPDF (ties
+the loan-file artifact to the officer's browser and can't be cached
+or later fetched by auditors server-side).
+
+**Trade-offs.** (1) The prose templates exist in two languages,
+mirror-pinned by twin test files — accepted cost of Python-side
+rendering; the M4 portfolio report engine reuses this renderer, so
+the mirror pays for itself. (2) First render fetches ~15–24 imagery
+tiles (observed ~13 s live, incl. matplotlib's first import); every
+subsequent request is a disk read. (3) +4 backend deps (reportlab,
+matplotlib, pillow, tzdata — the last because report timestamps
+render in IST, the bank's timezone, and Windows has no system tz
+database). Live-verified end to end: browser download of the Killari
+report (2.7 MB, 2 pages) matches the dashboard field-for-field.

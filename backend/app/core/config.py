@@ -38,6 +38,12 @@ class Settings(BaseSettings):
     # override per-environment via .env, never hardcode a second origin in.
     frontend_origin: str = "http://localhost:3000"
 
+    # M2A P6 — where rendered report PDFs are cached (Blueprint §API:
+    # "cached after first render"). Relative paths resolve against the
+    # backend working directory; deployments should point this at a
+    # persistent volume.
+    report_pdf_cache_dir: str = "var/pdf_cache"
+
 
 @lru_cache
 def get_settings() -> Settings:

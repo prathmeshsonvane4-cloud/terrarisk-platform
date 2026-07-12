@@ -12,15 +12,18 @@ from __future__ import annotations
 
 import asyncio
 import json
-from uuid import UUID
+import re
+from pathlib import Path
+from uuid import UUID, uuid4
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Response, status
 from geoalchemy2.functions import ST_AsGeoJSON
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
 from app.api.deps import get_current_user, require_role, user_can_access_owned_resource
+from app.core.config import get_settings
 from app.database.session import get_db
 from app.models.admin import AdminBoundary
 from app.models.enums import JobStatus, JobType, RiskEntityType, SatelliteIndexType, UserRole
@@ -38,6 +41,8 @@ from app.schemas.report import (
     ReportSeries,
     ReportTriggerResponse,
 )
+from app.services.reporting.map_snapshot import fetch_map_snapshot
+from app.services.reporting.pdf_renderer import PDF_LAYOUT_VERSION, render_report_pdf
 from app.services.reporting.report_generator import generate_farm_report
 from app.services.risk.engine import RiskEngine
 from app.services.satellite.gee_provider import GeeProvider
@@ -123,12 +128,12 @@ async def trigger_report(
     return ReportTriggerResponse(job_id=job.id, status="queued")
 
 
-@router.get("/reports/{risk_score_id}", response_model=ReportResponse)
-async def get_report(
-    risk_score_id: UUID,
-    current_user: AppUser = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+async def _load_report_response(
+    risk_score_id: UUID, current_user: AppUser, db: AsyncSession
 ) -> ReportResponse:
+    """Shared payload assembly for the JSON and PDF endpoints — one loader,
+    one authorization guard, so the two views can never diverge on either
+    data or access rules (Blueprint §08 one-artifact rule)."""
     risk_score = await db.get(RiskScore, risk_score_id)
     if risk_score is None or risk_score.entity_type != RiskEntityType.FARM:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Report not found")
@@ -210,4 +215,54 @@ async def get_report(
             ndmi=series_by_type[SatelliteIndexType.NDMI],
             rainfall=series_by_type[SatelliteIndexType.RAINFALL],
         ),
+    )
+
+
+@router.get("/reports/{risk_score_id}", response_model=ReportResponse)
+async def get_report(
+    risk_score_id: UUID,
+    current_user: AppUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> ReportResponse:
+    return await _load_report_response(risk_score_id, current_user, db)
+
+
+def _render_pdf_blocking(report: ReportResponse) -> bytes:
+    """Tile fetch + matplotlib + reportlab are all blocking; bundled here
+    so the endpoint can push the whole render off the event loop."""
+    map_png = fetch_map_snapshot(report.farm.geometry)
+    return render_report_pdf(report, map_png)
+
+
+@router.get("/reports/{risk_score_id}/pdf")
+async def get_report_pdf(
+    risk_score_id: UUID,
+    current_user: AppUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> Response:
+    """Blueprint §API: rendered PDF, cached after first render. A risk
+    score row is immutable once computed, so the cache is keyed on
+    (risk_score_id, layout version) and never expires — a layout change
+    bumps PDF_LAYOUT_VERSION rather than invalidating files."""
+    report = await _load_report_response(risk_score_id, current_user, db)
+
+    cache_dir = Path(get_settings().report_pdf_cache_dir)
+    cache_path = cache_dir / f"{report.id}-v{PDF_LAYOUT_VERSION}.pdf"
+    if cache_path.is_file():
+        pdf_bytes = cache_path.read_bytes()
+    else:
+        pdf_bytes = await asyncio.to_thread(_render_pdf_blocking, report)
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        # Atomic publish: a concurrent request must never read a half-written
+        # file, so write to a unique temp name and os.replace into place.
+        temp_path = cache_path.with_name(f"{cache_path.name}.{uuid4().hex}.tmp")
+        temp_path.write_bytes(pdf_bytes)
+        temp_path.replace(cache_path)
+
+    village_slug = re.sub(r"[^A-Za-z0-9]+", "-", report.farm.village_name).strip("-") or "farm"
+    filename = f"TerraRisk-Report-{village_slug}-{report.computed_at:%Y%m%d}.pdf"
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )

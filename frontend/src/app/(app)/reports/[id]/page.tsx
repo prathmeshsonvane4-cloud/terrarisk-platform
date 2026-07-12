@@ -5,6 +5,7 @@ import { useParams } from "next/navigation";
 
 import { MonthlyTrendChart } from "@/components/charts/monthly-trend-chart";
 import { buttonVariants } from "@/components/ui/button";
+import { DownloadPdfButton } from "@/features/report/download-pdf-button";
 import { FACTOR_ORDER } from "@/features/report/factor-order";
 import { FactorCard } from "@/features/report/factor-card";
 import { reportNarrative } from "@/features/report/narrative";
@@ -74,9 +75,12 @@ export default function ReportPage() {
             {computedAt.toLocaleDateString("en-IN", { dateStyle: "medium" })}
           </p>
         </div>
-        <Link href="/farms/new" className={buttonVariants({ variant: "outline", size: "sm" })}>
-          Map another farm
-        </Link>
+        <div className="flex items-start gap-2">
+          <Link href="/farms/new" className={buttonVariants({ variant: "outline", size: "sm" })}>
+            Map another farm
+          </Link>
+          <DownloadPdfButton reportId={report.id} />
+        </div>
       </header>
 
       {/* Verdict + map */}

@@ -18,8 +18,18 @@ pyjwt==2.13.0
 # Earth Engine adapter (Blueprint §06)
 earthengine-api==1.7.34
 
+# PDF report export (Blueprint §08 — M2A P6). httpx (below) doubles as the
+# runtime client for the map-imagery tile fetch.
+reportlab==5.0.0
+matplotlib==3.11.0
+pillow==12.3.0
+# IANA timezone data for zoneinfo on Windows (report timestamps are
+# rendered in IST — the bank's timezone — not the server's).
+tzdata==2026.3
+
 # Testing
 pytest==9.1.1
 pytest-asyncio==1.4.0
 httpx==0.28.1
 aiosqlite==0.22.1
+pypdf==6.14.2

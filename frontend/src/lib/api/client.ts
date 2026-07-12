@@ -6,7 +6,7 @@ import type { paths } from "./schema";
 
 // NEXT_PUBLIC_ prefix required for the value to reach the browser bundle —
 // this is a base URL, not a secret, so that's the correct exposure.
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://127.0.0.1:8000";
+export const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://127.0.0.1:8000";
 
 export const apiClient = createClient<paths>({ baseUrl: API_BASE_URL });
 
