@@ -51,6 +51,14 @@ interface MockFarmMapProps {
   locked?: boolean;
 }
 
+// P4's FarmSavedPanel calls useRouter() (navigation to the job-status
+// route); jsdom has no Next app router, so provide a stub. Navigation
+// targets are asserted via this spy where relevant.
+const routerPush = vi.fn();
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ push: routerPush, replace: routerPush, prefetch: vi.fn() }),
+}));
+
 vi.mock("@/features/farm-drawing/farm-map", () => ({
   FarmMap: ({ onPolygonChange, locked }: MockFarmMapProps) =>
     createElement(
@@ -138,8 +146,14 @@ describe("farm creation flow (real backend)", () => {
     // Map must be locked after the save — no post-save geometry edits.
     expect(screen.getByTestId("mock-farm-map").getAttribute("data-locked")).toBe("true");
 
+    // P4: the report action is present and enabled (not clicked here —
+    // clicking fires a real Earth Engine job; the trigger + status flow
+    // is covered by the live E2E and the endpoint by backend tests).
+    const generateButton = screen.getByRole("button", { name: /generate climate report/i });
+    expect(generateButton.hasAttribute("disabled")).toBe(false);
+
     // And the workflow is restartable.
     await user.click(screen.getByRole("button", { name: /draw another farm/i }));
     expect(screen.queryByText("Farm saved")).toBeNull();
-  });
+  }, 20_000);
 });

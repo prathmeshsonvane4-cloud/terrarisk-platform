@@ -97,6 +97,31 @@ def test_water_history_returns_a_real_value():
     assert 0.0 <= summary.occurrence_percent <= 100.0
 
 
+@_requires_gee_credentials
+def test_rainfall_series_over_a_current_window_skips_unpublished_months():
+    """Regression test for a REAL failure found during M2A P4's live E2E:
+    the report generator's window ends at the current month boundary, but
+    CHIRPS publishes with a multi-week lag — a month with zero published
+    images produced a band-less sum() image, an empty reduceRegion
+    dictionary, and a server-side "Dictionary does not contain key:
+    'precipitation'" that failed the entire report job. With the null
+    default fix, unpublished months are skipped like cloud-blanked ones.
+    Uses the exact window arithmetic report_generator.py uses."""
+    from datetime import datetime, timezone
+
+    provider = GeeProvider()
+    end = datetime.now(timezone.utc).date().replace(day=1)
+    start = date(end.year, end.month - 3, 1) if end.month > 3 else date(end.year - 1, end.month + 9, 1)
+
+    observations = provider.get_rainfall_series(_SAMPLE_POLYGON_GEOJSON, start, end)
+
+    # Must not raise; up to 3 monthly totals, fewer if recent months are
+    # not yet published — never a crash, never a fabricated zero.
+    assert 0 <= len(observations) <= 3
+    for obs in observations:
+        assert obs.value >= 0.0
+
+
 def test_sar_backscatter_is_deliberately_unimplemented():
     """Not skipped by the credentials guard — this proves the deferred-SAR
     seam itself, which needs no live GEE connection."""

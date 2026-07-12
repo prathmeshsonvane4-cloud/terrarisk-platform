@@ -1050,3 +1050,52 @@ syntax to stay dependency-free.
 click-the-canvas coverage in a real headed browser (using the
 `data-map-loaded`/`data-map-idle` hooks from P2); this integration test
 remains as the fast, stack-level regression check.
+
+---
+
+### Empty-month guard in the GEE adapter — `ee.Algorithms.If(contains)` instead of a bare `Dictionary.get` (M2A P4)
+
+**Decision.** Every per-period `reduceRegion(...).get(band)` lookup in
+`gee_provider.py` (index series, rainfall series, rainfall climatology)
+is wrapped in `ee.Algorithms.If(stats.contains(band), stats.get(band),
+None)`, yielding null — which flows into the existing skip-this-month
+path (`_parse_monthly_features`) — whenever a compositing month contains
+zero source images.
+
+**Reason.** REAL production bug, found by M2A P4's live end-to-end run
+(the first-ever full report generated through the UI pipeline): the
+report window ends at the previous calendar-month boundary, but CHIRPS
+rainfall publishes with a multi-week lag, so the window's most recent
+month had zero published images. An empty collection's `sum()` is a
+band-less image, `reduceRegion` then returns an *empty dictionary* (not
+a null-valued key), and the server-side `Dictionary.get` threw
+"Dictionary does not contain key: 'precipitation'", failing the entire
+job. M1's live tests never caught it because they all queried
+fully-published past windows — the job pipeline was the first caller to
+touch a current-boundary window. The same latent crash existed in
+`get_index_time_series` for any scene-less month and is fixed
+identically.
+
+Two implementation notes worth recording: (1) the obvious fix —
+`stats.get(band, None)` — does NOT work: the Earth Engine Python client
+prunes a `None` default from the serialized call, silently reproducing
+the bare `.get`; verified by running the regression test against live
+GEE, which still failed. (2) Any non-null default (0, a sentinel) would
+fabricate a rainfall/index reading for an unpublished month — exactly
+the "no data must never become measured zero" rule the parser already
+enforces — so the `If(contains)` null-yield is the only correct shape.
+
+**Alternatives considered.** Shortening the lookback window to end one
+extra month earlier (hides rather than fixes — CHIRPS lag is variable,
+and Sentinel-2 gaps can produce empty months anywhere in the window);
+padding empty months with a zero-band image (fabricates data).
+
+**Trade-offs.** None — a month with no published data is now treated
+identically to a fully cloud-masked month, the sparse-data path the
+engine's confidence score was designed around from M1 (the live-verified
+report shows confidence 94.4%: exactly one skipped month out of 36).
+
+**Future migration path.** A live regression test
+(`test_rainfall_series_over_a_current_window_skips_unpublished_months`)
+uses the report generator's exact window arithmetic, so this class of
+bug fails the suite rather than a demo.

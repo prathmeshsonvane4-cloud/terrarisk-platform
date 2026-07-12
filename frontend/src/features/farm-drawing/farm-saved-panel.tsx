@@ -1,6 +1,9 @@
 "use client";
 
+import { useRouter } from "next/navigation";
+
 import { Button } from "@/components/ui/button";
+import { useTriggerReport } from "@/features/report/use-trigger-report";
 import { formatArea } from "@/lib/format";
 
 import type { Village } from "./types";
@@ -13,6 +16,17 @@ interface FarmSavedPanelProps {
 }
 
 export function FarmSavedPanel({ farm, village, onDrawAnother }: FarmSavedPanelProps) {
+  const router = useRouter();
+  const triggerReport = useTriggerReport();
+
+  function handleGenerate() {
+    triggerReport.mutate(farm.id, {
+      onSuccess: (data) => {
+        router.push(`/reports/status/${data.job_id}`);
+      },
+    });
+  }
+
   return (
     <div className="flex flex-col gap-3 rounded-lg border p-3 text-sm">
       <div>
@@ -28,11 +42,18 @@ export function FarmSavedPanel({ farm, village, onDrawAnother }: FarmSavedPanelP
         <p className="text-base font-medium tabular-nums">{formatArea(farm.area_ha)}</p>
       </div>
 
-      <p className="text-xs text-muted-foreground">
-        Climate report generation for this farm arrives in the next phase.
-      </p>
+      {triggerReport.isError && (
+        <p role="alert" className="text-xs text-destructive">
+          {triggerReport.error.message}
+        </p>
+      )}
 
-      <Button variant="outline" onClick={onDrawAnother}>
+      <Button onClick={handleGenerate} disabled={triggerReport.isPending || triggerReport.isSuccess}>
+        {triggerReport.isPending || triggerReport.isSuccess
+          ? "Starting analysis…"
+          : "Generate climate report"}
+      </Button>
+      <Button variant="outline" onClick={onDrawAnother} disabled={triggerReport.isPending}>
         Draw another farm
       </Button>
     </div>

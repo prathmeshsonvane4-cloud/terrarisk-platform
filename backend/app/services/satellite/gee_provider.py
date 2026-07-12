@@ -143,7 +143,19 @@ class GeeProvider(SatelliteDataProvider):
                 None,
                 {
                     "period_start": period_start.format("YYYY-MM-dd"),
-                    "value": stats.get("index_value"),
+                    # Guarded lookup: a month with NO scenes at all produces
+                    # a band-less composite, so reduceRegion returns an
+                    # EMPTY dictionary and a bare .get() throws server-side
+                    # ("Dictionary does not contain key"). Note .get(key,
+                    # default) can't express this — the Python client prunes
+                    # a None default from the call, and any other default
+                    # would fabricate a reading. The If(contains) guard
+                    # yields null, which flows into the existing
+                    # skip-this-month path (_parse_monthly_features). Found
+                    # live in M2A P4 — see get_rainfall_series.
+                    "value": ee.Algorithms.If(
+                        stats.contains("index_value"), stats.get("index_value"), None
+                    ),
                     "scene_count": month_images.size(),
                 },
             )
@@ -166,7 +178,28 @@ class GeeProvider(SatelliteDataProvider):
             period_end = ee.Date(period.get("end"))
             month_total = chirps.filterDate(period_start, period_end).sum()
             stats = month_total.reduceRegion(reducer=ee.Reducer.mean(), geometry=region, scale=5000, maxPixels=1e9)
-            return ee.Feature(None, {"period_start": period_start.format("YYYY-MM-dd"), "value": stats.get("precipitation")})
+            # Guarded lookup — REAL bug found during M2A P4's live E2E:
+            # CHIRPS publishes with a multi-week lag, so the lookback
+            # window's most recent month can have zero published images.
+            # An empty collection's sum() is a band-less image, reduceRegion
+            # then returns an EMPTY dictionary, and a bare .get() throws
+            # server-side, failing the whole report job. .get(key, default)
+            # can't express "default to null" (the Python client prunes a
+            # None default from the call, and any non-null default would
+            # fabricate a rainfall reading). The If(contains) guard yields
+            # null, so the unpublished month is skipped by
+            # _parse_monthly_features exactly like a fully cloud-masked
+            # month — the already-designed sparse-data path (the confidence
+            # score accounts for missing months by construction).
+            return ee.Feature(
+                None,
+                {
+                    "period_start": period_start.format("YYYY-MM-dd"),
+                    "value": ee.Algorithms.If(
+                        stats.contains("precipitation"), stats.get("precipitation"), None
+                    ),
+                },
+            )
 
         features = ee.FeatureCollection(period_dicts.map(_compute_period)).getInfo()["features"]
         return self._parse_monthly_features(features, periods)
@@ -191,7 +224,10 @@ class GeeProvider(SatelliteDataProvider):
                 stats = year_month_total.reduceRegion(
                     reducer=ee.Reducer.mean(), geometry=region, scale=5000, maxPixels=1e9
                 )
-                return stats.get("precipitation")
+                # Same empty-month guard as get_rainfall_series; the
+                # climatology's mean reducer simply averages over the
+                # years that do have data.
+                return ee.Algorithms.If(stats.contains("precipitation"), stats.get("precipitation"), None)
 
             yearly_totals = years.map(_year_total)
             normal = ee.List(yearly_totals).reduce(ee.Reducer.mean())
