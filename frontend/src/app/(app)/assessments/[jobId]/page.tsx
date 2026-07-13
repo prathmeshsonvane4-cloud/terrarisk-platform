@@ -9,7 +9,7 @@ import { STATUS_COPY } from "@/features/report/status-copy";
 import { useJobStatus } from "@/features/report/use-job-status";
 import { cn } from "@/lib/utils";
 
-export default function ReportStatusPage() {
+export default function AssessmentStatusPage() {
   const { jobId } = useParams<{ jobId: string }>();
   const router = useRouter();
   const { data: job, isPending, isError, error } = useJobStatus(jobId);
@@ -35,10 +35,10 @@ export default function ReportStatusPage() {
               {error.message}
             </p>
             <Link
-              href="/farms/new"
+              href="/assessments/new"
               className={cn(buttonVariants({ variant: "outline" }), "mt-1 self-start")}
             >
-              Back to farm mapping
+              Start a new assessment
             </Link>
           </>
         )}
@@ -58,10 +58,10 @@ export default function ReportStatusPage() {
 
             {job.status === "failed" && (
               <Link
-                href="/farms/new"
+                href="/assessments/new"
                 className={cn(buttonVariants({ variant: "outline" }), "mt-1 self-start")}
               >
-                Back to farm mapping
+                Start a new assessment
               </Link>
             )}
             {job.status === "done" && job.entity_id && (

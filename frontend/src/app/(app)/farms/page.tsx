@@ -1,0 +1,93 @@
+"use client";
+
+import Link from "next/link";
+
+import { RISK_BANDS } from "@/lib/risk-bands";
+import { formatArea } from "@/lib/format";
+import { useFarms } from "@/features/workspace/use-farms";
+import { cn } from "@/lib/utils";
+
+/**
+ * The Farms workspace index (Product Design v2 §7, screen 7) — every farm
+ * the officer owns or shares a branch with, each row already carrying its
+ * latest assessment and any in-flight run (GET /farms, M2B P7).
+ */
+export default function FarmsPage() {
+  const { data: farms, isPending, isError, error } = useFarms();
+
+  return (
+    <div className="mx-auto flex w-full max-w-4xl flex-1 flex-col gap-4 p-4 md:p-6">
+      <h1 className="text-lg font-semibold">Farms</h1>
+
+      {isPending && <p className="text-sm text-muted-foreground">Loading farms…</p>}
+
+      {isError && (
+        <p role="alert" className="text-sm text-muted-foreground">
+          {error.message}
+        </p>
+      )}
+
+      {!isPending && !isError && farms.length === 0 && (
+        <div className="rounded-lg border p-5 text-sm">
+          <p className="font-medium">No farms mapped yet</p>
+          <p className="mt-1 text-muted-foreground">
+            Farms mapped by you or a colleague at your branch will appear here.
+          </p>
+          <Link href="/assessments/new" className="mt-3 inline-block text-sm font-medium text-primary underline">
+            Map a farm
+          </Link>
+        </div>
+      )}
+
+      {!isPending && !isError && farms.length > 0 && (
+        <div className="flex flex-col divide-y rounded-lg border">
+          {farms.map((farm) => (
+            <Link
+              key={farm.id}
+              href={`/farms/${farm.id}`}
+              className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 text-sm hover:bg-muted"
+            >
+              <div>
+                <p className="font-medium">
+                  {farm.village_name}
+                  <span className="font-normal text-muted-foreground">
+                    {" "}
+                    · {farm.taluka_name}, {farm.district_name}
+                  </span>
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {formatArea(farm.area_ha)} · Mapped by {farm.officer_name}
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                {farm.active_job && (
+                  <span className="flex items-center gap-1.5 rounded-full border bg-muted/50 px-2 py-0.5 text-xs font-medium">
+                    <span aria-hidden className="size-1.5 animate-pulse rounded-full bg-primary" />
+                    {farm.active_job.status}
+                  </span>
+                )}
+                {farm.latest_assessment ? (
+                  <span
+                    className={cn(
+                      "rounded-full px-2 py-0.5 text-xs font-medium",
+                      RISK_BANDS[farm.latest_assessment.overall_band].chipClass,
+                    )}
+                  >
+                    {RISK_BANDS[farm.latest_assessment.overall_band].label} ·{" "}
+                    {Math.round(farm.latest_assessment.overall_score)}
+                  </span>
+                ) : (
+                  !farm.active_job && (
+                    <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
+                      Not assessed
+                    </span>
+                  )
+                )}
+              </div>
+            </Link>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}

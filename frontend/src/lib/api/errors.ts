@@ -19,3 +19,21 @@ export function extractApiErrorMessage(error: unknown): string {
   const message = (inner as { message?: unknown }).message;
   return typeof message === "string" ? message : GENERIC_MESSAGE;
 }
+
+/**
+ * Reads the `job_id` the backend attaches to a 409 "already generating"
+ * conflict (app/main.py's dict-detail extension, M2B P7 B5) — lets a
+ * conflict route straight to the run already in flight instead of just
+ * reporting failure. Returns null for any other error shape.
+ */
+export function extractConflictingJobId(error: unknown): string | null {
+  if (typeof error !== "object" || error === null || !("error" in error)) {
+    return null;
+  }
+  const inner = (error as { error?: unknown }).error;
+  if (typeof inner !== "object" || inner === null || !("job_id" in inner)) {
+    return null;
+  }
+  const jobId = (inner as { job_id?: unknown }).job_id;
+  return typeof jobId === "string" ? jobId : null;
+}

@@ -1293,3 +1293,111 @@ resolving the branchless case in Python (`if current_user.branch_id is
 None: return owner.id == current_user.id`) and only building a SQL
 clause from a real branch id — caught by the new test suite before any
 live traffic, not after.
+
+---
+
+### Workspace shell and route restructure — the wizard becomes one action among several (M2B P7 frontend)
+
+**Decision.** The one-shot funnel (`/farms/new` → `/reports/status/{id}`
+→ `/reports/{id}`, with `/` doing nothing but redirecting) is replaced
+by a persistent workspace shell (`components/workspace/app-shell.tsx`):
+a left rail on desktop, a Sheet-based drawer behind a menu button on
+mobile, both showing the same four destinations (Overview, Assessments,
+Farms, Reports), a persistent "+ New assessment" action, a live
+activity chip (count of pending/running assessments, polled only while
+something is actually in flight — `useAssessments()`'s existing
+adaptive `refetchInterval`), and a user chip with role + sign-out.
+Routes move to match: `/farms/new` → `/assessments/new`,
+`/reports/status/{jobId}` → `/assessments/{jobId}` (both `git mv`'d,
+preserving history and the P3 integration test unchanged except for
+its new location), and four new index/detail routes — `/` (Overview),
+`/assessments`, `/farms` + `/farms/{id}`, `/reports` — read entirely
+from the M2B P7 backend list endpoints. `(app)/layout.tsx` gains a real
+loading state (previously `return null` while `!isInitialized`) and
+deep-link preservation: an unauthenticated visit to any route now
+redirects to `/login?next={path}` and returns there after sign-in
+(`login-form.tsx`, plain `URLSearchParams` rather than
+`useSearchParams()` — avoids a Suspense-boundary requirement on a page
+that would otherwise need one purely for this). The `next` value is
+validated to be a same-origin path (`startsWith("/")`,
+`!startsWith("//")`) before use, closing the open-redirect a raw query
+value would otherwise permit.
+
+Farm detail's re-assess action reuses `useTriggerReport()`; a genuine
+409 (another tab/officer already re-assessing this farm) is caught via
+a new `ReportTriggerConflictError` carrying the backend's `job_id`
+(B5) and routed straight to `/assessments/{that job}` instead of
+surfacing raw failure text — the actual UI expression of the backend
+decision two entries above.
+
+**Reason.** Product Design v2 principle P1 ("the workspace is the
+product; the wizard is a feature") and the review finding it was
+written to fix: the funnel read as a scripted demo — leaving the report
+page stranded the officer with no way back to any prior work — despite
+every number in it being real and live-verified since P4. This phase
+makes nothing new computationally; it makes what already exists
+reachable and resumable.
+
+**Alternatives considered.** Keeping `/farms/new` as the canonical path
+and aliasing `/assessments/new` to it (rejected — a redirect alias is
+exactly the kind of leftover seam the redesign is meant to remove, and
+`git mv` costs nothing); a notification-center/toast system for the
+activity signal instead of a persistent header chip (deferred — Product
+Design v2 §10 explicitly reserves this for M5, once there are enough
+event types to justify one); `useSearchParams()` for the `next` param
+(rejected — would require wrapping `/login` in a Suspense boundary for
+a single query read that a browser API answers just as well).
+
+**Trade-offs.** Farm detail's wireframe (Product Design v2 §7.4) shows
+a read-only boundary map; neither `GET /farms` nor `GET /farms/{id}`
+carries geometry (only a completed report's payload does — the M2A P5
+enrichment lives on `ReportResponse`, not `FarmResponse`). Rather than
+reopen the just-verified-and-committed backend mid-frontend-pass for a
+field the design doc's own §8 backend-additions list (B1–B9) never
+actually calls out, or show placeholder map chrome for data that
+doesn't exist (explicitly forbidden — "no placeholder content, ever"),
+this phase ships Farm detail without that section. Flagged as an open
+gap for P8/P9 to close (`GET /farms/{id}` gaining `geometry` is a
+one-line additive schema change when picked up).
+
+**Bugs found and fixed during live verification.** (1) A `Button
+render={<Link href="/reports" />}` on the Overview page rendered a
+Base UI button primitive as an anchor element, which Base UI flags at
+runtime (`nativeButton` mismatch) since the component can no longer
+guarantee native button semantics — fixed by styling the `Link`
+directly with `buttonVariants()`, the pattern already used everywhere
+else in this codebase (`app-shell.tsx`'s own nav links), rather than
+wrapping it in `Button`. (2) A Tailwind `capitalize` class applied to
+an entire sentence ("running · started 1m ago") capitalized every
+word's first letter, not just the status word — Overview's in-progress
+card read "Started 1m Ago"; fixed by scoping `capitalize` to a nested
+span around just `{item.status}`.
+
+**Live verification.** Full workspace walkthrough against the real dev
+stack: deep-link preservation (unauthenticated visit to a real report
+URL → `/login?next=...` → back on that exact report after sign-in,
+confirmed via `window.location.pathname`); Overview/Farms/Assessments/
+Reports all rendering real persisted data (including farms/reports
+accumulated across every prior phase's live verification); the mobile
+drawer opening and auto-closing on navigation. The 409-conflict routing
+was verified with a genuine race, not a simulation: two separate
+browser tabs firing "Re-assess" on the same farm within the same
+second — one received the 202 and created the job, the other hit the
+409, extracted its `job_id`, and both tabs converged on the identical
+resulting report URL; the farm's history afterward showed exactly one
+new entry, confirming the M1 advisory lock prevented a duplicate score
+even under real concurrent UI action, not just concurrent curl
+requests. A console-error investigation during this pass (repeated
+`nativeButton` warnings that persisted across reloads and even a full
+dev-server restart) turned out to be the browser tool's console-message
+buffer never clearing within a long-lived tab — confirmed via a
+genuinely fresh tab showing zero errors after the real fix landed; a
+false lead worth recording so a future session doesn't chase the same
+ghost.
+
+**Tests.** Frontend: 32/32 (26 existing + a new `errors.test.ts`
+covering `extractApiErrorMessage` and the new `extractConflictingJobId`
+against both well-formed and malformed error envelopes). ESLint clean,
+`tsc --noEmit` clean, production build clean (10 routes, no route
+conflicts from the restructure). Backend untouched in this phase —
+still 117/117 from the prior commit.

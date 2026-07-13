@@ -22,7 +22,7 @@ export function FarmSavedPanel({ farm, village, onDrawAnother }: FarmSavedPanelP
   function handleGenerate() {
     triggerReport.mutate(farm.id, {
       onSuccess: (data) => {
-        router.push(`/reports/status/${data.job_id}`);
+        router.push(`/assessments/${data.job_id}`);
       },
     });
   }

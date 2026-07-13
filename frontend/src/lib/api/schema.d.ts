@@ -45,7 +45,16 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /**
+         * List Farms
+         * @description The Farms workspace index (M2B P7 — Product Design v2 §7, screen 7):
+         *     every farm the caller owns or shares a branch with, each carrying its
+         *     latest assessment (if any) and its currently in-flight run (if any) so
+         *     the list alone answers "what's the state of every farm I map." Two
+         *     small batch queries instead of a join, matching this codebase's
+         *     existing style (no window functions) and MVP-pilot data volume.
+         */
+        get: operations["list_farms_api_v1_farms_get"];
         put?: never;
         /**
          * Create Farm
@@ -77,6 +86,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/farms/{farm_id}/assessments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Farm Assessment History
+         * @description Every completed assessment for this farm, newest first, plus the
+         *     in-flight run if any — the Farm detail timeline (Product Design v2
+         *     §7.4). Same append-only RiskScore history the risk engine already
+         *     guarantees (Blueprint §04/§07); this endpoint is a read-model over it,
+         *     nothing new persisted.
+         */
+        get: operations["get_farm_assessment_history_api_v1_farms__farm_id__assessments_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/jobs/{job_id}": {
         parameters: {
             query?: never;
@@ -86,6 +119,35 @@ export interface paths {
         };
         /** Get Job */
         get: operations["get_job_api_v1_jobs__job_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/jobs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Assessments
+         * @description The Assessments workspace index (M2B P7 — Product Design v2 §7,
+         *     screen 5): every farm_report run the caller owns or shares a branch
+         *     with, farm context resolved regardless of run status.
+         *
+         *     `entity_id` is polymorphic by design (P4 decision, report_generator.py):
+         *     while a job is in flight or failed it holds the farm_id it was
+         *     triggered for; once DONE it is overwritten with the resulting
+         *     risk_score_id. Listing "every assessment with its farm" therefore means
+         *     resolving both shapes and merging them — no schema change, just reading
+         *     what's already there two different ways.
+         */
+        get: operations["list_assessments_api_v1_jobs_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -120,6 +182,32 @@ export interface paths {
         };
         /** Get Report */
         get: operations["get_report_api_v1_reports__risk_score_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/reports": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Reports
+         * @description The Reports workspace index (M2B P7 — Product Design v2 §7, screen
+         *     9): every issued report the caller owns or shares a branch with,
+         *     newest first — the auditor/manager entry point ("show me every report
+         *     issued," not "show me every farm"). One joined query; RiskScore is
+         *     append-only so this is simply every farm-scored row in scope, no
+         *     latest-per-farm collapsing (that collapsing is what the Farms index is
+         *     for — this index is intentionally the full issued-artifact ledger).
+         */
+        get: operations["list_reports_api_v1_reports_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -189,6 +277,91 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** ActiveJobSummary */
+        ActiveJobSummary: {
+            /**
+             * Job Id
+             * Format: uuid
+             */
+            job_id: string;
+            status: components["schemas"]["JobStatus"];
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
+        /**
+         * AssessmentListItem
+         * @description One farm-report run with its farm context resolved. Farm fields are
+         *     nullable because a completed job's entity_id was overwritten with the
+         *     risk-score id (P4 decision) — if that score's farm were ever deleted,
+         *     the run row must still list rather than crash the index.
+         */
+        AssessmentListItem: {
+            /**
+             * Job Id
+             * Format: uuid
+             */
+            job_id: string;
+            status: components["schemas"]["JobStatus"];
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** Farm Id */
+            farm_id: string | null;
+            /** Village Name */
+            village_name: string | null;
+            /** Area Ha */
+            area_ha: number | null;
+            /** Officer Name */
+            officer_name: string;
+            /** Risk Score Id */
+            risk_score_id: string | null;
+            /** Overall Score */
+            overall_score: number | null;
+            overall_band: components["schemas"]["RiskBand"] | null;
+            /** Error Message */
+            error_message: string | null;
+        };
+        /** AssessmentListResponse */
+        AssessmentListResponse: {
+            /** Items */
+            items: components["schemas"]["AssessmentListItem"][];
+            /** Total */
+            total: number;
+        };
+        /**
+         * AssessmentSummary
+         * @description The latest completed assessment for a farm — enough for a list row;
+         *     the full report stays behind GET /reports/{id}.
+         */
+        AssessmentSummary: {
+            /**
+             * Risk Score Id
+             * Format: uuid
+             */
+            risk_score_id: string;
+            /** Overall Score */
+            overall_score: number;
+            overall_band: components["schemas"]["RiskBand"];
+            /** Confidence */
+            confidence: number;
+            /**
+             * Computed At
+             * Format: date-time
+             */
+            computed_at: string;
+            /** Model Version */
+            model_version: string;
+        };
         /** FactorScoreResponse */
         FactorScoreResponse: {
             factor: components["schemas"]["RiskFactor"];
@@ -200,6 +373,21 @@ export interface components {
                 [key: string]: unknown;
             };
         };
+        /**
+         * FarmAssessmentHistoryResponse
+         * @description Full assessment history for one farm, newest first, plus the
+         *     in-flight run if any — the Farm detail timeline.
+         */
+        FarmAssessmentHistoryResponse: {
+            /**
+             * Farm Id
+             * Format: uuid
+             */
+            farm_id: string;
+            /** Items */
+            items: components["schemas"]["AssessmentSummary"][];
+            active_job: components["schemas"]["ActiveJobSummary"] | null;
+        };
         /** FarmCreateRequest */
         FarmCreateRequest: {
             /**
@@ -208,6 +396,48 @@ export interface components {
              */
             village_id: string;
             geometry: components["schemas"]["GeoJSONPolygon"];
+        };
+        /** FarmListItem */
+        FarmListItem: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Village Id
+             * Format: uuid
+             */
+            village_id: string;
+            /** Village Name */
+            village_name: string;
+            /** Taluka Name */
+            taluka_name: string;
+            /** District Name */
+            district_name: string;
+            /** Area Ha */
+            area_ha: number;
+            /** Officer Name */
+            officer_name: string;
+            /**
+             * Drawn By
+             * Format: uuid
+             */
+            drawn_by: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            latest_assessment: components["schemas"]["AssessmentSummary"] | null;
+            active_job: components["schemas"]["ActiveJobSummary"] | null;
+        };
+        /** FarmListResponse */
+        FarmListResponse: {
+            /** Items */
+            items: components["schemas"]["FarmListItem"][];
+            /** Total */
+            total: number;
         };
         /** FarmResponse */
         FarmResponse: {
@@ -363,6 +593,48 @@ export interface components {
              * @default 3
              */
             lookback_years: number;
+        };
+        /** ReportListItem */
+        ReportListItem: {
+            /**
+             * Risk Score Id
+             * Format: uuid
+             */
+            risk_score_id: string;
+            /**
+             * Farm Id
+             * Format: uuid
+             */
+            farm_id: string;
+            /** Village Name */
+            village_name: string;
+            /** Taluka Name */
+            taluka_name: string;
+            /** District Name */
+            district_name: string;
+            /** Area Ha */
+            area_ha: number;
+            /** Officer Name */
+            officer_name: string;
+            /** Overall Score */
+            overall_score: number;
+            overall_band: components["schemas"]["RiskBand"];
+            /** Confidence */
+            confidence: number;
+            /**
+             * Computed At
+             * Format: date-time
+             */
+            computed_at: string;
+            /** Model Version */
+            model_version: string;
+        };
+        /** ReportListResponse */
+        ReportListResponse: {
+            /** Items */
+            items: components["schemas"]["ReportListItem"][];
+            /** Total */
+            total: number;
         };
         /** ReportResponse */
         ReportResponse: {
@@ -554,6 +826,26 @@ export interface operations {
             };
         };
     };
+    list_farms_api_v1_farms_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FarmListResponse"];
+                };
+            };
+        };
+    };
     create_farm_api_v1_farms_post: {
         parameters: {
             query?: never;
@@ -618,6 +910,37 @@ export interface operations {
             };
         };
     };
+    get_farm_assessment_history_api_v1_farms__farm_id__assessments_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                farm_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FarmAssessmentHistoryResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_job_api_v1_jobs__job_id__get: {
         parameters: {
             query?: never;
@@ -645,6 +968,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_assessments_api_v1_jobs_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssessmentListResponse"];
                 };
             };
         };
@@ -711,6 +1054,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_reports_api_v1_reports_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReportListResponse"];
                 };
             };
         };

@@ -41,8 +41,8 @@ export default function ReportPage() {
           <p role="alert" className="text-muted-foreground">
             {error.message}
           </p>
-          <Link href="/farms/new" className={cn(buttonVariants({ variant: "outline" }), "self-start")}>
-            Back to farm mapping
+          <Link href="/" className={cn(buttonVariants({ variant: "outline" }), "self-start")}>
+            Back to workspace
           </Link>
         </div>
       </div>
@@ -76,8 +76,11 @@ export default function ReportPage() {
           </p>
         </div>
         <div className="flex items-start gap-2">
-          <Link href="/farms/new" className={buttonVariants({ variant: "outline", size: "sm" })}>
-            Map another farm
+          <Link href={`/farms/${report.farm_id}`} className={buttonVariants({ variant: "outline", size: "sm" })}>
+            View farm
+          </Link>
+          <Link href="/assessments/new" className={buttonVariants({ variant: "outline", size: "sm" })}>
+            New assessment
           </Link>
           <DownloadPdfButton reportId={report.id} />
         </div>
