@@ -1190,3 +1190,106 @@ matplotlib, pillow, tzdata — the last because report timestamps
 render in IST, the bank's timezone, and Windows has no system tz
 database). Live-verified end to end: browser download of the Killari
 report (2.7 MB, 2 pages) matches the dashboard field-for-field.
+
+---
+
+## M2B-level implementation decisions
+
+M2B is the Product Design v2 redesign (`docs/Product_Design_v2.md`,
+approved 12 Jul 2026): TerraRisk from a one-shot assessment funnel to a
+workspace-first commercial SaaS product, phased P7 (Workspace) → P8
+(Honest Progress) → P9 (Evidence & Explainability) → P10 (Workflow
+Hardening) → P11 (Final UX Polish). The M1 backend architecture, GEE
+pipeline, Risk Engine, and PDF renderer are the approved foundation and
+are not redesigned — M2B additions are strictly additive reads over
+already-persisted tables, no new writes, no schema migration.
+
+### Workspace list endpoints — batch queries over existing tables, SQL-expression twin of the existing owner-or-branch rule (M2B P7)
+
+**Decision.** Four new read-only endpoints back the workspace screens
+(Product Design v2 §7): `GET /farms` (every farm the caller owns or
+shares a branch with, each carrying its latest completed assessment and
+current in-flight job if any), `GET /farms/{id}/assessments` (a farm's
+full append-only score history plus its active job — the Farm detail
+timeline), `GET /jobs` (every farm-report run with farm context
+resolved, doubling as the Assessments index), and `GET /reports` (every
+issued report — the auditor/manager entry point, one row per
+`risk_score`, deliberately not collapsed to latest-per-farm the way the
+Farms index is). All four are scoped by a new `owned_or_branch_filter()`
+helper in `app/api/deps.py` — the SQL-expression twin of the existing
+`user_can_access_owned_resource()` used by the single-resource GET
+endpoints, so both code paths enforce the identical branch-scoped
+visibility rule (Product Design v2 §5) rather than two independently
+maintained ones. `GET /jobs` and `GET /farms` resolve the
+`Job.entity_id` polymorphism the P4 background-task design already
+established — while a job is in flight or failed, `entity_id` is the
+farm_id; once DONE it's overwritten with the resulting `risk_score_id`
+— by batch-fetching both shapes and merging in Python, matching this
+codebase's existing no-window-functions style at pilot data volume
+(dozens to low hundreds of rows, not millions).
+
+**Reason.** Product Design v2 principle P1 ("the workspace is the
+product; the wizard is a feature") and the M2A review finding that
+follows from it: today's app has no way back to any prior work once the
+report page is left, which reads as a scripted demo regardless of how
+real the underlying pipeline is. These four endpoints are the entire
+backend surface the workspace needs — no new tables, no new write paths,
+purely read-models over data every prior phase already persists.
+
+**Alternatives considered.** A single combined `/workspace` endpoint
+returning everything at once (rejected — couples four independently
+cacheable, independently paginatable screens into one brittle response
+shape, and none of the four lists share a natural join key cleanly
+enough to justify it); pushing the farm/score merge into a single SQL
+query with window functions (rejected for now — adds a query pattern
+this codebase doesn't otherwise use, for a saving that only matters
+past pilot scale; revisit if a branch's farm count grows beyond a page).
+
+**Trade-offs.** No pagination yet on any of the four lists (matches
+every other endpoint in this codebase — none paginate) — acceptable at
+DCCB-pilot branch scale, must be added before a multi-branch rollout
+with hundreds of farms. `GET /reports` is O(all issued reports in
+scope) with no date/band filtering yet; filtering is UI-only until a
+query-param contract is worth adding (P9/P10 territory once the Reports
+screen has real filter UI to drive it).
+
+---
+
+### 409-conflict payload carries the in-flight job id (M2B P7 · B5)
+
+**Decision.** `trigger_report`'s existing 409 (a report already running
+for this farm — the `pg_advisory_xact_lock` TOCTOU fix from M2A) now
+raises `HTTPException(409, detail={"message": ..., "job_id": ...})`
+instead of a bare string. The global exception handler
+(`app/main.py`) was extended to accept either a string or a dict
+`detail`: a dict's `"message"` key becomes the envelope's `message`
+field as before, and any other keys are merged into the same `error`
+object — so every existing caller that only ever reads `error.message`
+is unaffected, while this one call site gains a structured `job_id` the
+frontend can route to directly instead of just displaying failure text.
+
+**Reason.** Product Design v2 §7.2: hitting the 409 must not be a dead
+end. The advisory lock already knows exactly which job is in flight —
+surfacing its id turns "you can't start a new one" into "here's the one
+already running," matching the honest-progress principle (P2) that a
+conflict on real concurrent work should route to that work, not just
+report failure.
+
+**Trade-offs.** None — purely additive to the error envelope; verified
+by both the existing `test_trigger_report_rejects_duplicate_in_flight_request`
+(still 409, unchanged shape assertions) and a new test asserting the
+`job_id` round-trips, live-verified with two genuinely concurrent
+triggers over real HTTP (not just the ASGI test transport) against the
+live dev database, producing a real 202/409 pair with the 409 carrying
+the exact id the 202 returned.
+
+**Bug found and fixed during implementation.** The first cut of
+`owned_or_branch_filter()` called `current_user.branch_id.is_not(None)`
+— but `current_user` is an already-loaded ORM *instance* here, not a
+mapped class or alias, so `.branch_id` is a concrete Python value
+(`UUID | None`), and calling a SQLAlchemy column method on it raised
+`AttributeError` on every branch-scoped list request. Fixed by
+resolving the branchless case in Python (`if current_user.branch_id is
+None: return owner.id == current_user.id`) and only building a SQL
+clause from a real branch id — caught by the new test suite before any
+live traffic, not after.

@@ -48,10 +48,22 @@ app.include_router(reports_router, prefix=API_V1_PREFIX)
 @app.exception_handler(HTTPException)
 async def _http_exception_handler(request: Request, exc: HTTPException) -> JSONResponse:
     """Single error envelope (Blueprint §03) — every failure response has
-    the same {"error": {"code", "message"}} shape, regardless of endpoint."""
+    the same {"error": {"code", "message", ...}} shape, regardless of
+    endpoint. `detail` is normally a plain string; a handful of call sites
+    (e.g. the 409 on a duplicate in-flight report — M2B P7 B5) need to
+    carry one extra structured field (job_id) so the client can route
+    straight to it instead of just reading an error string. Passing a dict
+    detail with a "message" key adds that field to the envelope without
+    changing the shape any existing caller relies on.
+    """
+    if isinstance(exc.detail, dict):
+        message = exc.detail.get("message", "")
+        extra = {k: v for k, v in exc.detail.items() if k != "message"}
+    else:
+        message, extra = exc.detail, {}
     return JSONResponse(
         status_code=exc.status_code,
-        content={"error": {"code": exc.status_code, "message": exc.detail}},
+        content={"error": {"code": exc.status_code, "message": message, **extra}},
         headers=getattr(exc, "headers", None),
     )
 

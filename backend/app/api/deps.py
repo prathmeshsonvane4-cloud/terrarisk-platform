@@ -4,8 +4,9 @@ from uuid import UUID
 import jwt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.sql import ColumnElement
 
 from app.core.security import decode_access_token
 from app.database.session import get_db
@@ -71,3 +72,22 @@ async def user_can_access_owned_resource(db: AsyncSession, current_user: AppUser
         return False
     owner = await db.get(AppUser, owner_id)
     return owner is not None and owner.branch_id == current_user.branch_id
+
+
+def owned_or_branch_filter(current_user: AppUser, owner: type[AppUser]) -> ColumnElement[bool]:
+    """SQL-expression twin of `user_can_access_owned_resource`, for list
+    endpoints that must scope a query rather than check one already-loaded
+    row (M2B P7 workspace lists — Product Design v2 §5 "branch-scoped
+    visibility"). `owner` is an AppUser aliased onto the resource's owner
+    column by the caller's join. Same rule, same effect: a resource outside
+    the caller's own-or-branch scope is simply absent from the result set,
+    never revealed via a total count or an error message.
+
+    `current_user` is an already-loaded ORM instance (not a column/alias),
+    so `current_user.branch_id` is a concrete Python value here, never a
+    SQL expression — the branchless case is resolved in Python, not pushed
+    into the query, and only a real branch id ever becomes a SQL clause.
+    """
+    if current_user.branch_id is None:
+        return owner.id == current_user.id
+    return or_(owner.id == current_user.id, owner.branch_id == current_user.branch_id)

@@ -22,7 +22,7 @@ from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
-from app.api.deps import get_current_user, require_role, user_can_access_owned_resource
+from app.api.deps import get_current_user, owned_or_branch_filter, require_role, user_can_access_owned_resource
 from app.core.config import get_settings
 from app.database.session import get_db
 from app.models.admin import AdminBoundary
@@ -41,6 +41,7 @@ from app.schemas.report import (
     ReportSeries,
     ReportTriggerResponse,
 )
+from app.schemas.workspace import ReportListItem, ReportListResponse
 from app.services.reporting.map_snapshot import fetch_map_snapshot
 from app.services.reporting.pdf_renderer import PDF_LAYOUT_VERSION, render_report_pdf
 from app.services.reporting.report_generator import generate_farm_report
@@ -107,8 +108,18 @@ async def trigger_report(
             Job.status.in_([JobStatus.PENDING, JobStatus.RUNNING]),
         )
     )
-    if in_flight.scalar_one_or_none() is not None:
-        raise HTTPException(status.HTTP_409_CONFLICT, detail="A report is already being generated for this farm")
+    in_flight_job = in_flight.scalar_one_or_none()
+    if in_flight_job is not None:
+        # job_id travels alongside the message (M2B P7 B5 — Product Design
+        # v2 §7.2) so the UI can route straight to the existing run instead
+        # of just reporting failure to start a new one.
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            detail={
+                "message": "A report is already being generated for this farm",
+                "job_id": str(in_flight_job.id),
+            },
+        )
 
     # entity_id holds farm_id while the job is in flight (for the
     # in-progress check above); generate_farm_report() overwrites it with
@@ -225,6 +236,55 @@ async def get_report(
     db: AsyncSession = Depends(get_db),
 ) -> ReportResponse:
     return await _load_report_response(risk_score_id, current_user, db)
+
+
+@router.get("/reports", response_model=ReportListResponse)
+async def list_reports(
+    current_user: AppUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> ReportListResponse:
+    """The Reports workspace index (M2B P7 — Product Design v2 §7, screen
+    9): every issued report the caller owns or shares a branch with,
+    newest first — the auditor/manager entry point ("show me every report
+    issued," not "show me every farm"). One joined query; RiskScore is
+    append-only so this is simply every farm-scored row in scope, no
+    latest-per-farm collapsing (that collapsing is what the Farms index is
+    for — this index is intentionally the full issued-artifact ledger)."""
+    taluka = aliased(AdminBoundary)
+    district = aliased(AdminBoundary)
+    officer = aliased(AppUser)
+
+    rows = (
+        await db.execute(
+            select(RiskScore, FarmPolygon, AdminBoundary.name, taluka.name, district.name, officer.full_name)
+            .join(FarmPolygon, RiskScore.entity_id == FarmPolygon.id)
+            .join(AdminBoundary, FarmPolygon.village_id == AdminBoundary.id)
+            .join(taluka, AdminBoundary.parent_id == taluka.id)
+            .join(district, taluka.parent_id == district.id)
+            .join(officer, FarmPolygon.drawn_by == officer.id)
+            .where(RiskScore.entity_type == RiskEntityType.FARM, owned_or_branch_filter(current_user, officer))
+            .order_by(RiskScore.computed_at.desc())
+        )
+    ).all()
+
+    items = [
+        ReportListItem(
+            risk_score_id=score.id,
+            farm_id=farm.id,
+            village_name=village_name,
+            taluka_name=taluka_name,
+            district_name=district_name,
+            area_ha=farm.area_ha,
+            officer_name=officer_name,
+            overall_score=score.overall_score,
+            overall_band=score.overall_band,
+            confidence=score.confidence,
+            computed_at=score.computed_at,
+            model_version=score.model_version,
+        )
+        for score, farm, village_name, taluka_name, district_name, officer_name in rows
+    ]
+    return ReportListResponse(items=items, total=len(items))
 
 
 def _render_pdf_blocking(report: ReportResponse) -> bytes:
