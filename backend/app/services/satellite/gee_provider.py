@@ -139,6 +139,14 @@ class GeeProvider(SatelliteDataProvider):
             month_images = joined.filterDate(period_start, period_end)
             composite = month_images.map(_mask_clouds_and_compute_index).mean()
             stats = composite.reduceRegion(reducer=ee.Reducer.mean(), geometry=region, scale=10, maxPixels=1e9)
+            # The real Sentinel-2 acquisition dates that fed this month's
+            # composite (M2B P9 — Blueprint §08 data lineage): each image's
+            # own system:time_start, formatted server-side so a single
+            # getInfo() below still returns everything in one round trip.
+            def _format_scene_date(millis):
+                return ee.Date(millis).format("YYYY-MM-dd")
+
+            scene_dates = month_images.aggregate_array("system:time_start").map(_format_scene_date)
             return ee.Feature(
                 None,
                 {
@@ -157,6 +165,7 @@ class GeeProvider(SatelliteDataProvider):
                         stats.contains("index_value"), stats.get("index_value"), None
                     ),
                     "scene_count": month_images.size(),
+                    "scene_dates": scene_dates,
                 },
             )
 
@@ -260,13 +269,26 @@ class GeeProvider(SatelliteDataProvider):
         """Converts Earth Engine's raw feature list into IndexObservation
         rows, one per requested period. A month whose reduceRegion returned
         null (no unmasked pixels — e.g. persistent monsoon cloud cover) is
-        skipped entirely rather than coerced into a misleading zero."""
+        skipped entirely rather than coerced into a misleading zero.
+
+        `scene_dates` is only present on features from get_index_time_series
+        (real Sentinel-2 acquisition dates — M2B P9); get_rainfall_series's
+        features never carry it, since CHIRPS is a daily gridded product
+        with no discrete "scene" concept, so it defaults honestly to empty
+        rather than fabricating a value."""
         observations: list[IndexObservation] = []
         for feature, (period_start, period_end) in zip(features, periods, strict=True):
-            value = feature["properties"].get("value")
+            properties = feature["properties"]
+            value = properties.get("value")
             if value is None:
                 continue
+            scene_dates = [date.fromisoformat(d) for d in properties.get("scene_dates") or []]
             observations.append(
-                IndexObservation(period_start=period_start, period_end=period_end, value=float(value))
+                IndexObservation(
+                    period_start=period_start,
+                    period_end=period_end,
+                    value=float(value),
+                    source_scene_dates=scene_dates,
+                )
             )
         return observations

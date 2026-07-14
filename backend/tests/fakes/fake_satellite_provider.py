@@ -50,7 +50,16 @@ class FakeSatelliteDataProvider(SatelliteDataProvider):
         periods = _monthly_periods(start, end)
         value = self._index_values.get(index, 0.5)
         return [
-            IndexObservation(period_start=p_start, period_end=p_end, value=value)
+            IndexObservation(
+                period_start=p_start,
+                period_end=p_end,
+                value=value,
+                # Two plausible Sentinel-2 passes per month (real revisit
+                # cadence is ~5 days) — deterministic so tests can assert
+                # on exact dates, mirroring what GeeProvider now actually
+                # populates from system:time_start (M2B P9).
+                source_scene_dates=[p_start.replace(day=8), p_start.replace(day=23)],
+            )
             for i, (p_start, p_end) in enumerate(periods)
             if i not in self._missing_months
         ]

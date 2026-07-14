@@ -78,3 +78,9 @@ class RiskResult:
     factors: list[FactorResult]
     model_version: str
     weights_version_id: str
+    # The plain weighted average of factor scores, BEFORE the floor rule
+    # (Blueprint §07) can raise it — persisted so the Method tab can show
+    # honest score anatomy (M2B P9): when this differs from overall_score,
+    # the floor rule fired, and the UI must say so rather than implying
+    # the four contribution bars simply sum to the composite.
+    weighted_average_score: float

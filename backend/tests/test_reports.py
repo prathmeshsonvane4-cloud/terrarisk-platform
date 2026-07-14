@@ -229,6 +229,21 @@ async def test_full_service_1_workflow_end_to_end(api_client, scenario):
     assert len(report["series"]["rainfall"]) > 0
     assert all(point["value"] is not None for point in report["series"]["ndvi"])
 
+    # M2B P9 — Evidence & Method payload, through the real HTTP response.
+    assert report["evidence"]["observation_window_start"] is not None
+    assert report["evidence"]["observation_window_end"] is not None
+    assert report["evidence"]["expected_months"] == len(report["series"]["ndvi"]) or (
+        report["evidence"]["expected_months"] >= len(report["series"]["ndvi"])
+    )  # expected >= usable always; equal only when nothing was skipped
+    assert report["method"]["weights_version_id"] == str(scenario["config"].id)
+    assert report["method"]["weights"] == {f.value: 0.25 for f in RiskFactor}
+    assert report["method"]["floor_threshold"] == 80.0
+    assert report["method"]["weighted_average_score"] is not None
+    # Real Sentinel-2 scene dates reach the HTTP response for NDVI, honestly
+    # absent for rainfall (CHIRPS has no per-scene concept).
+    assert any(point["source_dates"] for point in report["series"]["ndvi"])
+    assert all(point["source_dates"] == [] for point in report["series"]["rainfall"])
+
 
 @pytest.mark.asyncio
 async def test_trigger_report_rejects_unknown_farm(api_client, scenario):

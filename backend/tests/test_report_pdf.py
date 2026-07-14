@@ -15,7 +15,9 @@ from app.models.enums import RiskBand, RiskFactor
 from app.schemas.report import (
     FactorScoreResponse,
     ObservationPoint,
+    ReportEvidenceContext,
     ReportFarmContext,
+    ReportMethodContext,
     ReportResponse,
     ReportSeries,
 )
@@ -88,6 +90,18 @@ def _full_report() -> ReportResponse:
             mndwi=_series(base=-0.3),
             ndmi=_series(base=-0.05),
             rainfall=_series(base=120.0),
+        ),
+        evidence=ReportEvidenceContext(
+            observation_window_start=date(2023, 7, 1),
+            observation_window_end=date(2026, 7, 1),
+            expected_months=36,
+        ),
+        method=ReportMethodContext(
+            weights_version_id=uuid4(),
+            weights={f.value: 0.25 for f in RiskFactor},
+            weights_effective_from=datetime(2026, 1, 1, tzinfo=timezone.utc),
+            floor_threshold=80.0,
+            weighted_average_score=41.94,
         ),
     )
 

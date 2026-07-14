@@ -31,6 +31,11 @@ class ObservationPoint(BaseModel):
 
     period_start: date
     value: float
+    # The real Sentinel-2 acquisition dates that fed this month's composite
+    # (M2B P9 Evidence tab). Always empty for rainfall — CHIRPS is a daily
+    # gridded product with no discrete "scene" concept, never fabricated
+    # dates standing in for one.
+    source_dates: list[date] = Field(default_factory=list)
 
 
 class ReportSeries(BaseModel):
@@ -58,6 +63,39 @@ class ReportFarmContext(BaseModel):
     officer_name: str
 
 
+class ReportEvidenceContext(BaseModel):
+    """Answers 'which observations contributed' (M2B P9 Evidence tab).
+    Both fields are the exact (start, end) _run_pipeline actually queried
+    Earth Engine with — persisted at compute time (RiskScore.observation_
+    window_start/end), never re-derived. None for reports computed before
+    this column existed; the frontend shows the rest of the report
+    normally and simply omits window-dependent Evidence detail."""
+
+    observation_window_start: date | None
+    observation_window_end: date | None
+    # Calendar months in [window_start, window_end) — the same
+    # _monthly_periods() the pipeline itself used, so this can never drift
+    # from what a given report actually expected to observe.
+    expected_months: int | None
+
+
+class ReportMethodContext(BaseModel):
+    """Answers 'why this score' (M2B P9 Method tab) — the versioned
+    weights and floor rule actually applied, read back from config_weight
+    via risk_score.weights_version_id. Never recomputed: RiskEngine.compute()
+    is the only place factor-to-composite arithmetic happens; this is a
+    read-only reflection of its already-persisted inputs and output."""
+
+    weights_version_id: UUID
+    weights: dict[str, float]
+    weights_effective_from: datetime
+    floor_threshold: float
+    # The plain weighted average before the floor rule could raise it —
+    # None only for legacy rows computed before this column existed.
+    # When present and different from overall_score, the floor rule fired.
+    weighted_average_score: float | None
+
+
 class ReportResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -75,3 +113,7 @@ class ReportResponse(BaseModel):
     # dashboard and (P6) the PDF, per Blueprint §08's one-artifact rule.
     farm: ReportFarmContext
     series: ReportSeries
+    # M2B P9 additive enrichment — Evidence & Method tabs read this same
+    # payload; no second endpoint, no recomputation.
+    evidence: ReportEvidenceContext
+    method: ReportMethodContext

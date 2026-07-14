@@ -1559,3 +1559,164 @@ project — component test assertions use plain DOM properties
 (`.textContent`, `.className`), matching the one prior integration
 test's existing convention, rather than adding a new dependency for
 this phase alone.
+
+---
+
+### Evidence & Method tabs, deterministic Recommendation — a genuine bug found and fixed along the way (M2B P9, backend addition B3)
+
+**Decision.** The report page gains two new tabs alongside the existing
+dashboard (now "Report"): **Evidence** (observation window, per-index
+monthly coverage strips, real Sentinel-2 scene acquisition dates, and
+the confidence calculation spelled out arithmetically) and **Method**
+(score anatomy — weight × value → contribution → composite, honest
+about the floor rule when it fired — band thresholds, factor
+definitions, and assumptions & limitations). A new **Recommendation**
+block (Assessment Summary / Primary Drivers / Recommended Action) sits
+under the verdict on the Report tab, deterministic and keyed only on
+`overall_band` + `confidence` + factor scores already in the payload
+(`features/report/recommendation.ts`).
+
+Three additive, genuinely-required backend fields make this possible
+without any recomputation at read time (Blueprint §03):
+`risk_score.observation_window_start/end` (the exact window
+`_run_pipeline` queried Earth Engine with, persisted once at compute
+time) and `risk_score.weighted_average_score` (the plain weighted
+average `RiskEngine.compute()` already calculates internally as a local
+variable, now returned on `RiskResult` and persisted — not
+re-derived). `ReportResponse` gained `evidence` (window +
+`expected_months`, computed by reusing `gee_provider._monthly_periods`
+against the persisted window — the identical function the pipeline
+itself used, not a reimplementation) and `method` (weights + effective
+date, read back from `config_weight` via the already-existing
+`weights_version_id` foreign key, plus `floor_threshold` and
+`weighted_average_score`). Migration `0004_report_evidence_fields`,
+nullable throughout — pre-existing reports simply show less Evidence/
+Method detail, never an error.
+
+**A real bug found and fixed, not just a new field.** Product Design
+v2 §7.5 promised "the real Sentinel-2 acquisition dates that fed the
+composite" from `satellite_observation.source_dates` — a column that
+has existed since M1. Investigating what the Evidence tab would
+actually show revealed it was **always an empty list**: `GeeProvider.
+get_index_time_series`'s `_compute_period` never computed per-image
+dates, and `_parse_monthly_features` never read a `source_scene_dates`
+field into `IndexObservation` from anywhere. The M1 "data lineage"
+promise for scene dates had never been wired up in the real adapter —
+only the column existed, not the query filling it. Fixed by having
+`_compute_period` aggregate each month's Sentinel-2 images'
+`system:time_start` server-side (`aggregate_array` + `ee.Date.format`,
+returned in the same `getInfo()` call — no extra round trip) and
+`_parse_monthly_features` parse those into `IndexObservation.
+source_scene_dates`. `FakeSatelliteDataProvider` updated to populate
+deterministic fake dates for the three optical indices, left honestly
+empty for rainfall (CHIRPS is a daily gridded product with no discrete
+"scene," never fabricated). Rather than ship an Evidence tab with a
+silently-broken feature or invent placeholder dates — both explicitly
+forbidden by this phase's brief — the actual gap was closed.
+Live-verified against real Earth Engine (see below): real dates with
+the genuine ~5-day Sentinel-2 revisit cadence.
+
+**Confidence arithmetic, shown honestly, not simplified.**
+`RiskEngine._compute_confidence` averages completeness across NDVI,
+MNDWI, and NDMI only — rainfall is deliberately excluded (CHIRPS isn't
+cloud-limited the same way). The Evidence tab reproduces this exact
+formula from the payload's own series lengths and `expected_months`
+— `(NDVI u/e + MNDWI u/e + NDMI u/e) / 3` — rather than showing a
+simplified "35/36" for one series that would misrepresent how the
+number is actually computed. Live-verified to match the persisted
+`confidence` value exactly (92% both ways on the same report).
+
+**Score anatomy is honest about the floor rule.** `RiskEngine.compute()`
+can raise `overall_score` above the plain weighted average when any
+factor reaches the severe floor threshold (existing M1 logic,
+unchanged). Showing four contribution bars that visually imply "these
+sum to the composite" would misrepresent the score on any report where
+the floor rule fired. The Method tab compares the persisted
+`weighted_average_score` to `overall_score`: when they differ, it shows
+the pre-floor weighted average plus an explicit "floor rule applied"
+explanation before the composite; when they're equal (the floor rule
+never fired), it shows only the composite — never a spurious diagram
+implying arithmetic that didn't happen. Covered by a dedicated
+component test (`method-tab.test.tsx`) exercising both branches, since
+the one real report live-verified against did not happen to trigger
+the floor rule.
+
+**A judgment call, documented for review.** The Recommendation's
+"indicative only" qualifier fires below `RECOMMENDATION_CONFIDENCE_
+THRESHOLD = 70`. Product Design v2 specifies the qualifier's existence
+but not its exact cutoff. 70% was chosen as a conservative line —
+below it, on average more than 10 of 36 expected optical months were
+unusable. This is a fixed product-level constant (like
+`BAND_THRESHOLDS`), not part of the versioned risk-engine config
+surface, and is called out explicitly here for founder review; it is
+trivially adjustable without touching any other logic.
+
+**Scope deferral, not silent omission.** Product Design v2 §7.5 also
+specifies a PDF "Evidence & Method appendix" (`PDF_LAYOUT_VERSION`
+bump). This message's own verification checklist covers Evidence tab,
+Method tab, Recommendation, Refresh, and Navigation — it does not
+mention the PDF. Rather than either silently expand scope into
+un-requested, unverified PDF/reportlab work, or silently drop an
+approved design-doc requirement, this phase ships the complete web
+experience and explicitly flags the PDF appendix as the next piece of
+already-approved scope, unchanged from the design doc. `PDF_LAYOUT_
+VERSION` is untouched this phase; `test_report_pdf.py`'s 11 tests
+still pass unmodified against the extended `ReportResponse` shape,
+confirming no regression.
+
+**Alternatives considered.** Recomputing `expected_months` via a fresh
+`date` calculation instead of reusing `_monthly_periods` (rejected —
+reusing the exact function the pipeline called eliminates any
+possibility of drift, and it was already imported cross-module by
+`report_generator.py`, so this isn't a new coupling). Persisting a
+`floor_rule_applied` boolean instead of `weighted_average_score`
+(rejected — the two raw numbers let the UI show the actual pre-floor
+value, not just a flag, at no extra cost). Making the Evidence/Method
+tabs URL-synced routes or query params (rejected for this phase — adds
+`useSearchParams()` Suspense-boundary complexity for a same-page tab
+switch with no deep-linking requirement in the brief; local component
+state is simpler and a hard refresh reconstructing to the Report tab
+is reasonable, not a regression).
+
+**Live verification.** A newly created, guaranteed-uncached farm's
+report was generated against real Earth Engine and inspected at every
+layer: the raw `risk_score` row in Postgres (`observation_window_start
+= 2023-07-01`, `_end = 2026-07-01`, `weighted_average_score` equal to
+`overall_score` — this farm's factors never reached the floor
+threshold); the raw `satellite_observation.source_dates` JSONB
+(`["2023-08-04", "2023-08-09", ...]` — a genuine ~5-day Sentinel-2
+revisit pattern, confirming the GeeProvider fix works against live
+data, not just the deterministic fake); the full HTTP response
+(confidence arithmetic `(NDVI 33/36 + MNDWI 33/36 + NDMI 33/36) / 3 =
+92%` matching the persisted `confidence` field exactly); and the same
+report rendered in a real browser tab — Recommendation block with real
+primary drivers (the three factors that actually scored High), Evidence
+tab with real coverage strips and an expandable scene-date disclosure
+showing the same real dates from Postgres, Method tab with real
+per-factor contribution bars summing correctly to the composite. A
+second independent fresh browser tab confirmed zero console errors.
+Refresh-mid-tab was verified by switching to the Evidence tab, hard-
+reloading, and confirming the page reconstructed entirely from a fresh
+`GET /reports/{id}` (defaulting to the Report tab, as designed — no
+crash, no stale state). Navigation was verified round-trip: report →
+Farm detail (via "View farm") → back into the same report from its
+history entry, plus the in-page "How was this score calculated?" link
+correctly switching to the Method tab without a route change. The PDF
+download was also re-verified live (200 OK) against the extended
+payload shape to confirm no regression.
+
+**Tests.** Backend: 128/128 (125 prior + 3 new: `RiskEngine.
+weighted_average_score` transparency for both the floor-triggered and
+never-triggered cases; `satellite_observation.source_dates` populated
+for the three optical indices and honestly empty for rainfall;
+`risk_score.observation_window_start/end` and `weighted_average_score`
+persisted end to end through a fresh pipeline run) plus extensions to
+two existing tests (the full HTTP workflow test now asserts `evidence`/
+`method`/`source_dates` in the live response; the PDF/report-text
+fixture builders updated for the two new required payload fields, no
+new failures). Frontend: 51/51 (48 prior + 3 new `MethodTab` tests
+covering the floor-rule branch, the no-floor-rule branch, and the
+mirrored band-threshold table — plus the 6 `recommendation.test.ts`
+tests already covered above). ESLint clean, `tsc --noEmit` clean,
+production build clean (`/reports/[id]` grew 110 kB → 121 kB, all 10
+routes unchanged).

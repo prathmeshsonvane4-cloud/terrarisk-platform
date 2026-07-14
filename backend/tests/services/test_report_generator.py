@@ -23,7 +23,7 @@ from sqlalchemy import delete, select, text
 from app.core.security import hash_password
 from app.database.base import AsyncSessionLocal, engine
 from app.models.admin import AdminBoundary
-from app.models.enums import BoundaryLevel, JobStatus, JobType, RiskFactor, UserRole
+from app.models.enums import BoundaryLevel, JobStatus, JobType, RiskFactor, SatelliteIndexType, UserRole
 from app.models.farm import FarmPolygon
 from app.models.job import Job
 from app.models.risk import ConfigWeight, RiskFactorScore, RiskScore
@@ -140,6 +140,14 @@ async def test_pipeline_completes_job_and_persists_full_report(scenario):
         assert 0.0 <= risk_score.overall_score <= 100.0
         assert risk_score.model_version == RiskEngine.MODEL_VERSION
 
+        # M2B P9 — Evidence & Method provenance persisted alongside the
+        # score itself, not derived later.
+        assert risk_score.observation_window_start is not None
+        assert risk_score.observation_window_end is not None
+        assert risk_score.observation_window_start < risk_score.observation_window_end
+        assert risk_score.weighted_average_score is not None
+        assert 0.0 <= risk_score.weighted_average_score <= 100.0
+
         factors = (
             await db.execute(select(RiskFactorScore).where(RiskFactorScore.risk_score_id == risk_score.id))
         ).scalars().all()
@@ -149,6 +157,41 @@ async def test_pipeline_completes_job_and_persists_full_report(scenario):
             await db.execute(select(SatelliteObservation).where(SatelliteObservation.entity_id == scenario["farm"].id))
         ).scalars().all()
         assert len(observations) > 0  # NDVI/MNDWI/NDMI/rainfall were fetched and cached
+
+
+@pytest.mark.asyncio
+async def test_source_scene_dates_persisted_for_optical_indices_not_rainfall(scenario):
+    """M2B P9 Evidence tab: real Sentinel-2 acquisition dates must reach
+    the database for NDVI/MNDWI/NDMI. Rainfall (CHIRPS) honestly has none
+    — a daily gridded product has no discrete 'scene' to date, so this
+    must stay empty rather than fabricate one."""
+    await generate_farm_report(
+        job_id=scenario["job"].id,
+        farm_id=scenario["farm"].id,
+        lookback_years=3,
+        satellite_provider=FakeSatelliteDataProvider(),
+        risk_engine=RiskEngine(),
+    )
+
+    async with AsyncSessionLocal() as db:
+        observations = (
+            await db.execute(select(SatelliteObservation).where(SatelliteObservation.entity_id == scenario["farm"].id))
+        ).scalars().all()
+
+        optical = [o for o in observations if o.index_type != SatelliteIndexType.RAINFALL]
+        rainfall = [o for o in observations if o.index_type == SatelliteIndexType.RAINFALL]
+        assert optical, "expected NDVI/MNDWI/NDMI rows"
+        assert rainfall, "expected rainfall rows"
+
+        for observation in optical:
+            assert observation.source_dates, f"{observation.index_type} row missing scene dates"
+            for scene_date in observation.source_dates:
+                # Persisted as ISO strings (see _persist_observations);
+                # every scene must fall within that observation's own month.
+                assert observation.period_start.isoformat() <= scene_date < observation.period_end.isoformat()
+
+        for observation in rainfall:
+            assert observation.source_dates == []
 
 
 @pytest.mark.asyncio

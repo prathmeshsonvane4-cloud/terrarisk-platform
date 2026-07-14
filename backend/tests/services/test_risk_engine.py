@@ -192,6 +192,32 @@ class TestFloorRule:
         result = RiskEngine().compute(bundle, _config(floor_threshold=80.0))
         assert result.overall_score == no_floor_result.overall_score
 
+    def test_weighted_average_score_exposes_the_pre_floor_value_for_transparency(self):
+        """M2B P9 Method tab: weighted_average_score must be the true
+        pre-floor average, distinct from overall_score exactly when (and
+        only when) the floor rule actually fired — the UI's sole signal
+        for whether to explain the floor rule to the officer."""
+        months = _months()
+        collapsing = [MonthlyValue(m, 0.7) for m in months[:-1]] + [MonthlyValue(months[-1], 0.05)]
+        bundle = ObservationBundle(
+            ndvi_monthly=collapsing,
+            mndwi_monthly=[MonthlyValue(m, 0.1) for m in months],
+            ndmi_monthly=[MonthlyValue(m, 0.2) for m in months],
+            rainfall_monthly=[MonthlyValue(m, 80.0) for m in months],
+            rainfall_normal_by_month={i: 80.0 for i in range(1, 13)},
+            jrc_water_occurrence_percent=0.0,
+        )
+        floored = RiskEngine().compute(bundle, _config(floor_threshold=80.0))
+        assert floored.weighted_average_score < floored.overall_score  # the floor rule raised it
+
+        unfloored = RiskEngine().compute(bundle, _config(floor_threshold=999.0))
+        assert unfloored.weighted_average_score == unfloored.overall_score  # never triggered, so equal
+
+    def test_weighted_average_score_equals_overall_score_when_floor_rule_never_fires(self):
+        bundle = _uniform_bundle()
+        result = RiskEngine().compute(bundle, _config(floor_threshold=80.0))
+        assert result.weighted_average_score == result.overall_score
+
 
 class TestDeterminism:
     def test_same_inputs_produce_identical_output(self):

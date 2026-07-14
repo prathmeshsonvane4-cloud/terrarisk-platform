@@ -8,13 +8,15 @@ never disagree).
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from uuid import uuid4
 
 from app.models.enums import RiskBand, RiskFactor
 from app.schemas.report import (
     FactorScoreResponse,
+    ReportEvidenceContext,
     ReportFarmContext,
+    ReportMethodContext,
     ReportResponse,
     ReportSeries,
 )
@@ -65,6 +67,18 @@ def _report(factors: list[FactorScoreResponse]) -> ReportResponse:
             officer_name="Test Officer",
         ),
         series=ReportSeries(ndvi=[], mndwi=[], ndmi=[], rainfall=[]),
+        evidence=ReportEvidenceContext(
+            observation_window_start=date(2023, 7, 1),
+            observation_window_end=date(2026, 7, 1),
+            expected_months=36,
+        ),
+        method=ReportMethodContext(
+            weights_version_id=uuid4(),
+            weights={f.value: 0.25 for f in RiskFactor},
+            weights_effective_from=datetime(2026, 1, 1, tzinfo=timezone.utc),
+            floor_threshold=80.0,
+            weighted_average_score=47.2,
+        ),
     )
 
 

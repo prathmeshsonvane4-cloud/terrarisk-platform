@@ -1,7 +1,7 @@
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 
-from sqlalchemy import DateTime, Float, ForeignKey, Uuid
+from sqlalchemy import Date, DateTime, Float, ForeignKey, Uuid
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -58,6 +58,19 @@ class RiskScore(Base, UUIDPrimaryKeyMixin):
         Uuid(as_uuid=True), ForeignKey("config_weight.id"), nullable=False
     )
     computed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+    # M2B P9 — Evidence tab provenance. Nullable: rows computed before this
+    # column existed simply have no window/anatomy detail to show, handled
+    # gracefully by both the API and the frontend, exactly like job.progress
+    # (M2B P8). The window is the exact (start, end) _run_pipeline actually
+    # queried Earth Engine with — persisted once at compute time, never
+    # re-derived, so "expected months" can never drift from what really
+    # happened even if the pipeline's window arithmetic changes later.
+    observation_window_start: Mapped[date | None] = mapped_column(Date, nullable=True)
+    observation_window_end: Mapped[date | None] = mapped_column(Date, nullable=True)
+    # The plain weighted average BEFORE the floor rule — see RiskResult's
+    # docstring. Null only for legacy rows.
+    weighted_average_score: Mapped[float | None] = mapped_column(Float, nullable=True)
 
 
 class RiskFactorScore(Base, UUIDPrimaryKeyMixin, CreatedAtMixin):

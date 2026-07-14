@@ -29,14 +29,16 @@ from app.models.admin import AdminBoundary
 from app.models.enums import JobStatus, JobType, RiskEntityType, SatelliteIndexType, UserRole
 from app.models.farm import FarmPolygon
 from app.models.job import Job
-from app.models.risk import RiskFactorScore, RiskScore
+from app.models.risk import ConfigWeight, RiskFactorScore, RiskScore
 from app.models.satellite import SatelliteObservation
 from app.models.user import AppUser
 from app.schemas.report import (
     FactorScoreResponse,
     ObservationPoint,
+    ReportEvidenceContext,
     ReportFarmContext,
     ReportGenerateRequest,
+    ReportMethodContext,
     ReportResponse,
     ReportSeries,
     ReportTriggerResponse,
@@ -46,7 +48,7 @@ from app.services.reporting.map_snapshot import fetch_map_snapshot
 from app.services.reporting.pdf_renderer import PDF_LAYOUT_VERSION, render_report_pdf
 from app.services.reporting.report_generator import generate_farm_report
 from app.services.risk.engine import RiskEngine
-from app.services.satellite.gee_provider import GeeProvider
+from app.services.satellite.gee_provider import GeeProvider, _monthly_periods
 
 router = APIRouter(tags=["Reports"])
 
@@ -180,6 +182,7 @@ async def _load_report_response(
         )
     ).one()
     officer = await db.get(AppUser, farm.drawn_by)
+    config_weight = await db.get(ConfigWeight, risk_score.weights_version_id)
 
     observation_rows = (
         await db.execute(
@@ -200,7 +203,23 @@ async def _load_report_response(
     for observation in observation_rows:
         bucket = series_by_type.get(observation.index_type)
         if bucket is not None:
-            bucket.append(ObservationPoint(period_start=observation.period_start, value=observation.value))
+            bucket.append(
+                ObservationPoint(
+                    period_start=observation.period_start,
+                    value=observation.value,
+                    source_dates=observation.source_dates,
+                )
+            )
+
+    # M2B P9 — expected_months reuses the pipeline's OWN period-generation
+    # helper against the persisted window, so it can never drift from what
+    # that report actually expected to observe (Blueprint §03: no
+    # recomputation of anything the engine already decided).
+    expected_months = (
+        len(_monthly_periods(risk_score.observation_window_start, risk_score.observation_window_end))
+        if risk_score.observation_window_start and risk_score.observation_window_end
+        else None
+    )
 
     return ReportResponse(
         id=risk_score.id,
@@ -225,6 +244,20 @@ async def _load_report_response(
             mndwi=series_by_type[SatelliteIndexType.MNDWI],
             ndmi=series_by_type[SatelliteIndexType.NDMI],
             rainfall=series_by_type[SatelliteIndexType.RAINFALL],
+        ),
+        evidence=ReportEvidenceContext(
+            observation_window_start=risk_score.observation_window_start,
+            observation_window_end=risk_score.observation_window_end,
+            expected_months=expected_months,
+        ),
+        method=ReportMethodContext(
+            weights_version_id=risk_score.weights_version_id,
+            weights=config_weight.weights if config_weight else {},
+            weights_effective_from=config_weight.effective_from if config_weight else risk_score.computed_at,
+            floor_threshold=(
+                float(config_weight.floor_thresholds["threshold"]) if config_weight else 0.0
+            ),
+            weighted_average_score=risk_score.weighted_average_score,
         ),
     )
 

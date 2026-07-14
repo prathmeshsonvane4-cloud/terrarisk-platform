@@ -156,7 +156,7 @@ async def _run_pipeline(
     await tracker.complete("scoring")
 
     await tracker.start("saving")
-    risk_score_id = await _persist_risk_result(db, farm_id, config_row.id, result)
+    risk_score_id = await _persist_risk_result(db, farm_id, config_row.id, result, start, end)
     await tracker.complete("saving")
 
     await tracker.start("completed")
@@ -165,9 +165,18 @@ async def _run_pipeline(
     return risk_score_id
 
 
-async def _persist_risk_result(db: AsyncSession, farm_id: UUID, weights_version_id: UUID, result) -> UUID:
+async def _persist_risk_result(
+    db: AsyncSession,
+    farm_id: UUID,
+    weights_version_id: UUID,
+    result,
+    observation_window_start: date,
+    observation_window_end: date,
+) -> UUID:
     """Single atomic transaction: a RiskScore is never left without its
-    RiskFactorScore rows."""
+    RiskFactorScore rows. The window is exactly what _run_pipeline actually
+    queried Earth Engine with (M2B P9 Evidence tab) — persisted once, here,
+    never re-derived at read time."""
     risk_score = RiskScore(
         entity_type=RiskEntityType.FARM,
         entity_id=farm_id,
@@ -177,6 +186,9 @@ async def _persist_risk_result(db: AsyncSession, farm_id: UUID, weights_version_
         model_version=result.model_version,
         weights_version_id=weights_version_id,
         computed_at=datetime.now(timezone.utc),
+        observation_window_start=observation_window_start,
+        observation_window_end=observation_window_end,
+        weighted_average_score=result.weighted_average_score,
     )
     db.add(risk_score)
     await db.flush()  # assigns risk_score.id for the factor rows below

@@ -283,4 +283,5 @@ class RiskEngine:
             factors=factors,
             model_version=self.MODEL_VERSION,
             weights_version_id=config.weights_version_id,
+            weighted_average_score=weighted_average,
         )
