@@ -571,6 +571,8 @@ export interface components {
             period_start: string;
             /** Value */
             value: number;
+            /** Source Dates */
+            source_dates?: string[];
         };
         /**
          * ProgressStage
@@ -596,6 +598,23 @@ export interface components {
             metadata?: {
                 [key: string]: unknown;
             } | null;
+        };
+        /**
+         * ReportEvidenceContext
+         * @description Answers 'which observations contributed' (M2B P9 Evidence tab).
+         *     Both fields are the exact (start, end) _run_pipeline actually queried
+         *     Earth Engine with — persisted at compute time (RiskScore.observation_
+         *     window_start/end), never re-derived. None for reports computed before
+         *     this column existed; the frontend shows the rest of the report
+         *     normally and simply omits window-dependent Evidence detail.
+         */
+        ReportEvidenceContext: {
+            /** Observation Window Start */
+            observation_window_start: string | null;
+            /** Observation Window End */
+            observation_window_end: string | null;
+            /** Expected Months */
+            expected_months: number | null;
         };
         /**
          * ReportFarmContext
@@ -667,6 +686,34 @@ export interface components {
             /** Total */
             total: number;
         };
+        /**
+         * ReportMethodContext
+         * @description Answers 'why this score' (M2B P9 Method tab) — the versioned
+         *     weights and floor rule actually applied, read back from config_weight
+         *     via risk_score.weights_version_id. Never recomputed: RiskEngine.compute()
+         *     is the only place factor-to-composite arithmetic happens; this is a
+         *     read-only reflection of its already-persisted inputs and output.
+         */
+        ReportMethodContext: {
+            /**
+             * Weights Version Id
+             * Format: uuid
+             */
+            weights_version_id: string;
+            /** Weights */
+            weights: {
+                [key: string]: number;
+            };
+            /**
+             * Weights Effective From
+             * Format: date-time
+             */
+            weights_effective_from: string;
+            /** Floor Threshold */
+            floor_threshold: number;
+            /** Weighted Average Score */
+            weighted_average_score: number | null;
+        };
         /** ReportResponse */
         ReportResponse: {
             /**
@@ -702,6 +749,8 @@ export interface components {
             factors: components["schemas"]["FactorScoreResponse"][];
             farm: components["schemas"]["ReportFarmContext"];
             series: components["schemas"]["ReportSeries"];
+            evidence: components["schemas"]["ReportEvidenceContext"];
+            method: components["schemas"]["ReportMethodContext"];
         };
         /**
          * ReportSeries
