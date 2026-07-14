@@ -492,6 +492,11 @@ export interface components {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
         };
+        /** JobProgress */
+        JobProgress: {
+            /** Stages */
+            stages: components["schemas"]["ProgressStage"][];
+        };
         /**
          * JobStatus
          * @enum {string}
@@ -520,6 +525,7 @@ export interface components {
              * Format: date-time
              */
             updated_at: string;
+            progress?: components["schemas"]["JobProgress"] | null;
         };
         /**
          * JobType
@@ -565,6 +571,31 @@ export interface components {
             period_start: string;
             /** Value */
             value: number;
+        };
+        /**
+         * ProgressStage
+         * @description One row of the honest execution timeline (M2B P8). Mirrors
+         *     app/services/reporting/progress.py's stage shape exactly — that
+         *     module is the only writer of this data.
+         */
+        ProgressStage: {
+            /** Id */
+            id: string;
+            /** Title */
+            title: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "pending" | "running" | "done" | "failed";
+            /** Started At */
+            started_at: string | null;
+            /** Completed At */
+            completed_at: string | null;
+            /** Metadata */
+            metadata?: {
+                [key: string]: unknown;
+            } | null;
         };
         /**
          * ReportFarmContext
