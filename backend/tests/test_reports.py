@@ -190,11 +190,21 @@ async def test_full_service_1_workflow_end_to_end(api_client, scenario):
 
     job_response = await api_client.get(f"/api/v1/jobs/{job_id}", headers={"Authorization": f"Bearer {token}"})
     assert job_response.status_code == 200
-    assert job_response.json()["status"] == "done", (
+    job_json = job_response.json()
+    assert job_json["status"] == "done", (
         "background task did not complete synchronously within the ASGI test transport "
-        f"(status was {job_response.json()['status']!r})"
+        f"(status was {job_json['status']!r})"
     )
-    risk_score_id = job_response.json()["entity_id"]
+    risk_score_id = job_json["entity_id"]
+
+    # M2B P8 — the honest progress timeline survives the Pydantic
+    # from_attributes round-trip through the real HTTP response, not just
+    # the raw ORM dict the service layer writes.
+    assert job_json["progress"] is not None
+    stages = job_json["progress"]["stages"]
+    assert stages[0]["id"] == "preparing"
+    assert stages[-1]["id"] == "completed"
+    assert all(stage["status"] == "done" for stage in stages)
 
     report_response = await api_client.get(
         f"/api/v1/reports/{risk_score_id}", headers={"Authorization": f"Bearer {token}"}

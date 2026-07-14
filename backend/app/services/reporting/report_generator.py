@@ -49,6 +49,7 @@ from app.models.farm import FarmPolygon
 from app.models.job import Job
 from app.models.risk import ConfigWeight, RiskFactorScore, RiskScore
 from app.models.satellite import SatelliteObservation
+from app.services.reporting.progress import ProgressTracker
 from app.services.risk.engine import RiskEngine
 from app.services.risk.models import MonthlyValue, ObservationBundle, RiskEngineConfig
 from app.services.satellite.gee_provider import _monthly_periods
@@ -77,14 +78,19 @@ async def generate_farm_report(
     terminal status (DONE or FAILED) — never left RUNNING forever, per the
     background-job requirement that no job may get stuck."""
     async with AsyncSessionLocal() as db:
+        tracker = ProgressTracker(db, job_id)
         try:
             await _set_job_status(db, job_id, JobStatus.RUNNING)
-            risk_score_id = await _run_pipeline(db, farm_id, lookback_years, satellite_provider, risk_engine)
+            await tracker.initialize()
+            risk_score_id = await _run_pipeline(db, farm_id, lookback_years, satellite_provider, risk_engine, tracker)
             await _set_job_status(db, job_id, JobStatus.DONE, result_entity_id=risk_score_id)
         except Exception:
             # Full detail goes to the server log only; the job row (and
-            # therefore the API) only ever exposes a generic message.
+            # therefore the API) only ever exposes a generic message. The
+            # progress timeline still shows exactly which stage was in
+            # flight, truthfully, without leaking exception internals.
             logger.exception("report_generation_failed", extra={"job_id": str(job_id), "farm_id": str(farm_id)})
+            await tracker.fail_current()
             await _set_job_status(db, job_id, JobStatus.FAILED, error_message=_GENERIC_FAILURE_MESSAGE)
 
 
@@ -94,7 +100,12 @@ async def _run_pipeline(
     lookback_years: int,
     satellite_provider: SatelliteDataProvider,
     risk_engine: RiskEngine,
+    tracker: ProgressTracker,
 ) -> UUID:
+    await tracker.start("preparing")
+    await tracker.complete("preparing")
+
+    await tracker.start("loading_geometry")
     farm = await db.get(FarmPolygon, farm_id)
     if farm is None:
         raise ValueError(f"Farm {farm_id} not found")
@@ -103,13 +114,26 @@ async def _run_pipeline(
     end = datetime.now(timezone.utc).date().replace(day=1)
     start = date(end.year - lookback_years, end.month, 1)
     periods = _monthly_periods(start, end)
+    await tracker.complete("loading_geometry")
 
-    ndvi = await _get_or_fetch_index_series(db, farm_id, SatelliteIndex.NDVI, geometry_geojson, start, end, satellite_provider)
-    mndwi = await _get_or_fetch_index_series(db, farm_id, SatelliteIndex.MNDWI, geometry_geojson, start, end, satellite_provider)
-    ndmi = await _get_or_fetch_index_series(db, farm_id, SatelliteIndex.NDMI, geometry_geojson, start, end, satellite_provider)
-    rainfall = await _get_or_fetch_rainfall_series(db, farm_id, geometry_geojson, start, end, satellite_provider)
+    ndvi = await _get_or_fetch_index_series(
+        db, farm_id, SatelliteIndex.NDVI, "vegetation_observations", geometry_geojson, start, end, satellite_provider, tracker
+    )
+    mndwi = await _get_or_fetch_index_series(
+        db, farm_id, SatelliteIndex.MNDWI, "surface_water_observations", geometry_geojson, start, end, satellite_provider, tracker
+    )
+    ndmi = await _get_or_fetch_index_series(
+        db, farm_id, SatelliteIndex.NDMI, "crop_moisture_observations", geometry_geojson, start, end, satellite_provider, tracker
+    )
+    rainfall = await _get_or_fetch_rainfall_series(db, farm_id, geometry_geojson, start, end, satellite_provider, tracker)
+
+    await tracker.start("rainfall_climatology")
     rainfall_normal_by_month = await asyncio.to_thread(satellite_provider.get_rainfall_climatology, geometry_geojson)
+    await tracker.complete("rainfall_climatology")
+
+    await tracker.start("water_history")
     water_history = await asyncio.to_thread(satellite_provider.get_water_history, geometry_geojson)
+    await tracker.complete("water_history")
 
     bundle = ObservationBundle(
         ndvi_monthly=_to_monthly_values(ndvi, periods),
@@ -120,6 +144,7 @@ async def _run_pipeline(
         jrc_water_occurrence_percent=water_history.occurrence_percent,
     )
 
+    await tracker.start("scoring")
     config_row = await _get_active_config_weight(db)
     config = RiskEngineConfig(
         weights={RiskFactor(k): v for k, v in config_row.weights.items()},
@@ -127,9 +152,17 @@ async def _run_pipeline(
         model_version=RiskEngine.MODEL_VERSION,
         weights_version_id=str(config_row.id),
     )
-
     result = risk_engine.compute(bundle, config)
-    return await _persist_risk_result(db, farm_id, config_row.id, result)
+    await tracker.complete("scoring")
+
+    await tracker.start("saving")
+    risk_score_id = await _persist_risk_result(db, farm_id, config_row.id, result)
+    await tracker.complete("saving")
+
+    await tracker.start("completed")
+    await tracker.complete("completed")
+
+    return risk_score_id
 
 
 async def _persist_risk_result(db: AsyncSession, farm_id: UUID, weights_version_id: UUID, result) -> UUID:
@@ -167,30 +200,46 @@ async def _get_or_fetch_index_series(
     db: AsyncSession,
     farm_id: UUID,
     index: SatelliteIndex,
+    stage_id: str,
     geometry_geojson: dict,
     start: date,
     end: date,
     provider: SatelliteDataProvider,
+    tracker: ProgressTracker,
 ) -> list[IndexObservation]:
+    await tracker.start(stage_id)
     index_type = _INDEX_TO_SATELLITE_INDEX_TYPE[index]
     cached = await _read_cached_observations(db, farm_id, index_type, start, end)
     if cached:
+        # Truthful cache label (B7): a re-assessment that flies through
+        # this stage must say so, not look like nothing happened.
+        await tracker.complete(stage_id, metadata={"source": "cache", "months": len(cached)})
         return cached
 
     fetched = await asyncio.to_thread(provider.get_index_time_series, geometry_geojson, index, start, end)
     await _persist_observations(db, farm_id, index_type, fetched)
+    await tracker.complete(stage_id, metadata={"source": "fetched", "months": len(fetched)})
     return fetched
 
 
 async def _get_or_fetch_rainfall_series(
-    db: AsyncSession, farm_id: UUID, geometry_geojson: dict, start: date, end: date, provider: SatelliteDataProvider
+    db: AsyncSession,
+    farm_id: UUID,
+    geometry_geojson: dict,
+    start: date,
+    end: date,
+    provider: SatelliteDataProvider,
+    tracker: ProgressTracker,
 ) -> list[IndexObservation]:
+    await tracker.start("rainfall_observations")
     cached = await _read_cached_observations(db, farm_id, SatelliteIndexType.RAINFALL, start, end)
     if cached:
+        await tracker.complete("rainfall_observations", metadata={"source": "cache", "months": len(cached)})
         return cached
 
     fetched = await asyncio.to_thread(provider.get_rainfall_series, geometry_geojson, start, end)
     await _persist_observations(db, farm_id, SatelliteIndexType.RAINFALL, fetched)
+    await tracker.complete("rainfall_observations", metadata={"source": "fetched", "months": len(fetched)})
     return fetched
 
 

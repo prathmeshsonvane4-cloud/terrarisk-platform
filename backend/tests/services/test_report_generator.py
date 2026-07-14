@@ -29,6 +29,7 @@ from app.models.job import Job
 from app.models.risk import ConfigWeight, RiskFactorScore, RiskScore
 from app.models.satellite import SatelliteObservation
 from app.models.user import AppUser
+from app.services.reporting.progress import STAGE_IDS
 from app.services.reporting.report_generator import generate_farm_report
 from app.services.risk.engine import RiskEngine
 from tests.fakes.fake_satellite_provider import FakeSatelliteDataProvider
@@ -264,3 +265,177 @@ async def test_missing_config_weight_raises_runtime_error():
 
     with pytest.raises(RuntimeError, match="No active risk-engine configuration"):
         await _get_active_config_weight(mock_db)
+
+
+# ---------------------------------------------------------------------------
+# M2B P8 — honest progress. Every stage the pipeline reports must reflect
+# what actually happened: full completion in order on a fresh run, cache
+# labels on a re-run, and — on failure — the failing stage marked failed
+# while every earlier stage's completed state is left untouched and every
+# later stage stays truthfully unstarted.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_progress_stages_all_complete_in_order_with_fetch_labels_on_fresh_run(scenario):
+    await generate_farm_report(
+        job_id=scenario["job"].id,
+        farm_id=scenario["farm"].id,
+        lookback_years=3,
+        satellite_provider=FakeSatelliteDataProvider(),
+        risk_engine=RiskEngine(),
+    )
+
+    async with AsyncSessionLocal() as db:
+        job = await db.get(Job, scenario["job"].id)
+        assert job.progress is not None
+        stages = job.progress["stages"]
+
+        # Every defined stage present, in the exact order the pipeline
+        # actually executes them — the frontend trusts this order.
+        assert [s["id"] for s in stages] == STAGE_IDS
+        for stage in stages:
+            assert stage["status"] == "done", f"{stage['id']} should be done, was {stage['status']}"
+            assert stage["started_at"] is not None
+            assert stage["completed_at"] is not None
+            assert stage["started_at"] <= stage["completed_at"]
+
+        by_id = {s["id"]: s for s in stages}
+        for fetch_stage_id in (
+            "vegetation_observations",
+            "surface_water_observations",
+            "crop_moisture_observations",
+            "rainfall_observations",
+        ):
+            metadata = by_id[fetch_stage_id]["metadata"]
+            assert metadata["source"] == "fetched"  # nothing cached yet — a genuine first fetch
+            assert metadata["months"] == 36  # 3-year lookback
+
+
+@pytest.mark.asyncio
+async def test_progress_stages_show_cache_source_on_second_run(scenario):
+    """The honest counterpart to test_second_run_reuses_cached_observations_
+    without_refetching above: not just that no new fetch happened, but that
+    the timeline SAYS so — 'restored from cache', not a suspiciously fast
+    'fetched'."""
+    await generate_farm_report(
+        job_id=scenario["job"].id,
+        farm_id=scenario["farm"].id,
+        lookback_years=3,
+        satellite_provider=FakeSatelliteDataProvider(),
+        risk_engine=RiskEngine(),
+    )
+
+    async with AsyncSessionLocal() as db:
+        job2 = Job(type=JobType.FARM_REPORT, status=JobStatus.PENDING, created_by=scenario["user"].id)
+        db.add(job2)
+        await db.commit()
+        await db.refresh(job2)
+
+    await generate_farm_report(
+        job_id=job2.id,
+        farm_id=scenario["farm"].id,
+        lookback_years=3,
+        satellite_provider=FakeSatelliteDataProvider(),
+        risk_engine=RiskEngine(),
+    )
+
+    async with AsyncSessionLocal() as db:
+        job2_after = await db.get(Job, job2.id)
+        by_id = {s["id"]: s for s in job2_after.progress["stages"]}
+        for fetch_stage_id in (
+            "vegetation_observations",
+            "surface_water_observations",
+            "crop_moisture_observations",
+            "rainfall_observations",
+        ):
+            assert by_id[fetch_stage_id]["status"] == "done"
+            assert by_id[fetch_stage_id]["metadata"]["source"] == "cache"
+
+        await db.execute(delete(Job).where(Job.id == job2.id))
+        await db.commit()
+
+
+@pytest.mark.asyncio
+async def test_progress_marks_the_failing_stage_and_leaves_later_stages_pending(scenario):
+    """The missing-farm failure happens while loading_geometry is in
+    flight (tracker.start() fires before the farm lookup) — the timeline
+    must say exactly that, not just 'failed' with no location."""
+    await generate_farm_report(
+        job_id=scenario["job"].id,
+        farm_id=uuid4(),  # nonexistent — same failure mode as the test above
+        lookback_years=3,
+        satellite_provider=FakeSatelliteDataProvider(),
+        risk_engine=RiskEngine(),
+    )
+
+    async with AsyncSessionLocal() as db:
+        job = await db.get(Job, scenario["job"].id)
+        by_id = {s["id"]: s for s in job.progress["stages"]}
+
+        assert by_id["preparing"]["status"] == "done"
+        assert by_id["loading_geometry"]["status"] == "failed"
+        assert by_id["loading_geometry"]["completed_at"] is not None
+
+        later_stages = STAGE_IDS[STAGE_IDS.index("loading_geometry") + 1 :]
+        for stage_id in later_stages:
+            stage = by_id[stage_id]
+            assert stage["status"] == "pending", f"{stage_id} must stay pending, was {stage['status']}"
+            assert stage["started_at"] is None
+            assert stage["completed_at"] is None
+
+
+@pytest.mark.asyncio
+async def test_progress_preserves_earlier_completed_stages_when_a_later_stage_fails(scenario):
+    """Journey C (Product Design v2 §6): 'An assessment fails at the
+    rainfall stage... the Run page shows exactly which stage failed,
+    keeps the completed stages visible.' Proven here against the actual
+    persisted timeline, not just the narrative."""
+
+    class FailsOnRainfall(FakeSatelliteDataProvider):
+        def get_rainfall_series(self, geometry_geojson, start, end):
+            raise RuntimeError("simulated Earth Engine quota exhaustion")
+
+    await generate_farm_report(
+        job_id=scenario["job"].id,
+        farm_id=scenario["farm"].id,
+        lookback_years=3,
+        satellite_provider=FailsOnRainfall(),
+        risk_engine=RiskEngine(),
+    )
+
+    async with AsyncSessionLocal() as db:
+        job = await db.get(Job, scenario["job"].id)
+        assert job.status == JobStatus.FAILED
+        # Still the generic, client-safe message — the simulated
+        # exception text must never reach the job row.
+        assert "simulated Earth Engine quota exhaustion" not in (job.error_message or "")
+
+        by_id = {s["id"]: s for s in job.progress["stages"]}
+
+        for done_stage_id in (
+            "preparing",
+            "loading_geometry",
+            "vegetation_observations",
+            "surface_water_observations",
+            "crop_moisture_observations",
+        ):
+            stage = by_id[done_stage_id]
+            assert stage["status"] == "done", f"{done_stage_id} must remain done, was {stage['status']}"
+            assert stage["completed_at"] is not None
+
+        # The three fetch stages before rainfall genuinely fetched (this
+        # farm has no prior observations cached) — real work, really done.
+        for fetched_stage_id in (
+            "vegetation_observations",
+            "surface_water_observations",
+            "crop_moisture_observations",
+        ):
+            assert by_id[fetched_stage_id]["metadata"]["source"] == "fetched"
+
+        assert by_id["rainfall_observations"]["status"] == "failed"
+
+        for pending_stage_id in ("rainfall_climatology", "water_history", "scoring", "saving", "completed"):
+            stage = by_id[pending_stage_id]
+            assert stage["status"] == "pending"
+            assert stage["started_at"] is None

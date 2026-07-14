@@ -1401,3 +1401,161 @@ against both well-formed and malformed error envelopes). ESLint clean,
 `tsc --noEmit` clean, production build clean (10 routes, no route
 conflicts from the restructure). Backend untouched in this phase —
 still 117/117 from the prior commit.
+
+---
+
+### Honest per-stage execution timeline — job.progress JSONB, one entry per real pipeline checkpoint (M2B P8, backend addition B2)
+
+**Decision.** `Job` gains a nullable `progress` JSONB column
+(`0003_job_progress` migration), written exclusively by a new
+`ProgressTracker` (`app/services/reporting/progress.py`) that
+`report_generator.py`'s pipeline calls at eleven points —
+`start()`/`complete()` bracketing each real operation, `fail_current()`
+in the existing top-level `except`. The eleven stages, in the exact
+order the pipeline executes them: `preparing`, `loading_geometry`,
+`vegetation_observations` (NDVI), `surface_water_observations`
+(MNDWI), `crop_moisture_observations` (NDMI), `rainfall_observations`
+(CHIRPS), `rainfall_climatology`, `water_history` (JRC), `scoring`
+(the single `RiskEngine.compute()` call), `saving`, `completed`. Each
+stage row carries `{id, title, status, started_at, completed_at,
+metadata}`; the four observation-fetch stages additionally carry
+`{source: "cache"|"fetched", months: N}` from the exact same
+cache-check branch the pipeline already had (B7 — cache provenance was
+free once the branch existed, just previously invisible outside a log
+line). `JobStatusResponse` exposes this as a typed `JobProgress`
+(`app/schemas/job.py`) via Pydantic's `from_attributes` coercion of the
+raw dict — confirmed working end to end through the real HTTP response,
+not just the ORM layer, in `test_reports.py`.
+
+Frontend: the Assessment Run page (`/assessments/{jobId}`) replaces its
+flat `STATUS_COPY`-driven card with `AssessmentTimeline`
+(`features/assessment/`), a pure renderer of `job.progress.stages` —
+check/spinner/X/dashed-circle markers per status, a live-ticking
+elapsed counter for the running stage (computed from its real
+`started_at`, re-rendered on a 1s interval — the ONLY client-side
+"clock," never a percentage or ETA), and either a cache/fetch label or
+a real duration for completed stages. `STATUS_COPY` itself is now dead
+(nothing else referenced it) and was deleted rather than left as
+unused cruft; `isTerminalStatus` — still used by the polling hook —
+was kept. Retry (on a `failed` job) reuses `useTriggerReport()` with
+the failed job's `entity_id` (guaranteed to still be the farm_id — P4's
+polymorphism only overwrites `entity_id` on DONE) and the existing
+`ReportTriggerConflictError` 409-routing from P7's Farm detail —
+one code path, two callers, never duplicated.
+
+**Reason.** Product Design v2 P2 ("show the machine working, never a
+spinner") and B2/B7 from the backend-additions table. The prior status
+page showed one hardcoded sentence for the entire 2–4 minute run
+regardless of what was actually happening — exactly the "scripted
+demo" tell the whole redesign exists to remove, despite the pipeline
+underneath being completely real since M1.
+
+**Deliberate deviation from the founder's illustrative 12-stage
+example** (documented here per that message's own instruction: "every
+visible stage must correspond to an actual checkpoint"). The example
+listed "Computing vegetation indicators," "Computing moisture
+indicators," "Computing rainfall anomaly," "Calculating factor
+scores," and "Running TerraRisk engine" as five separate stages. In
+the real code there is exactly ONE synchronous call —
+`RiskEngine.compute(bundle, config)` — that computes all four factor
+scores and the composite score together, atomically, from data already
+fetched. Inventing four additional stages around fragments of one
+function call would have been precisely the fabricated-checkpoint
+problem this phase forbids, so they collapse into the single `scoring`
+stage. Conversely, NDVI/MNDWI/NDMI — which the example bundled toward
+"vegetation" and "moisture" — are kept as three fully separate stages,
+because each is an independently cached-or-fetched Earth Engine call
+with its own real cache outcome; merging them would have hidden honest
+information (a partial cache hit on just one of the three) rather than
+inventing anything. Net: 11 real stages, not 12 illustrative ones —
+fewer where the example implied a granularity that doesn't exist in
+the code, one more granular where collapsing would have lost a real
+signal.
+
+**Retry semantics.** No "resume the same job" concept exists anywhere
+in this codebase — jobs are immutable once terminal. Retry triggers a
+genuinely new job via the existing `POST /farms/{farm_id}/reports`,
+which — exactly as Journey C describes — benefits from the SAME
+per-farm cache the pipeline already had: stages already cached from
+the failed attempt complete near-instantly and say so, while only the
+stage that actually failed (and anything after it) does real work
+again. No new backend endpoint needed.
+
+**Alternatives considered.** WebSockets/SSE for stage push updates
+(rejected per Product Design v2 §8 — polling with backoff already
+holds at pilot volume and survives hostile bank network proxies
+better; the existing `useJobStatus` poll needed zero changes to carry
+the richer payload). A separate `job_stage` table instead of JSONB on
+`job` (rejected — the entire timeline for one job is always read and
+written as a single unit, never queried stage-by-stage across jobs;
+JSONB matches the access pattern and needed no join). Mutating
+`job.progress` in place via the ORM attribute (considered and
+rejected — SQLAlchemy does not detect nested JSONB mutation without
+`MutableDict`; every write in `ProgressTracker` instead reassigns a
+brand-new dict object, mirroring the exact fetch-mutate-commit pattern
+`_set_job_status` already used, so the two writers stay consistent).
+
+**Trade-offs.** None found. Additive migration (nullable column, no
+backfill — pre-existing job rows and non-report job types simply have
+`progress = null`, handled gracefully by both the API contract and the
+frontend's fallback message). Eleven small commits per pipeline run
+instead of the prior two (`RUNNING`, then `DONE`/`FAILED`) — negligible
+at pilot volume, and each commit is immediately visible to any session
+polling `GET /jobs/{id}`, which is the entire point.
+
+**Live verification.** A newly created, guaranteed-uncached farm's
+report was triggered via real HTTP and watched live, both via repeated
+`GET /jobs/{id}` polling (captured real per-stage durations: 3.70s/
+4.47s/3.45s for the three Sentinel-2 fetches, 0.80s rainfall, 1.27s
+climatology, 0.70s JRC — genuine Earth Engine round trips, not
+simulated) and directly in the browser, catching the live timeline
+mid-run on two separate real triggers (once at the `scoring` stage,
+once at `rainfall_climatology`) with the ticking elapsed counter
+visibly advancing and real "retrieved (N months)" labels rendering.
+A second trigger for the same farm showed every observation stage at
+`source: cache` with ~25–31ms durations (vs 3–4.5s fetched) — an
+honest, dramatic, truthful speedup — while the two stages with no
+cache path (`rainfall_climatology`, `water_history`) still took real
+time, exactly as designed. The raw `job.progress` JSONB was inspected
+directly in Postgres via `jsonb_pretty` and matched the API response
+exactly. The failure + Retry path was verified against a realistic
+synthetic failure (a real farm, a hand-inserted `job` row shaped
+exactly like the automated
+`test_progress_preserves_earlier_completed_stages_when_a_later_stage_fails`
+scenario — deliberately not a live-forced GEE quota exhaustion, which
+would be reckless to engineer on purpose): the failed stage rendered
+distinctly, all four completed stages before it remained visible with
+their real cache/fetch data intact, the generic error message and a
+job-id support reference displayed, and clicking Retry triggered a
+genuinely new real pipeline run for the same farm that this time
+completed successfully end to end. Refresh-mid-run reconstruction was
+verified by repeated reload attempts at the earliest possible moment
+after navigation; the pipeline in this environment consistently
+completes in 10–20 seconds — faster than this tool's own round-trip
+latency budget for a manual reload-during-a-still-running-job capture
+— so the strongest evidence combines two genuine mid-flight
+fresh-navigation captures (proving the timeline renders live, accurate,
+non-frozen state) with the architectural fact that a reload and a
+fresh navigation are the identical code path in this SPA (no
+client-only progress state exists anywhere in the Run page — confirmed
+by review — so nothing distinguishes the two cases). Every reload
+attempt, regardless of timing, landed on the true current backend
+state, never a stale one.
+
+**Tests.** Backend: 125/125 (117 prior + 4 pure-unit stage-definition
+tests + 4 full-pipeline integration tests — fresh run with fetch
+labels, second run with cache labels, missing-farm failure at
+`loading_geometry`, and a simulated rainfall-stage failure proving
+earlier completed stages stay untouched — plus the existing end-to-end
+workflow test extended to assert the HTTP-level `progress` payload
+shape). Frontend: 42/42 (32 prior + 4 `duration.test.ts` boundary
+cases + 6 `AssessmentTimeline` component tests covering ordering,
+cache vs. fetched labeling, plain duration, the pending-stage "nothing
+shown" case, the live-ticking counter under fake timers, and the
+failed-stage styling). ESLint clean, `tsc --noEmit` clean, production
+build clean (`/assessments/[jobId]` grew 1.4 kB → 4.1 kB, no route
+changes). `@testing-library/jest-dom` is not a dependency of this
+project — component test assertions use plain DOM properties
+(`.textContent`, `.className`), matching the one prior integration
+test's existing convention, rather than adding a new dependency for
+this phase alone.
