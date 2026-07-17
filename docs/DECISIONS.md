@@ -2087,3 +2087,95 @@ assert on visible text/behavior, not implementation markup). ESLint
 clean, `tsc --noEmit` clean, production build clean (`/reports/[id]`
 123 kB → 123 kB, `/assessments/new` 43.8 kB → 45.1 kB from the
 responsive/print class additions, all 10 routes unchanged).
+
+---
+
+### RC1 audit — missing authorization check on report trigger (real IDOR), unbounded polygon rings
+
+**Decision.** Two fixes from a Staff Engineer RC1 readiness audit, both
+release-blocking, both closed the same day they were found.
+
+1. `POST /farms/{farm_id}/reports` (`trigger_report`, `app/api/
+   reports.py`) loaded the target farm by id and checked only that it
+   existed — `user_can_access_owned_resource`, the owner-or-branch check
+   every other resource-scoped endpoint in this codebase depends on, was
+   never called here. Any authenticated `CREDIT_OFFICER`/`BRANCH_MANAGER`
+   who learned or guessed a `farm_id` outside their own branch could
+   trigger a real, billed Earth Engine compute job against it. This is
+   the identical bug class the M1 IDOR fix closed for `GET /farms/
+   {farm_id}` (see that entry above) — the fix was applied to every
+   sibling read endpoint at the time but never to this one write
+   endpoint, which is the single most expensive operation in the system
+   to leave unguarded. Fixed with the same established pattern: 404 (not
+   403) on a farm outside the caller's scope, indistinguishable from one
+   that doesn't exist.
+
+2. Chained consequence: `GET /jobs` (`list_assessments`, `app/api/
+   jobs.py`)'s farm-enrichment query (resolving `village_name`/`area_ha`
+   for each listed job's farm) had no ownership filter of its own — it
+   inherited its correctness entirely from the assumption that every job
+   in scope was created against a farm the creator already had access
+   to, an assumption fix (1) restores but which the query didn't itself
+   enforce. This contradicted `workspace.py`'s own module docstring,
+   which claims every list endpoint is owner-or-branch scoped with no
+   exceptions. Fixed as defense in depth — filtered the same way
+   `list_farms`/`list_reports` already filter their own farm joins —
+   even though it should be unreachable once (1) is fixed, matching this
+   codebase's existing layered-defense precedent (the advisory lock
+   *and* the in-flight-job check both guard the same race, for the same
+   reason: correctness shouldn't depend on exactly one line staying
+   correct forever).
+
+3. Separately, the same audit found `GeoJSONPolygon`'s ring validation
+   (`app/schemas/farm.py`) enforced a minimum point count but no
+   maximum — an unbounded ring lets a client submit an arbitrarily large
+   coordinate array that Shapely and PostGIS's `ST_Area` then process
+   synchronously in the request path (not the background job), a cheap
+   denial-of-service vector with no legitimate hand-drawn-boundary use
+   case. Capped at 2000 points — generous headroom over any real field
+   trace. While in the same validator, made the NaN/Infinity rejection
+   explicit (`math.isfinite`) rather than relying on it happening to
+   fail the chained range comparison, which worked but wasn't a
+   documented guarantee.
+
+**Reason.** Found during a full RC1 skeptical audit (architecture,
+backend, frontend, security, database, performance, reliability, API
+design, testing, deployment, documentation) commissioned before any
+real bank pilot go-live decision. Four parallel deep-dive investigations
+(database/schema, security/auth, reliability/deployment, API/docs/
+testing) each independently cross-referenced this file first, so as not
+to re-flag already-accepted, documented trade-offs as new bugs — these
+two items were the only ones that met the bar of "matches an already-
+established, already-once-fixed security pattern in this exact
+codebase, but wasn't actually applied here."
+
+**Alternatives considered.** None for the IDOR fix — this is a
+straightforward application of the exact pattern every sibling endpoint
+already uses; there was no design choice to weigh, the same as the
+original M1 `get_farm` fix. For the vertex cap, a stricter limit (e.g.
+500) was considered and rejected as unnecessarily tight for a
+legitimately hand-traced irregular field boundary with many vertices;
+2000 was chosen as generous-but-bounded rather than tuned to a measured
+real-world maximum, since no such measurement exists yet.
+
+**Trade-offs.** None identified. Both fixes are strictly corrective —
+no legitimate request is rejected by either change (proven live: the
+farm's actual owner still receives a real `202` and a real job; the
+existing `test_full_service_1_workflow_end_to_end` and all `test_workspace.py`
+branch-scoping tests still pass unmodified with the new filter in
+place).
+
+**Live verification.** Backend restarted with the fix; a real farm was
+created and its owner's own trigger-report request confirmed `202`
+against the live server (not just the test suite). The outsider-
+rejection case is proven by a new automated regression test
+(`test_trigger_report_rejects_user_outside_owner_or_branch`,
+mirroring `test_get_farm_rejects_user_outside_owner_or_branch`
+exactly) rather than repeated by hand against the shared pilot
+database, since creating a throwaway unauthorized account against
+real data has no advantage over the isolated test-fixture version and
+the test suite already exercises exactly this path end to end.
+
+**Tests.** Backend: 134/134 (132 prior + 2 new: the IDOR regression
+test above, and `test_rejects_ring_over_max_points` /
+`test_rejects_non_finite_coordinates` in `test_farm_schema.py`).
