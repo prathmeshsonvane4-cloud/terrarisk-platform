@@ -5,13 +5,14 @@ import { ArrowRight, Plus } from "lucide-react";
 
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorState } from "@/components/ui/error-state";
+import { RiskBandChip } from "@/components/ui/risk-band-chip";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/features/auth/auth-context";
 import { useAssessments } from "@/features/workspace/use-assessments";
 import { useFarms } from "@/features/workspace/use-farms";
 import { useReports } from "@/features/workspace/use-reports";
-import { RISK_BANDS } from "@/lib/risk-bands";
 import { cn } from "@/lib/utils";
 
 function formatElapsed(isoDate: string): string {
@@ -82,18 +83,11 @@ export default function OverviewPage() {
       )}
 
       {isEmpty && (
-        <Card>
-          <CardContent className="flex flex-col items-start gap-3 py-6">
-            <p className="text-sm font-medium">No farms mapped yet</p>
-            <p className="text-sm text-muted-foreground">
-              Start by mapping a farm boundary — the first climate assessment follows the same
-              flow, in one continuous run.
-            </p>
-            <Link href="/assessments/new" className={buttonVariants({ size: "sm" })}>
-              Map your first farm
-            </Link>
-          </CardContent>
-        </Card>
+        <EmptyState
+          title="Nothing mapped for this branch yet"
+          description="This workspace is ready — it's just waiting on the first farm boundary. Mapping one and running its climate assessment happen in a single continuous flow."
+          action={{ label: "Map your first farm", href: "/assessments/new" }}
+        />
       )}
 
       {!isEmpty && (
@@ -146,29 +140,19 @@ export default function OverviewPage() {
                 {!reportsPending && !reportsError && recentReports.length === 0 && (
                   <p className="text-sm text-muted-foreground">No reports issued yet.</p>
                 )}
-                {recentReports.map((report) => {
-                  const band = RISK_BANDS[report.overall_band];
-                  return (
-                    <Link
-                      key={report.risk_score_id}
-                      href={`/reports/${report.risk_score_id}`}
-                      className="flex items-center justify-between gap-2 rounded-lg px-2 py-2 text-sm hover:bg-muted"
-                    >
-                      <span>
-                        {report.village_name}
-                        <span className="text-muted-foreground"> · {report.taluka_name}</span>
-                      </span>
-                      <span className="flex items-center gap-2 text-xs">
-                        <span className={cn("rounded-full px-2 py-0.5 font-medium", band.chipClass)}>
-                          {band.label}
-                        </span>
-                        <span className="tabular-nums text-muted-foreground">
-                          {Math.round(report.overall_score)}
-                        </span>
-                      </span>
-                    </Link>
-                  );
-                })}
+                {recentReports.map((report) => (
+                  <Link
+                    key={report.risk_score_id}
+                    href={`/reports/${report.risk_score_id}`}
+                    className="flex items-center justify-between gap-2 rounded-lg px-2 py-2 text-sm hover:bg-muted"
+                  >
+                    <span>
+                      {report.village_name}
+                      <span className="text-muted-foreground"> · {report.taluka_name}</span>
+                    </span>
+                    <RiskBandChip band={report.overall_band} score={report.overall_score} />
+                  </Link>
+                ))}
               </CardContent>
             </Card>
 

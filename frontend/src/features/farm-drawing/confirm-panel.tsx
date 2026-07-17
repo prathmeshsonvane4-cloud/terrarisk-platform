@@ -10,8 +10,6 @@ interface ConfirmPanelProps {
   previewAreaHectares: number;
   /** Non-null blocks submission (e.g. implausible area) — shown verbatim. */
   blockedReason: string | null;
-  isPending: boolean;
-  errorMessage: string | null;
   onSubmit: () => void;
 }
 
@@ -21,16 +19,12 @@ interface ConfirmPanelProps {
  * affirmation — recorded server-side as drawn_by on the created farm. P10:
  * this click now also triggers report generation in the same action
  * (Product Design v2 §7.2 — farm-creation and report-trigger are one
- * officer decision, not two separate UI moments).
+ * officer decision, not two separate UI moments). Pending/error state for
+ * that combined action is owned and rendered by the wizard's own "submit"
+ * step (`assessment-wizard.tsx`), since this panel's own click immediately
+ * advances past it — the panel itself is only ever shown pre-submit.
  */
-export function ConfirmPanel({
-  village,
-  previewAreaHectares,
-  blockedReason,
-  isPending,
-  errorMessage,
-  onSubmit,
-}: ConfirmPanelProps) {
+export function ConfirmPanel({ village, previewAreaHectares, blockedReason, onSubmit }: ConfirmPanelProps) {
   return (
     <div className="flex flex-col gap-3 rounded-lg border p-3 text-sm">
       <div>
@@ -54,18 +48,9 @@ export function ConfirmPanel({
           {blockedReason}
         </p>
       )}
-      {errorMessage && (
-        <p role="alert" className="text-xs text-destructive">
-          {errorMessage} — check the boundary and try again.
-        </p>
-      )}
 
-      <Button onClick={onSubmit} disabled={isPending || blockedReason !== null}>
-        {isPending
-          ? "Saving farm…"
-          : errorMessage
-            ? "Retry — confirm & generate report"
-            : "Confirm & generate report"}
+      <Button onClick={onSubmit} disabled={blockedReason !== null}>
+        Confirm &amp; generate report
       </Button>
     </div>
   );

@@ -5,11 +5,10 @@ import Link from "next/link";
 
 import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorState } from "@/components/ui/error-state";
+import { RiskBandChip } from "@/components/ui/risk-band-chip";
 import { SkeletonList } from "@/components/ui/skeleton";
 import { useReports } from "@/features/workspace/use-reports";
 import { formatArea } from "@/lib/format";
-import { RISK_BANDS } from "@/lib/risk-bands";
-import { cn } from "@/lib/utils";
 
 /**
  * The Reports workspace index (Product Design v2 §7, screen 9) — every
@@ -32,39 +31,35 @@ export default function ReportsPage() {
         <EmptyState
           icon={FileTextIcon}
           title="No reports issued yet"
-          description="Every completed climate assessment for your branch will appear here."
+          description="A report appears here the moment an assessment finishes — this branch hasn't completed one yet."
+          action={{ label: "Start an assessment", href: "/assessments/new" }}
         />
       )}
 
       {!isPending && !isError && reports.length > 0 && (
         <div className="flex flex-col divide-y rounded-lg border">
-          {reports.map((report) => {
-            const band = RISK_BANDS[report.overall_band];
-            return (
-              <Link
-                key={report.risk_score_id}
-                href={`/reports/${report.risk_score_id}`}
-                className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 text-sm hover:bg-muted"
-              >
-                <div>
-                  <p className="font-medium">
-                    {report.village_name}
-                    <span className="font-normal text-muted-foreground">
-                      {" "}
-                      · {report.taluka_name}, {report.district_name}
-                    </span>
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    {formatArea(report.area_ha)} · {report.officer_name} ·{" "}
-                    {new Date(report.computed_at).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}
-                  </p>
-                </div>
-                <span className={cn("rounded-full px-2 py-0.5 text-xs font-medium", band.chipClass)}>
-                  {band.label} · {Math.round(report.overall_score)}
-                </span>
-              </Link>
-            );
-          })}
+          {reports.map((report) => (
+            <Link
+              key={report.risk_score_id}
+              href={`/reports/${report.risk_score_id}`}
+              className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 text-sm hover:bg-muted"
+            >
+              <div>
+                <p className="font-medium">
+                  {report.village_name}
+                  <span className="font-normal text-muted-foreground">
+                    {" "}
+                    · {report.taluka_name}, {report.district_name}
+                  </span>
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {formatArea(report.area_ha)} · {report.officer_name} ·{" "}
+                  {new Date(report.computed_at).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}
+                </p>
+              </div>
+              <RiskBandChip band={report.overall_band} score={report.overall_score} />
+            </Link>
+          ))}
         </div>
       )}
     </div>

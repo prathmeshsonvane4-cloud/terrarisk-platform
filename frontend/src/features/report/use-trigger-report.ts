@@ -3,7 +3,7 @@
 import { useMutation } from "@tanstack/react-query";
 
 import { apiClient } from "@/lib/api/client";
-import { extractApiErrorMessage, extractConflictingJobId } from "@/lib/api/errors";
+import { ApiError, extractApiErrorMessage, extractConflictingJobId } from "@/lib/api/errors";
 import type { components } from "@/lib/api/schema";
 
 export type ReportTriggerResponse = components["schemas"]["ReportTriggerResponse"];
@@ -25,7 +25,7 @@ export class ReportTriggerConflictError extends Error {
 export function useTriggerReport() {
   return useMutation({
     mutationFn: async (farmId: string): Promise<ReportTriggerResponse> => {
-      const { data, error } = await apiClient.POST("/api/v1/farms/{farm_id}/reports", {
+      const { data, error, response } = await apiClient.POST("/api/v1/farms/{farm_id}/reports", {
         params: { path: { farm_id: farmId } },
         // lookback_years defaults to 3 server-side (approved methodology);
         // the M2A UI deliberately doesn't expose it as a knob.
@@ -40,7 +40,7 @@ export function useTriggerReport() {
         if (conflictingJobId) {
           throw new ReportTriggerConflictError(extractApiErrorMessage(error), conflictingJobId);
         }
-        throw new Error(extractApiErrorMessage(error));
+        throw new ApiError(extractApiErrorMessage(error), response.status);
       }
       return data;
     },

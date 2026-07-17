@@ -5,11 +5,10 @@ import Link from "next/link";
 
 import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorState } from "@/components/ui/error-state";
+import { RiskBandChip } from "@/components/ui/risk-band-chip";
 import { SkeletonList } from "@/components/ui/skeleton";
 import { useFarms } from "@/features/workspace/use-farms";
 import { formatArea } from "@/lib/format";
-import { RISK_BANDS } from "@/lib/risk-bands";
-import { cn } from "@/lib/utils";
 
 /**
  * The Farms workspace index (Product Design v2 §7, screen 7) — every farm
@@ -31,7 +30,7 @@ export default function FarmsPage() {
         <EmptyState
           icon={MapIcon}
           title="No farms mapped yet"
-          description="Farms mapped by you or a colleague at your branch will appear here."
+          description="Nobody at this branch has mapped a farm boundary yet — once one is, it'll appear here with its assessment history."
           action={{ label: "Map a farm", href: "/assessments/new" }}
         />
       )}
@@ -64,15 +63,10 @@ export default function FarmsPage() {
                   </span>
                 )}
                 {farm.latest_assessment ? (
-                  <span
-                    className={cn(
-                      "rounded-full px-2 py-0.5 text-xs font-medium",
-                      RISK_BANDS[farm.latest_assessment.overall_band].chipClass,
-                    )}
-                  >
-                    {RISK_BANDS[farm.latest_assessment.overall_band].label} ·{" "}
-                    {Math.round(farm.latest_assessment.overall_score)}
-                  </span>
+                  <RiskBandChip
+                    band={farm.latest_assessment.overall_band}
+                    score={farm.latest_assessment.overall_score}
+                  />
                 ) : (
                   !farm.active_job && (
                     <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">

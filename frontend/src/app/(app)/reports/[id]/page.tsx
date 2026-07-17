@@ -71,7 +71,7 @@ export default function ReportPage() {
   const computedAt = new Date(report.computed_at);
 
   return (
-    <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-5 p-4 md:p-6">
+    <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-5 p-4 md:p-6 print:max-w-none print:p-0">
       {/* Farm identity strip — provenance first (Blueprint §08) */}
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div>
@@ -87,7 +87,10 @@ export default function ReportPage() {
             {computedAt.toLocaleDateString("en-IN", { dateStyle: "medium" })}
           </p>
         </div>
-        <div className="flex items-start gap-2">
+        {/* Actions are interactive-only — no place on a printed page (P11);
+         * the authoritative printed artifact is the server-rendered PDF via
+         * Download PDF, not a browser print of this live view. */}
+        <div className="flex items-start gap-2 print:hidden">
           <Link href={`/farms/${report.farm_id}`} className={buttonVariants({ variant: "outline", size: "sm" })}>
             View farm
           </Link>
@@ -99,16 +102,19 @@ export default function ReportPage() {
       </header>
 
       <Tabs value={tab} onValueChange={(value) => setTab(value as TabValue)}>
-        <TabsList>
+        <TabsList className="print:hidden">
           <TabsTab value="report">Report</TabsTab>
           <TabsTab value="evidence">Evidence</TabsTab>
           <TabsTab value="method">Method</TabsTab>
         </TabsList>
 
         <TabsPanel value="report" className="flex flex-col gap-5">
-          {/* Verdict + map */}
-          <div className="grid gap-4 md:grid-cols-2">
-            <section className="flex flex-col gap-3 rounded-lg border p-5">
+          {/* Verdict + map. The map is a live WebGL canvas that a browser's
+           * print pipeline cannot reliably capture — hidden in print rather
+           * than risking blank/clipped output; the verdict panel takes the
+           * full width in its place. */}
+          <div className="grid gap-4 md:grid-cols-2 print:grid-cols-1">
+            <section className="flex flex-col gap-3 rounded-lg border p-5 print:break-inside-avoid">
               <div>
                 <p className="text-xs text-muted-foreground">Overall climate risk</p>
                 <p className={`text-4xl font-semibold ${band.textClass}`}>{band.label}</p>
@@ -126,12 +132,12 @@ export default function ReportPage() {
               <button
                 type="button"
                 onClick={() => setTab("method")}
-                className="self-start text-xs font-medium text-primary underline-offset-2 hover:underline"
+                className="self-start text-xs font-medium text-primary underline-offset-2 hover:underline print:hidden"
               >
                 How was this score calculated?
               </button>
             </section>
-            <section className="relative min-h-64 overflow-hidden rounded-lg border">
+            <section className="relative min-h-64 overflow-hidden rounded-lg border print:hidden">
               <ReportMap geometry={report.farm.geometry} className="absolute inset-0" />
             </section>
           </div>
@@ -139,7 +145,7 @@ export default function ReportPage() {
           <RecommendationBlock report={report} />
 
           {/* Factor breakdown — the explainability requirement made concrete */}
-          <section>
+          <section className="print:break-inside-avoid">
             <h2 className="mb-2 text-sm font-medium">Risk factor breakdown</h2>
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
               {factors.map((factor) => (
@@ -149,8 +155,8 @@ export default function ReportPage() {
           </section>
 
           {/* History charts — the "banks can't see cultivation history" answer */}
-          <div className="grid gap-4 lg:grid-cols-2">
-            <section className="rounded-lg border p-4">
+          <div className="grid gap-4 lg:grid-cols-2 print:break-before-page">
+            <section className="rounded-lg border p-4 print:break-inside-avoid">
               <h2 className="text-sm font-medium">Vegetation health — 3-year NDVI</h2>
               <p className="mb-2 text-xs text-muted-foreground">
                 Monthly cloud-free composite over this farm. Higher is greener, denser vegetation.
@@ -163,7 +169,7 @@ export default function ReportPage() {
                 ariaLabel="Three-year monthly NDVI vegetation index trend for this farm"
               />
             </section>
-            <section className="rounded-lg border p-4">
+            <section className="rounded-lg border p-4 print:break-inside-avoid">
               <h2 className="text-sm font-medium">Monthly rainfall</h2>
               <p className="mb-2 text-xs text-muted-foreground">
                 {typeof droughtRatio === "number"
@@ -181,7 +187,7 @@ export default function ReportPage() {
           </div>
 
           {/* Lineage footer — "how was this number produced", on the page itself */}
-          <footer className="flex flex-col gap-1 rounded-lg border bg-muted/30 p-4 text-xs text-muted-foreground">
+          <footer className="flex flex-col gap-1 rounded-lg border bg-muted/30 p-4 text-xs text-muted-foreground print:break-inside-avoid">
             <p>
               <span className="font-medium text-foreground">Data sources:</span> {DATA_SOURCES}
             </p>

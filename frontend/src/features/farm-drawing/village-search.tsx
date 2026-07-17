@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 
+import { InlineErrorState } from "@/components/ui/error-state";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
@@ -14,7 +15,7 @@ interface VillageSearchProps {
 
 export function VillageSearch({ onSelect }: VillageSearchProps) {
   const [query, setQuery] = useState("");
-  const { data: results, isFetching, isError, error, isQueryTooShort } = useVillageSearch(query);
+  const { data: results, isFetching, isError, error, isQueryTooShort, refetch } = useVillageSearch(query);
 
   const hasResults = !!results && results.length > 0;
   const showEmptyState = !isFetching && !isError && !!results && results.length === 0;
@@ -34,9 +35,11 @@ export function VillageSearch({ onSelect }: VillageSearchProps) {
         <p className="text-xs text-muted-foreground">Keep typing — at least 2 characters.</p>
       )}
       {isFetching && <p className="text-xs text-muted-foreground">Searching…</p>}
-      {isError && <p className="text-xs text-destructive">{error.message}</p>}
+      {isError && <InlineErrorState error={error} onRetry={() => refetch()} />}
       {showEmptyState && (
-        <p className="text-xs text-muted-foreground">No villages found — check the spelling.</p>
+        <p className="text-xs text-muted-foreground">
+          No villages match &ldquo;{query.trim()}&rdquo; — check the spelling.
+        </p>
       )}
 
       {hasResults && (

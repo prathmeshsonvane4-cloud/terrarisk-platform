@@ -1928,3 +1928,162 @@ rather than adds — the rewrite's own reasoning, and the two live bugs
 its repeated OOM crashes led to, are documented above). ESLint clean,
 `tsc --noEmit` clean, production build clean (`/assessments/new` grew
 43.7 kB → 43.8 kB; all 10 routes unchanged).
+
+---
+
+### UX polish & production readiness — shared RiskBandChip, error-taxonomy coverage completed, print styles, responsive fix (M2B P11)
+
+**Decision.** A QA/polish pass over the already-complete P0–P10 product,
+entirely additive — no new endpoints, no schema change, no
+`ReportResponse`/authorization change. Five pieces:
+
+1. **`components/ui/risk-band-chip.tsx`.** The risk-band pill
+   (`rounded-full px-2 py-0.5 ...` + `RISK_BANDS[band]`) had been
+   hand-duplicated at 8 independent call sites (Overview, Farms index,
+   Farm detail, Assessments index, Reports index, `FactorCard`,
+   `MethodTab`) since M2A/M2B — each a faithful copy, but 8 places to
+   keep visually identical by hand. Consolidated into one component,
+   `score?: number` optional for the "{label} · {score}" vs. band-only
+   forms already both in use, and a `title` tooltip stating the band's
+   real score range (read from the same `BAND_THRESHOLDS` mirror the
+   Method tab's own table already renders — one source of the cutoff
+   numbers, `bandRange()` computes the label, never restated by hand).
+   This is this phase's answer to Product Design v2's P11-scoped item
+   14 ("contextual methodology links... everywhere a score appears"):
+   extending the exact `title=` pattern the P9 confidence badge already
+   established, rather than introducing a new tooltip primitive or
+   deep-linking into nested `<Link>` rows (every list row *is* a
+   `<Link>` to the report already — a second interactive element inside
+   it would be an invalid nested-anchor DOM, not just an inconsistency).
+
+2. **Error-taxonomy coverage completed.** P10 shipped `ApiError` +
+   `ErrorState`/`InlineErrorState` but only wired the six query hooks
+   that existed at the time; the survey for this phase found
+   `useVillageSearch`, `useCreateFarm`, and `useTriggerReport` still
+   throwing plain `Error` (no status), and four call sites
+   (`village-search.tsx`, farm detail's re-assess, the Run page's retry,
+   the wizard's submit-step failure) still rendering a raw
+   `error.message` string with no family classification. All three hooks
+   now throw `ApiError` with the real HTTP status (identical pattern to
+   P10's fix), and all four call sites now render through
+   `InlineErrorState`/`ErrorState` — except **`login-form.tsx`,
+   deliberately left alone**: its raw `{loginMutation.error.message}` is
+   correct as-is, not a defect. The backend's login 401 already returns
+   the intentional generic "Invalid email or password" (Blueprint §03,
+   M0 decision — no user enumeration), and `ErrorState`'s "auth" family
+   copy ("Session no longer valid... sign in again") describes an
+   *existing session expiring*, not a *login attempt failing* — routing
+   login failures through that family would show semantically wrong
+   text. Distinguishing "this raw message happens to already be right"
+   from "this raw message is a defect" was the actual judgment call
+   this item required, not a mechanical find-and-replace.
+
+3. **Dead prop cleanup.** `ConfirmPanel`'s `isPending`/`errorMessage`
+   props were always called with `false`/`null` after P10's wizard
+   rewrite (the panel's own click immediately advances the wizard past
+   it, into the "submit" step, which owns its own pending/error
+   display) — genuinely dead, not just unused-by-convention. Removed
+   from the component's interface entirely rather than left as
+   permanently-`null` plumbing.
+
+4. **Print styles for the live Report page.** Zero `@media print`
+   existed anywhere in the app before this phase (verified by grep).
+   Added scoped `print:` utility classes (not a new global stylesheet
+   file) to `reports/[id]/page.tsx` and `AppShell`: navigation chrome,
+   the tab list, and every interactive-only control (View farm/New
+   assessment/Download PDF, the "How was this score calculated?" link)
+   hide on print; the live `ReportMap` — a WebGL canvas a browser's
+   print pipeline cannot reliably capture — also hides in print rather
+   than risking blank or clipped output, with the verdict panel taking
+   the freed width; `print:break-inside-avoid`/`print:break-before-page`
+   keep factor cards, charts, and the lineage footer from splitting
+   mid-block across a page boundary. Deliberately scoped to the Report
+   page only, not every index page — printing a raw farms/reports list
+   table isn't a real bank workflow, and the authoritative printed
+   artifact for a report is already the server-rendered reportlab PDF
+   (M2A P6, untouched this phase); this is a quick-reference browser
+   print of the live dashboard, not a second PDF pipeline.
+
+5. **Responsive fix, `MethodTab` score-anatomy row.** Flagged by static
+   review, then confirmed live: the row's fixed-width columns (`w-36` +
+   `w-20` + `w-12` label/weight/contribution cells) left too little
+   room for the contribution bar under ~640px, and "Vegetation
+   stability"/"Water availability" sat right at the wrap boundary of
+   their `w-36` cell. Changed to `flex-col` (two stacked lines:
+   label+weight/value, then bar+contribution) below Tailwind's `sm`
+   breakpoint, `sm:contents` restoring the original single-row layout
+   at `sm:` and up — live-verified at exactly 375px
+   (`getComputedStyle().flexDirection === "column"`, zero
+   viewport-width overflow) and 768px (`"row"`, matching the original
+   desktop layout pixel-for-pixel).
+
+**A genuine environment incident, not a code defect, worth recording.**
+Mid-phase, the Next.js dev server started failing with
+`ENOSPC: no space left on device` and Turbopack `TurbopackInternalError`
+panics — the machine's C: drive was at 238GB/238GB used, 0 bytes free.
+This also explains this session's earlier (P10) intermittent Vitest
+worker heap-exhaustion crashes: Windows' page file cannot grow on a full
+disk, so what looked like a memory ceiling was actually disk exhaustion
+wearing a memory-error costume. This machine-level problem was flagged
+to the founder rather than guessed at — deleting arbitrary files to free
+space on a shared dev machine without knowing what 238GB belonged to
+would have been exactly the kind of unilateral destructive action these
+sessions' own operating rules exist to prevent. The founder freed space
+directly; the stale `.next` build cache (built partway through the
+disk-full window, at risk of corrupted partial writes) was cleared and
+rebuilt clean before verification resumed. No source change resulted
+from this incident — it's recorded here purely so a future session
+seeing a "memory" crash on this machine checks disk space first.
+
+**Alternatives considered.** A generic `<Tooltip>` primitive (Radix/
+base-ui style, hover-card positioning, etc.) for the band-range hint —
+rejected as introducing a new UI dependency/pattern for one line of
+static text when the native `title=` attribute, already established
+and accepted for this exact purpose in P9, does the job with zero new
+code. Deep-linking report tabs via `?tab=method` so index-page rows
+could link straight to the Method tab — rejected for this phase: every
+row that shows a score is already a whole-row `<Link>` to the report
+(Overview, Farms, Farm detail, Assessments, Reports), so a second
+nested link/button for "explain" would be an invalid nested-interactive
+DOM structure, not just a design choice; the tooltip achieves the
+"how was this calculated" requirement without restructuring five list
+components' click targets for marginal gain over what's already one
+click away (open the report, the Method tab is right there).
+
+**Trade-offs.** None identified for the shipped changes — all five
+items are strictly additive or corrective (dead-prop removal, a
+consolidated component with byte-identical rendered output at existing
+call sites, print CSS scoped to `print:` variants that have zero effect
+on-screen, a responsive fix verified not to change desktop/tablet
+layout). The disk-space incident cost real session time but produced no
+code trade-off — the fix was operational (free disk, clear stale
+cache), not a design compromise.
+
+**Live verification.** Full walkthrough against the real stack (backend
++ PostGIS + the same seeded officer used throughout M2B): Overview,
+Farms index, Farm detail, Assessments index, and a real Report page
+(all three tabs) all confirmed rendering the new `RiskBandChip` with
+correct text and a real, accurate `title` tooltip (e.g.
+`"Moderate risk = 25.01–50 / 100"`, read directly off the live DOM, not
+asserted from source). The compiled production CSS was inspected
+directly (`grep -c "@media print"` on the built chunk) after the
+in-browser `document.styleSheets` check gave an unreliable negative —
+6 real `@media print` blocks confirmed present. `MethodTab`'s
+responsive fix was verified at both 375px and 768px via
+`getComputedStyle` on the live DOM, not inferred from the Tailwind
+classes alone. The wizard's village search was exercised live
+end-to-end (real debounced `GET /villages`, three real results
+returned) with zero console errors across the entire session. A farm
+with real assessment history correctly showed "Re-assess" (not
+"Assess") in the header, confirming the wording fix's conditional logic
+against real data.
+
+**Tests.** Backend: 131/131 (unchanged — this phase touched no backend
+code). Frontend: 51/51 (unchanged count — no tests added or removed;
+existing `method-tab.test.tsx` and the full suite re-verified passing
+against every change in this phase, including the `ConfirmPanel` prop
+removal and the `RiskBandChip` swap-in, since both existing test suites
+assert on visible text/behavior, not implementation markup). ESLint
+clean, `tsc --noEmit` clean, production build clean (`/reports/[id]`
+123 kB → 123 kB, `/assessments/new` 43.8 kB → 45.1 kB from the
+responsive/print class additions, all 10 routes unchanged).

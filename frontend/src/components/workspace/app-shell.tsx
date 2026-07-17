@@ -148,8 +148,10 @@ export function AppShell({ children }: { children: ReactNode }) {
   return (
     <div className="flex min-h-screen flex-col md:flex-row">
       <OfflineBanner />
-      {/* Desktop rail */}
-      <aside className="hidden w-56 shrink-0 flex-col gap-4 border-r p-4 md:flex">
+      {/* Desktop rail — hidden on print (P11): navigation chrome has no
+       * place on a printed page; the report's own content is what a bank
+       * officer actually prints. */}
+      <aside className="hidden w-56 shrink-0 flex-col gap-4 border-r p-4 md:flex print:hidden">
         <Link href="/" onClick={guardedClick} className="font-heading text-base font-semibold">
           TerraRisk
         </Link>
@@ -161,7 +163,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       </aside>
 
       {/* Mobile top bar + drawer */}
-      <header className="flex items-center justify-between border-b px-4 py-2.5 md:hidden">
+      <header className="flex items-center justify-between border-b px-4 py-2.5 md:hidden print:hidden">
         <div className="flex items-center gap-2">
           <Sheet open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
             <SheetTrigger

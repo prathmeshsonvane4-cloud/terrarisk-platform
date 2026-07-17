@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { ErrorState } from "@/components/ui/error-state";
 import { ConfirmPanel } from "@/features/farm-drawing/confirm-panel";
 import { FarmMap } from "@/features/farm-drawing/farm-map";
 import type { Village } from "@/features/farm-drawing/types";
@@ -63,7 +64,7 @@ export function AssessmentWizard({ initialDraft }: AssessmentWizardProps) {
   const [savedFarmId, setSavedFarmId] = useState<string | null>(initialDraft?.savedFarmId ?? null);
   const [savedFarmAreaHa, setSavedFarmAreaHa] = useState<number | null>(initialDraft?.savedFarmAreaHa ?? null);
   const [submitPhase, setSubmitPhase] = useState<SubmitPhase>("idle");
-  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [submitError, setSubmitError] = useState<unknown>(null);
   const stepHeadingRef = useRef<HTMLHeadingElement>(null);
   // Reentrancy guard for the combined submit action (P10 requirement 10 —
   // prevent duplicate API requests): a ref, not state, because two rapid
@@ -168,7 +169,7 @@ export function AssessmentWizard({ initialDraft }: AssessmentWizardProps) {
         return;
       }
       setSubmitPhase("error");
-      setSubmitError(err instanceof Error ? err.message : "Something went wrong. Please try again.");
+      setSubmitError(err);
     } finally {
       // Released unconditionally — including on the success/conflict paths
       // above, which `return` before reaching here — so a genuine Retry
@@ -272,8 +273,6 @@ export function AssessmentWizard({ initialDraft }: AssessmentWizardProps) {
               village={selectedVillage}
               previewAreaHectares={areaHectares}
               blockedReason={boundsIssue}
-              isPending={false}
-              errorMessage={null}
               onSubmit={handleConfirmAndGenerate}
             />
           )}
@@ -292,19 +291,16 @@ export function AssessmentWizard({ initialDraft }: AssessmentWizardProps) {
                 </div>
               )}
 
-              <p aria-live="polite" className="text-sm">
-                {submitPhase === "saving-farm" && "Saving farm boundary…"}
-                {submitPhase === "starting-analysis" && "Starting climate analysis…"}
-                {submitPhase === "error" && "Something went wrong."}
-              </p>
+              {submitPhase !== "error" && (
+                <p aria-live="polite" className="text-sm">
+                  {submitPhase === "saving-farm" && "Saving farm boundary…"}
+                  {submitPhase === "starting-analysis" && "Starting climate analysis…"}
+                </p>
+              )}
 
               {submitPhase === "error" && (
                 <>
-                  {submitError && (
-                    <p role="alert" className="text-xs text-destructive">
-                      {submitError}
-                    </p>
-                  )}
+                  <ErrorState error={submitError} referenceId={savedFarmId ?? undefined} />
                   <Button onClick={handleConfirmAndGenerate}>
                     {savedFarmId ? "Retry — start analysis" : "Retry — save farm & start analysis"}
                   </Button>

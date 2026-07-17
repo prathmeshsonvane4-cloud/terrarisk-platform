@@ -2,17 +2,18 @@
 
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
+import { ClockIcon } from "lucide-react";
 
 import { Button, buttonVariants } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
-import { ErrorState } from "@/components/ui/error-state";
+import { ErrorState, InlineErrorState } from "@/components/ui/error-state";
+import { RiskBandChip } from "@/components/ui/risk-band-chip";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ReportTriggerConflictError, useTriggerReport } from "@/features/report/use-trigger-report";
 import { useFarmAssessmentHistory } from "@/features/workspace/use-farm-assessment-history";
 import { useFarms } from "@/features/workspace/use-farms";
 import { ApiError } from "@/lib/api/errors";
 import { formatArea } from "@/lib/format";
-import { RISK_BANDS } from "@/lib/risk-bands";
 import { cn } from "@/lib/utils";
 
 /**
@@ -104,14 +105,18 @@ export default function FarmDetailPage() {
           </p>
         </div>
         <Button onClick={handleReassess} disabled={triggerReport.isPending || Boolean(activeJob)} size="sm">
-          {activeJob ? "Assessment running…" : triggerReport.isPending ? "Starting…" : "Re-assess"}
+          {activeJob
+            ? "Assessment running…"
+            : triggerReport.isPending
+              ? "Starting…"
+              : hasHistory
+                ? "Re-assess"
+                : "Assess"}
         </Button>
       </header>
 
       {triggerReport.isError && !(triggerReport.error instanceof ReportTriggerConflictError) && (
-        <p role="alert" className="text-sm text-destructive">
-          {triggerReport.error.message}
-        </p>
+        <InlineErrorState error={triggerReport.error} onRetry={handleReassess} />
       )}
 
       {activeJob && (
@@ -127,35 +132,28 @@ export default function FarmDetailPage() {
       <section>
         <h2 className="mb-2 text-sm font-medium">Assessment history</h2>
 
-        {!hasHistory && (
+        {!hasHistory && !activeJob && (
           <EmptyState
+            icon={ClockIcon}
             title="No assessments yet for this farm"
-            description="Run the first one to get a climate risk score."
+            description="This farm has been mapped but never assessed — use Assess above to get its first climate risk score."
           />
         )}
 
         {hasHistory && (
           <div className="flex flex-col divide-y rounded-lg border">
-            {history!.items.map((item) => {
-              const band = RISK_BANDS[item.overall_band];
-              return (
-                <Link
-                  key={item.risk_score_id}
-                  href={`/reports/${item.risk_score_id}`}
-                  className="flex items-center justify-between gap-2 px-4 py-3 text-sm hover:bg-muted"
-                >
-                  <span className="text-muted-foreground">
-                    {new Date(item.computed_at).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}
-                  </span>
-                  <span className="flex items-center gap-2">
-                    <span className={cn("rounded-full px-2 py-0.5 text-xs font-medium", band.chipClass)}>
-                      {band.label}
-                    </span>
-                    <span className="tabular-nums">{Math.round(item.overall_score)}</span>
-                  </span>
-                </Link>
-              );
-            })}
+            {history!.items.map((item) => (
+              <Link
+                key={item.risk_score_id}
+                href={`/reports/${item.risk_score_id}`}
+                className="flex items-center justify-between gap-2 px-4 py-3 text-sm hover:bg-muted"
+              >
+                <span className="text-muted-foreground">
+                  {new Date(item.computed_at).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}
+                </span>
+                <RiskBandChip band={item.overall_band} score={item.overall_score} />
+              </Link>
+            ))}
           </div>
         )}
       </section>

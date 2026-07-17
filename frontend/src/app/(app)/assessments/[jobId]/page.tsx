@@ -5,7 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { useEffect } from "react";
 
 import { Button, buttonVariants } from "@/components/ui/button";
-import { ErrorState } from "@/components/ui/error-state";
+import { ErrorState, InlineErrorState } from "@/components/ui/error-state";
 import { Skeleton } from "@/components/ui/skeleton";
 import { AssessmentTimeline } from "@/features/assessment/assessment-timeline";
 import { ReportTriggerConflictError, useTriggerReport } from "@/features/report/use-trigger-report";
@@ -112,9 +112,7 @@ export default function AssessmentStatusPage() {
                 {job.error_message ?? "The analysis could not be completed."}
               </p>
               {retry.isError && !(retry.error instanceof ReportTriggerConflictError) && (
-                <p role="alert" className="text-xs text-destructive">
-                  {retry.error.message}
-                </p>
+                <InlineErrorState error={retry.error} />
               )}
               <div className="flex gap-2">
                 <Button onClick={handleRetry} disabled={retry.isPending || !job.entity_id} size="sm">

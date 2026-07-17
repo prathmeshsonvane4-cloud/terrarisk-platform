@@ -1,3 +1,4 @@
+import { RiskBandChip } from "@/components/ui/risk-band-chip";
 import type { components } from "@/lib/api/schema";
 import { BAND_THRESHOLDS } from "@/lib/band-thresholds";
 import { RISK_BANDS } from "@/lib/risk-bands";
@@ -62,20 +63,24 @@ export function MethodTab({ report }: { report: ReportResponse }) {
           Weights version {method.weights_version_id.slice(0, 8)} · effective{" "}
           {new Date(method.weights_effective_from).toLocaleDateString("en-IN", { dateStyle: "medium" })}
         </p>
-        <div className="mt-3 flex flex-col gap-2">
+        <div className="mt-3 flex flex-col gap-3 sm:gap-2">
           {contributions.map(({ factor, weight, contribution }) => (
-            <div key={factor.factor} className="flex items-center gap-3 text-sm">
-              <span className="w-36 shrink-0">{FACTOR_LABELS[factor.factor]}</span>
-              <span className="w-20 shrink-0 tabular-nums text-muted-foreground">
-                {Math.round(factor.value)} × {formatWeight(weight)}
-              </span>
-              <span className="flex-1">
-                <span
-                  className="block h-3 rounded-sm bg-primary/70"
-                  style={{ width: `${(contribution / maxContribution) * 100}%` }}
-                />
-              </span>
-              <span className="w-12 shrink-0 text-right tabular-nums">{contribution.toFixed(1)}</span>
+            <div key={factor.factor} className="flex flex-col gap-1 text-sm sm:flex-row sm:items-center sm:gap-3">
+              <div className="flex items-center justify-between gap-2 sm:contents">
+                <span className="sm:w-36 sm:shrink-0">{FACTOR_LABELS[factor.factor]}</span>
+                <span className="shrink-0 tabular-nums text-muted-foreground sm:w-20">
+                  {Math.round(factor.value)} × {formatWeight(weight)}
+                </span>
+              </div>
+              <div className="flex items-center gap-2 sm:contents">
+                <span className="flex-1">
+                  <span
+                    className="block h-3 rounded-sm bg-primary/70"
+                    style={{ width: `${(contribution / maxContribution) * 100}%` }}
+                  />
+                </span>
+                <span className="w-12 shrink-0 text-right tabular-nums">{contribution.toFixed(1)}</span>
+              </div>
             </div>
           ))}
         </div>
@@ -110,13 +115,10 @@ export function MethodTab({ report }: { report: ReportResponse }) {
           <tbody>
             {BAND_THRESHOLDS.map((entry, index) => {
               const min = index === 0 ? 0 : BAND_THRESHOLDS[index - 1].max + 0.01;
-              const band = RISK_BANDS[entry.band];
               return (
                 <tr key={entry.band} className="border-t first:border-t-0">
                   <td className="py-1.5">
-                    <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${band.chipClass}`}>
-                      {band.label}
-                    </span>
+                    <RiskBandChip band={entry.band} showRangeHint={false} />
                   </td>
                   <td className="py-1.5 text-right tabular-nums text-muted-foreground">
                     {min.toFixed(index === 0 ? 0 : 2)} – {entry.max}

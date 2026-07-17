@@ -42,7 +42,7 @@ export function OfflineBanner() {
     <div
       role="status"
       aria-live="polite"
-      className="flex items-center justify-center gap-2 bg-amber-500/15 px-4 py-1.5 text-xs font-medium text-amber-700 dark:text-amber-400"
+      className="flex items-center justify-center gap-2 bg-amber-500/15 px-4 py-1.5 text-xs font-medium text-amber-700 print:hidden dark:text-amber-400"
     >
       <WifiOff aria-hidden className="size-3.5" />
       You&apos;re offline. TerraRisk will reconnect automatically — nothing you&apos;ve entered is lost.

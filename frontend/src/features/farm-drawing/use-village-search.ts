@@ -3,7 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 
 import { apiClient } from "@/lib/api/client";
-import { extractApiErrorMessage } from "@/lib/api/errors";
+import { ApiError, extractApiErrorMessage } from "@/lib/api/errors";
 import { useDebouncedValue } from "@/lib/use-debounced-value";
 
 const MIN_QUERY_LENGTH = 2;
@@ -16,11 +16,11 @@ export function useVillageSearch(query: string) {
   const result = useQuery({
     queryKey: ["villages", "search", debouncedQuery],
     queryFn: async () => {
-      const { data, error } = await apiClient.GET("/api/v1/villages", {
+      const { data, error, response } = await apiClient.GET("/api/v1/villages", {
         params: { query: { q: debouncedQuery } },
       });
       if (error) {
-        throw new Error(extractApiErrorMessage(error));
+        throw new ApiError(extractApiErrorMessage(error), response.status);
       }
       return data;
     },

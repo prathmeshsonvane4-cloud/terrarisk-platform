@@ -5,9 +5,9 @@ import Link from "next/link";
 
 import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorState } from "@/components/ui/error-state";
+import { RiskBandChip } from "@/components/ui/risk-band-chip";
 import { SkeletonList } from "@/components/ui/skeleton";
 import { useAssessments, type AssessmentListItem } from "@/features/workspace/use-assessments";
-import { RISK_BANDS } from "@/lib/risk-bands";
 import { cn } from "@/lib/utils";
 
 const STATUS_LABEL: Record<AssessmentListItem["status"], string> = {
@@ -44,7 +44,7 @@ export default function AssessmentsPage() {
         <EmptyState
           icon={ListChecksIcon}
           title="No assessments yet"
-          description="Runs triggered by you or a colleague at your branch will appear here."
+          description="Nobody at this branch has started a climate assessment yet — every run, queued through complete, will appear here."
           action={{ label: "Start an assessment", href: "/assessments/new" }}
         />
       )}
@@ -77,14 +77,7 @@ export default function AssessmentsPage() {
                   <span aria-hidden className="size-1.5 shrink-0 animate-pulse rounded-full bg-primary" />
                 )}
                 {item.status === "done" && item.overall_band ? (
-                  <span
-                    className={cn(
-                      "rounded-full px-2 py-0.5 text-xs font-medium",
-                      RISK_BANDS[item.overall_band].chipClass,
-                    )}
-                  >
-                    {RISK_BANDS[item.overall_band].label} · {Math.round(item.overall_score ?? 0)}
-                  </span>
+                  <RiskBandChip band={item.overall_band} score={item.overall_score ?? 0} />
                 ) : (
                   <span
                     className={cn(
