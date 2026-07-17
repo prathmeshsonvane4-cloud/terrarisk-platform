@@ -90,7 +90,13 @@ async def trigger_report(
     db: AsyncSession = Depends(get_db),
 ) -> ReportTriggerResponse:
     farm = await db.get(FarmPolygon, farm_id)
-    if farm is None:
+    if farm is None or not await user_can_access_owned_resource(db, current_user, farm.drawn_by):
+        # Same not-found-vs-forbidden discipline as get_farm/get_job/get_report
+        # (M1 IDOR fix, app/api/deps.py user_can_access_owned_resource): a farm
+        # outside the caller's owner-or-branch scope must be indistinguishable
+        # from one that doesn't exist, and — since triggering a report starts
+        # real, metered Earth Engine compute — must never be reachable at all
+        # for a farm the caller has no claim to, not just unreadable.
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Farm not found")
 
     # Transaction-scoped Postgres advisory lock, keyed on this farm — closes

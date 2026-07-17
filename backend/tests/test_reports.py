@@ -255,6 +255,33 @@ async def test_trigger_report_rejects_unknown_farm(api_client, scenario):
 
 
 @pytest.mark.asyncio
+async def test_trigger_report_rejects_user_outside_owner_or_branch(api_client, scenario):
+    """RC1 audit finding: trigger_report had no owner-or-branch check at
+    all — any authenticated officer could trigger real, billed Earth
+    Engine compute against any farm_id in the system, not just their own
+    branch's, by learning/guessing a UUID. Same class of bug as the M1
+    IDOR fix for get_farm (deps.py user_can_access_owned_resource), just
+    never applied here. Mirrors test_get_farm_rejects_user_outside_owner_or_branch
+    (test_farms.py) exactly: an unrelated user's farm_id must 404, not
+    succeed and not 403 (indistinguishable from a farm that doesn't exist)."""
+    owner_token = await _login(api_client, scenario["officer"].email)
+    farm_id = await _create_farm(api_client, owner_token, scenario["village"].id)
+
+    outsider_token = await _login(api_client, scenario["outsider"].email)
+    response = await api_client.post(
+        f"/api/v1/farms/{farm_id}/reports", headers={"Authorization": f"Bearer {outsider_token}"}, json={}
+    )
+    assert response.status_code == 404, response.text
+
+    # And no job was actually created for the outsider's unauthorized attempt.
+    async with AsyncSessionLocal() as db:
+        jobs = (
+            await db.execute(select(Job).where(Job.created_by == scenario["outsider"].id))
+        ).scalars().all()
+        assert jobs == []
+
+
+@pytest.mark.asyncio
 async def test_trigger_report_rejects_duplicate_in_flight_request(api_client, scenario):
     """A second trigger while the first is still pending/running must be
     rejected as a conflict, not silently start a second job."""

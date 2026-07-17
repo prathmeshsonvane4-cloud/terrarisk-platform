@@ -87,13 +87,23 @@ async def list_assessments(
         if job.entity_id is not None:
             farm_ids.add(job.entity_id)
 
+    # Defense in depth: `job_rows` above is already owner-or-branch scoped on
+    # the job's creator, and trigger_report only lets a job be created
+    # against a farm the creator themselves had access to — so this farm
+    # lookup should never resolve outside the caller's scope by construction.
+    # Filtering it again here anyway costs nothing and means this query can
+    # never become the exception to workspace.py's documented "every list is
+    # owner-or-branch scoped, ids never leak" invariant, even if that
+    # upstream guarantee is ever weakened by a future change.
+    farm_officer = aliased(AppUser)
     farms_by_id: dict[UUID, tuple[FarmPolygon, str]] = {}
     if farm_ids:
         rows = (
             await db.execute(
                 select(FarmPolygon, AdminBoundary.name)
                 .join(AdminBoundary, FarmPolygon.village_id == AdminBoundary.id)
-                .where(FarmPolygon.id.in_(farm_ids))
+                .join(farm_officer, FarmPolygon.drawn_by == farm_officer.id)
+                .where(FarmPolygon.id.in_(farm_ids), owned_or_branch_filter(current_user, farm_officer))
             )
         ).all()
         farms_by_id = {farm.id: (farm, village_name) for farm, village_name in rows}

@@ -31,6 +31,24 @@ def test_rejects_ring_with_fewer_than_four_points():
         GeoJSONPolygon.model_validate(_polygon([[76.0, 18.0], [76.01, 18.0], [76.0, 18.0]]))
 
 
+def test_rejects_ring_over_max_points():
+    """RC1 audit finding: only a minimum ring length was enforced — an
+    unbounded ring lets a client submit an arbitrarily large coordinate
+    array that Shapely/PostGIS then have to process synchronously in the
+    request path, a cheap DoS vector with no legitimate hand-drawn-boundary
+    use case."""
+    huge_ring = [[76.0 + i * 0.00001, 18.0 + i * 0.00001] for i in range(2001)]
+    huge_ring.append(huge_ring[0])
+    with pytest.raises(ValidationError, match="at most 2000 points"):
+        GeoJSONPolygon.model_validate(_polygon(huge_ring))
+
+
+def test_rejects_non_finite_coordinates():
+    non_finite = [[76.0, 18.0], [float("nan"), 18.0], [76.01, 18.01], [76.0, 18.0]]
+    with pytest.raises(ValidationError, match="not finite"):
+        GeoJSONPolygon.model_validate(_polygon(non_finite))
+
+
 def test_rejects_unclosed_ring():
     unclosed = [[76.0, 18.0], [76.01, 18.0], [76.01, 18.01], [76.0, 18.01]]  # first != last
     with pytest.raises(ValidationError, match="not closed"):

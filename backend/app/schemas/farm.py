@@ -6,6 +6,7 @@ application logic — never trusted from the client.
 
 from __future__ import annotations
 
+import math
 from datetime import datetime
 from typing import Literal
 from uuid import UUID
@@ -16,6 +17,15 @@ from shapely.validation import explain_validity
 
 _MIN_LONGITUDE, _MAX_LONGITUDE = -180.0, 180.0
 _MIN_LATITUDE, _MAX_LATITUDE = -90.0, 90.0
+
+# RC1 audit finding: only a *minimum* ring length was enforced. A hand-drawn
+# field boundary (Blueprint §01) realistically needs tens of vertices, never
+# thousands — an unbounded ring lets a client submit an arbitrarily large
+# coordinate array that Shapely, PostGIS ST_Area, and the geodesic preview
+# all then have to process synchronously in the request path (not the
+# background job), a cheap request-path DoS vector with no legitimate use.
+# 2000 is generous headroom over any real hand-traced boundary.
+_MAX_RING_POINTS = 2000
 
 # RFC 7946 GeoJSON is WGS84-only and normally carries no CRS member at all;
 # the older (deprecated) GeoJSON CRS member is accepted here only if it
@@ -53,9 +63,17 @@ class GeoJSONPolygon(BaseModel):
         ring = value[0]
         if len(ring) < 4:
             raise ValueError("A polygon ring must have at least 4 points (3 unique + closing point)")
+        if len(ring) > _MAX_RING_POINTS:
+            raise ValueError(f"A polygon ring may have at most {_MAX_RING_POINTS} points ({len(ring)} given)")
         if ring[0] != ring[-1]:
             raise ValueError("Polygon ring is not closed — first and last coordinates must match")
         for longitude, latitude in ring:
+            # Explicit finiteness check rather than relying on NaN/Infinity
+            # happening to fail the chained range comparison below (they
+            # currently do, but that's comparison-chaining trivia, not a
+            # documented guarantee — worth being explicit).
+            if not (math.isfinite(longitude) and math.isfinite(latitude)):
+                raise ValueError(f"Coordinate ({longitude}, {latitude}) is not finite")
             if not (_MIN_LONGITUDE <= longitude <= _MAX_LONGITUDE):
                 raise ValueError(f"Longitude {longitude} is out of valid range [-180, 180]")
             if not (_MIN_LATITUDE <= latitude <= _MAX_LATITUDE):
