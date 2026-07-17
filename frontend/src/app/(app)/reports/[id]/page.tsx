@@ -6,6 +6,8 @@ import { useState } from "react";
 
 import { MonthlyTrendChart } from "@/components/charts/monthly-trend-chart";
 import { buttonVariants } from "@/components/ui/button";
+import { ErrorState } from "@/components/ui/error-state";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsPanel, TabsTab } from "@/components/ui/tabs";
 import { DownloadPdfButton } from "@/features/report/download-pdf-button";
 import { EvidenceTab } from "@/features/report/evidence-tab";
@@ -30,13 +32,18 @@ type TabValue = "report" | "evidence" | "method";
 
 export default function ReportPage() {
   const { id } = useParams<{ id: string }>();
-  const { data: report, isPending, isError, error } = useReport(id);
+  const { data: report, isPending, isError, error, refetch } = useReport(id);
   const [tab, setTab] = useState<TabValue>("report");
 
   if (isPending) {
     return (
-      <div className="flex flex-1 items-center justify-center p-6 text-sm text-muted-foreground">
-        Loading report…
+      <div role="status" aria-label="Loading report" className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-4 p-4 md:p-6">
+        <Skeleton className="h-7 w-72" />
+        <Skeleton className="h-4 w-56" />
+        <div className="grid gap-4 md:grid-cols-2">
+          <Skeleton className="h-48 w-full" />
+          <Skeleton className="h-48 w-full" />
+        </div>
       </div>
     );
   }
@@ -44,12 +51,9 @@ export default function ReportPage() {
   if (isError) {
     return (
       <div className="flex flex-1 items-center justify-center p-6">
-        <div className="flex w-full max-w-md flex-col gap-3 rounded-lg border p-5 text-sm">
-          <p className="font-medium">Could not load this report</p>
-          <p role="alert" className="text-muted-foreground">
-            {error.message}
-          </p>
-          <Link href="/" className={cn(buttonVariants({ variant: "outline" }), "self-start")}>
+        <div className="w-full max-w-md">
+          <ErrorState error={error} onRetry={() => refetch()} referenceId={id} />
+          <Link href="/" className={cn(buttonVariants({ variant: "outline" }), "mt-3 w-full")}>
             Back to workspace
           </Link>
         </div>

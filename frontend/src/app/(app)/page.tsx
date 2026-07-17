@@ -5,6 +5,8 @@ import { ArrowRight, Plus } from "lucide-react";
 
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { ErrorState } from "@/components/ui/error-state";
+import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/features/auth/auth-context";
 import { useAssessments } from "@/features/workspace/use-assessments";
 import { useFarms } from "@/features/workspace/use-farms";
@@ -30,16 +32,34 @@ function formatElapsed(isoDate: string): string {
  */
 export default function OverviewPage() {
   const { session } = useAuth();
-  const { data: assessments, isPending: assessmentsPending } = useAssessments();
-  const { data: farms, isPending: farmsPending } = useFarms();
-  const { data: reports, isPending: reportsPending } = useReports();
+  const {
+    data: assessments,
+    isPending: assessmentsPending,
+    isError: assessmentsError,
+    error: assessmentsErrorObj,
+    refetch: refetchAssessments,
+  } = useAssessments();
+  const { data: farms, isPending: farmsPending, isError: farmsError, error: farmsErrorObj, refetch: refetchFarms } = useFarms();
+  const {
+    data: reports,
+    isPending: reportsPending,
+    isError: reportsError,
+    error: reportsErrorObj,
+    refetch: refetchReports,
+  } = useReports();
 
   const inFlight = assessments?.filter((item) => item.status === "pending" || item.status === "running") ?? [];
   const recentReports = reports?.slice(0, 5) ?? [];
   const highRiskCount = reports?.filter((r) => r.overall_band === "high" || r.overall_band === "very_high").length;
 
   const firstName = session?.fullName.split(" ")[0];
-  const isEmpty = !farmsPending && !reportsPending && farms?.length === 0 && reports?.length === 0;
+  const isEmpty =
+    !farmsPending &&
+    !reportsPending &&
+    !farmsError &&
+    !reportsError &&
+    farms?.length === 0 &&
+    reports?.length === 0;
 
   return (
     <div className="mx-auto flex w-full max-w-4xl flex-1 flex-col gap-6 p-4 md:p-6">
@@ -50,6 +70,16 @@ export default function OverviewPage() {
           New assessment
         </Link>
       </header>
+
+      {(farmsError || reportsError) && (
+        <ErrorState
+          error={farmsErrorObj ?? reportsErrorObj}
+          onRetry={() => {
+            if (farmsError) refetchFarms();
+            if (reportsError) refetchReports();
+          }}
+        />
+      )}
 
       {isEmpty && (
         <Card>
@@ -68,16 +98,15 @@ export default function OverviewPage() {
 
       {!isEmpty && (
         <>
-          {(assessmentsPending || inFlight.length > 0) && (
+          {(assessmentsPending || assessmentsError || inFlight.length > 0) && (
             <Card>
               <CardHeader>
                 <CardTitle>In progress</CardTitle>
               </CardHeader>
               <CardContent className="flex flex-col gap-1">
-                {assessmentsPending && (
-                  <p className="text-sm text-muted-foreground">Checking for running assessments…</p>
-                )}
-                {!assessmentsPending && inFlight.length === 0 && (
+                {assessmentsPending && <Skeleton className="h-4 w-48" />}
+                {assessmentsError && <ErrorState error={assessmentsErrorObj} onRetry={() => refetchAssessments()} />}
+                {!assessmentsPending && !assessmentsError && inFlight.length === 0 && (
                   <p className="text-sm text-muted-foreground">Nothing running right now.</p>
                 )}
                 {inFlight.map((item) => (
@@ -113,8 +142,8 @@ export default function OverviewPage() {
                 </Link>
               </CardHeader>
               <CardContent className="flex flex-col gap-1">
-                {reportsPending && <p className="text-sm text-muted-foreground">Loading…</p>}
-                {!reportsPending && recentReports.length === 0 && (
+                {reportsPending && <Skeleton className="h-4 w-32" />}
+                {!reportsPending && !reportsError && recentReports.length === 0 && (
                   <p className="text-sm text-muted-foreground">No reports issued yet.</p>
                 )}
                 {recentReports.map((report) => {
@@ -149,16 +178,20 @@ export default function OverviewPage() {
               </CardHeader>
               <CardContent className="flex flex-col gap-3">
                 <div>
-                  <p className="text-2xl font-semibold tabular-nums">{farmsPending ? "—" : farms?.length}</p>
+                  <p className="text-2xl font-semibold tabular-nums">
+                    {farmsPending || farmsError ? "—" : farms?.length}
+                  </p>
                   <p className="text-xs text-muted-foreground">farms mapped</p>
                 </div>
                 <div>
-                  <p className="text-2xl font-semibold tabular-nums">{reportsPending ? "—" : reports?.length}</p>
+                  <p className="text-2xl font-semibold tabular-nums">
+                    {reportsPending || reportsError ? "—" : reports?.length}
+                  </p>
                   <p className="text-xs text-muted-foreground">reports issued</p>
                 </div>
                 <div>
                   <p className="text-2xl font-semibold tabular-nums">
-                    {reportsPending ? "—" : (highRiskCount ?? 0)}
+                    {reportsPending || reportsError ? "—" : (highRiskCount ?? 0)}
                   </p>
                   <p className="text-xs text-muted-foreground">high or very high risk</p>
                 </div>

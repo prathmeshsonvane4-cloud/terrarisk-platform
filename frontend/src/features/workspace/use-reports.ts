@@ -3,7 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 
 import { apiClient } from "@/lib/api/client";
-import { extractApiErrorMessage } from "@/lib/api/errors";
+import { ApiError, extractApiErrorMessage } from "@/lib/api/errors";
 import type { components } from "@/lib/api/schema";
 
 export type ReportListItem = components["schemas"]["ReportListItem"];
@@ -14,9 +14,13 @@ export function useReports() {
   return useQuery({
     queryKey: ["reports"],
     queryFn: async (): Promise<ReportListItem[]> => {
-      const { data, error } = await apiClient.GET("/api/v1/reports");
+      const { data, error, response } = await apiClient.GET("/api/v1/reports");
       if (error) {
-        throw new Error(extractApiErrorMessage(error));
+        // See the identical note in use-farms.ts: /api/v1/reports's OpenAPI
+        // doc only declares a 200 response, so openapi-fetch types this
+        // whole branch as `never` — the cast reflects the real runtime
+        // contract, not a type-safety hole.
+        throw new ApiError(extractApiErrorMessage(error), (response as Response).status);
       }
       return data.items;
     },

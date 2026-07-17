@@ -1,10 +1,14 @@
 "use client";
 
+import { MapIcon } from "lucide-react";
 import Link from "next/link";
 
-import { RISK_BANDS } from "@/lib/risk-bands";
-import { formatArea } from "@/lib/format";
+import { EmptyState } from "@/components/ui/empty-state";
+import { ErrorState } from "@/components/ui/error-state";
+import { SkeletonList } from "@/components/ui/skeleton";
 import { useFarms } from "@/features/workspace/use-farms";
+import { formatArea } from "@/lib/format";
+import { RISK_BANDS } from "@/lib/risk-bands";
 import { cn } from "@/lib/utils";
 
 /**
@@ -13,30 +17,23 @@ import { cn } from "@/lib/utils";
  * latest assessment and any in-flight run (GET /farms, M2B P7).
  */
 export default function FarmsPage() {
-  const { data: farms, isPending, isError, error } = useFarms();
+  const { data: farms, isPending, isError, error, refetch } = useFarms();
 
   return (
     <div className="mx-auto flex w-full max-w-4xl flex-1 flex-col gap-4 p-4 md:p-6">
       <h1 className="text-lg font-semibold">Farms</h1>
 
-      {isPending && <p className="text-sm text-muted-foreground">Loading farms…</p>}
+      {isPending && <SkeletonList rows={4} />}
 
-      {isError && (
-        <p role="alert" className="text-sm text-muted-foreground">
-          {error.message}
-        </p>
-      )}
+      {isError && <ErrorState error={error} onRetry={() => refetch()} />}
 
       {!isPending && !isError && farms.length === 0 && (
-        <div className="rounded-lg border p-5 text-sm">
-          <p className="font-medium">No farms mapped yet</p>
-          <p className="mt-1 text-muted-foreground">
-            Farms mapped by you or a colleague at your branch will appear here.
-          </p>
-          <Link href="/assessments/new" className="mt-3 inline-block text-sm font-medium text-primary underline">
-            Map a farm
-          </Link>
-        </div>
+        <EmptyState
+          icon={MapIcon}
+          title="No farms mapped yet"
+          description="Farms mapped by you or a colleague at your branch will appear here."
+          action={{ label: "Map a farm", href: "/assessments/new" }}
+        />
       )}
 
       {!isPending && !isError && farms.length > 0 && (

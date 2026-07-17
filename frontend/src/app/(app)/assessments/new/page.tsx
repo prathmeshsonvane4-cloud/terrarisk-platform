@@ -1,116 +1,95 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useEffect, useRef, useState } from "react";
 
-import { ConfirmPanel } from "@/features/farm-drawing/confirm-panel";
-import { FarmMap } from "@/features/farm-drawing/farm-map";
-import { FarmSavedPanel } from "@/features/farm-drawing/farm-saved-panel";
-import type { Village } from "@/features/farm-drawing/types";
-import { useCreateFarm } from "@/features/farm-drawing/use-create-farm";
-import { VillageSearch } from "@/features/farm-drawing/village-search";
-import { formatArea } from "@/lib/format";
-import { farmAreaBoundsIssue, ringAreaHectares, toFarmGeometry, type Ring } from "@/lib/geo";
+import { Skeleton } from "@/components/ui/skeleton";
+import { AssessmentWizard } from "@/features/assessment-wizard/assessment-wizard";
+import {
+  clearDraft,
+  isDraftResumable,
+  loadDraft,
+  takeInterruptedFlag,
+  type AssessmentDraft,
+} from "@/features/assessment-wizard/draft-storage";
+import { ResumeDraftPrompt } from "@/features/assessment-wizard/resume-draft-prompt";
 
-interface DrawnPolygon {
-  ring: Ring;
-  complete: boolean;
-}
+type Gate =
+  | { kind: "checking" }
+  | { kind: "prompt"; draft: AssessmentDraft }
+  | { kind: "ready"; draft: AssessmentDraft | null };
 
-export default function NewFarmPage() {
-  // Page-scoped workflow state, single source of truth: the map reports
-  // ring changes up; area, submit-eligibility, and the POST payload all
-  // derive from here. Deliberately not persisted — re-entering this page
-  // restarts the workflow.
-  const [selectedVillage, setSelectedVillage] = useState<Village | null>(null);
-  const [polygon, setPolygon] = useState<DrawnPolygon | null>(null);
-  const [clearSignal, setClearSignal] = useState(0);
-  const createFarm = useCreateFarm();
+/**
+ * P10 requirements 1, 2, 5, 7: on mount, decides whether to show a fresh
+ * wizard, silently auto-restore an interrupted-by-session-expiry draft, or
+ * ask the officer to Resume/Discard. A draft that already has a
+ * triggered report routes straight to the existing Run page instead of
+ * ever rendering the wizard (job recovery — never re-create a running
+ * assessment).
+ */
+export default function NewAssessmentPage() {
+  const router = useRouter();
+  const routerRef = useRef(router);
+  routerRef.current = router;
+  const [gate, setGate] = useState<Gate>({ kind: "checking" });
+  // React StrictMode double-invokes effects in development to surface
+  // exactly this class of bug: `takeInterruptedFlag` below is a
+  // read-and-clear side effect, not a pure read, so a naive `useEffect`
+  // would consume the flag on its first (development-only) invocation and
+  // find it already gone on the second — silently falling back to the
+  // Resume/Discard prompt instead of the intended silent auto-restore.
+  // This ref makes the check-and-consume genuinely run once per mount.
+  const hasCheckedDraftRef = useRef(false);
 
-  const areaHectares = useMemo(
-    () => (polygon && polygon.ring.length >= 3 ? ringAreaHectares(polygon.ring) : null),
-    [polygon],
-  );
-  const boundsIssue = useMemo(
-    () => (areaHectares !== null ? farmAreaBoundsIssue(areaHectares) : null),
-    [areaHectares],
-  );
+  // Deliberately an empty dependency array: this is a mount-time check, run
+  // exactly once, not something that should re-run if the router
+  // reference ever changes — `routerRef` avoids needing `router` as a
+  // dependency for the one imperative `.replace()` call inside.
+  useEffect(() => {
+    if (hasCheckedDraftRef.current) return;
+    hasCheckedDraftRef.current = true;
 
-  const handlePolygonChange = useCallback((ring: Ring | null, complete: boolean) => {
-    setPolygon(ring ? { ring, complete } : null);
+    const draft = loadDraft();
+
+    if (isDraftResumable(draft) && draft.triggeredJobId) {
+      clearDraft();
+      routerRef.current.replace(`/assessments/${draft.triggeredJobId}`);
+      return;
+    }
+
+    if (!isDraftResumable(draft)) {
+      setGate({ kind: "ready", draft: null });
+      return;
+    }
+
+    if (takeInterruptedFlag(draft)) {
+      setGate({ kind: "ready", draft });
+    } else {
+      setGate({ kind: "prompt", draft });
+    }
   }, []);
 
-  function handleVillageSelect(village: Village) {
-    setSelectedVillage(village);
-    // A new village starts a new workflow — any previous save result is
-    // stale context (the map clears its own drawing on village change).
-    createFarm.reset();
+  if (gate.kind === "checking") {
+    return (
+      <div role="status" aria-label="Checking for an unfinished assessment" className="flex flex-1 flex-col gap-3 p-6">
+        <Skeleton className="h-8 w-64" />
+        <Skeleton className="h-64 w-full" />
+      </div>
+    );
   }
 
-  function handleSubmit() {
-    if (!selectedVillage || !polygon?.complete) return;
-    createFarm.mutate({
-      villageId: selectedVillage.id,
-      geometry: toFarmGeometry(polygon.ring),
-    });
-  }
-
-  function handleDrawAnother() {
-    createFarm.reset();
-    setPolygon(null);
-    setClearSignal((signal) => signal + 1);
-  }
-
-  const savedFarm = createFarm.data ?? null;
-  const showConfirmPanel =
-    !savedFarm && selectedVillage !== null && polygon?.complete === true && areaHectares !== null;
-  const showDrawingArea = !savedFarm && !showConfirmPanel && areaHectares !== null;
-
-  return (
-    <div className="flex flex-1 flex-col md:flex-row">
-      <aside className="flex w-full flex-col gap-4 border-b p-4 md:w-80 md:overflow-y-auto md:border-r md:border-b-0">
-        <VillageSearch onSelect={handleVillageSelect} />
-
-        {selectedVillage && !showConfirmPanel && !savedFarm && (
-          <div className="rounded-lg border p-3 text-sm">
-            <p className="text-xs text-muted-foreground">Selected village</p>
-            <p className="font-medium">{selectedVillage.name}</p>
-            <p className="text-muted-foreground">
-              {selectedVillage.taluka}, {selectedVillage.district}
-            </p>
-          </div>
-        )}
-
-        {showDrawingArea && areaHectares !== null && (
-          <div className="rounded-lg border p-3 text-sm">
-            <p className="text-xs text-muted-foreground">Drawing…</p>
-            <p className="font-medium tabular-nums">{formatArea(areaHectares)}</p>
-          </div>
-        )}
-
-        {showConfirmPanel && selectedVillage && areaHectares !== null && (
-          <ConfirmPanel
-            village={selectedVillage}
-            previewAreaHectares={areaHectares}
-            blockedReason={boundsIssue}
-            isPending={createFarm.isPending}
-            errorMessage={createFarm.isError ? createFarm.error.message : null}
-            onSubmit={handleSubmit}
-          />
-        )}
-
-        {savedFarm && selectedVillage && (
-          <FarmSavedPanel farm={savedFarm} village={selectedVillage} onDrawAnother={handleDrawAnother} />
-        )}
-      </aside>
-
-      <FarmMap
-        village={selectedVillage}
-        hasPolygon={polygon !== null && polygon.complete}
-        onPolygonChange={handlePolygonChange}
-        locked={createFarm.isPending || savedFarm !== null}
-        clearSignal={clearSignal}
-        className="relative min-h-[55vh] flex-1 md:min-h-0"
+  if (gate.kind === "prompt") {
+    return (
+      <ResumeDraftPrompt
+        draft={gate.draft}
+        onResume={() => setGate({ kind: "ready", draft: gate.draft })}
+        onDiscard={() => {
+          clearDraft();
+          setGate({ kind: "ready", draft: null });
+        }}
       />
-    </div>
-  );
+    );
+  }
+
+  return <AssessmentWizard initialDraft={gate.draft} />;
 }

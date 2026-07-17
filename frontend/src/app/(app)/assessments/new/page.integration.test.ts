@@ -1,37 +1,47 @@
 // @vitest-environment jsdom
 /**
- * Integration test for the P3 confirm-and-save flow, against the REAL
- * running local stack (backend on :8000 + PostGIS): real login, real
- * village search (debounce and all), real POST /farms over HTTP, real
- * server-computed area rendered in the saved panel.
+ * Integration test for the P10 wizard's combined submit flow, against the
+ * REAL running local stack (backend on :8000 + PostGIS): real login, real
+ * village search (debounce and all), real POST /farms, real POST
+ * /farms/{id}/reports over HTTP.
  *
  * Exactly one seam is mocked: FarmMap. A WebGL map cannot initialize in
  * jsdom (and headless panes deliver no animation frames — see
  * docs/DECISIONS.md, M2A P2/P3), so the mock exposes a button that fires
  * `onPolygonChange` with a real Killari-area ring — the same callback and
  * payload shape the real map produces. The canvas-drawing seam itself was
- * verified in a real browser during P2.
+ * verified in a real browser during P2; the restore-onto-map seam (P10)
+ * was verified live in a real browser, not here.
  *
- * Written with React.createElement, not JSX: Next.js pins tsconfig
- * "jsx": "preserve", which Vitest's transformer executes literally, and
- * the available JSX plugin (@vitejs/plugin-react) is blocked by a Babel
- * 7-vs-8 peer conflict via the shadcn CLI package. createElement avoids
- * the transform entirely at the cost of slightly denser test code.
+ * P10 changed the golden path: the wizard now performs farm-creation AND
+ * report-trigger as one combined action (Product Design v2 §7.2), so
+ * there is no longer a "farm saved, report not yet triggered" pause point
+ * to assert on directly. The proof of the full real chain (POST /farms ->
+ * POST /farms/{id}/reports) is instead the navigation target itself: a
+ * real job id can only come from a real POST /reports call, which can
+ * only succeed against a real farm id from a real POST /farms call —
+ * asserting on it verifies the whole chain, not just the first half.
  *
- * Skips cleanly (like the backend suite's PostGIS-gated tests) when the
- * local stack isn't running. Each run persists one farm row for the test
- * officer in the dev database.
+ * Written with React.createElement, not JSX — see the original P3 note
+ * this carries forward (Next's "jsx": "preserve" vs. this Vitest's
+ * rolldown-vite transform; @vitejs/plugin-react blocked by a Babel 7-vs-8
+ * peer conflict via the shadcn CLI package).
+ *
+ * Skips cleanly when the local stack isn't running. Each run persists one
+ * farm row and triggers one real (cheap, 202-only) Earth Engine job for
+ * the test officer in the dev database/GEE project.
  */
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { createElement, type ReactNode } from "react";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { AuthProvider } from "@/features/auth/auth-context";
+import { NavigationGuardProvider } from "@/features/navigation-guard/navigation-guard-context";
 import type { Ring } from "@/lib/geo";
 
-import NewFarmPage from "./page";
+import NewAssessmentPage from "./page";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://127.0.0.1:8000";
 const TEST_OFFICER_EMAIL = process.env.TEST_OFFICER_EMAIL ?? "p3-e2e@example.com";
@@ -51,9 +61,9 @@ interface MockFarmMapProps {
   locked?: boolean;
 }
 
-// P4's FarmSavedPanel calls useRouter() (navigation to the job-status
-// route); jsdom has no Next app router, so provide a stub. Navigation
-// targets are asserted via this spy where relevant.
+// The wizard calls useRouter() (navigation to the Run route); jsdom has no
+// Next app router, so provide a stub. The navigation target is the test's
+// primary assertion.
 const routerPush = vi.fn();
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: routerPush, replace: routerPush, prefetch: vi.fn() }),
@@ -96,7 +106,10 @@ beforeAll(async () => {
   }
 });
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  window.localStorage.clear();
+});
 
 function renderPage() {
   // Fresh QueryClient per render — no cross-test cache; retries off so a
@@ -108,52 +121,51 @@ function renderPage() {
     createElement(
       QueryClientProvider,
       { client: queryClient },
-      createElement(AuthProvider, null, children),
+      createElement(AuthProvider, null, createElement(NavigationGuardProvider, null, children)),
     );
-  return render(providers(createElement(NewFarmPage)));
+  return render(providers(createElement(NewAssessmentPage)));
 }
 
-describe("farm creation flow (real backend)", () => {
-  it("search -> select -> polygon -> confirm -> POST /farms -> saved panel shows server area", async (ctx) => {
-    if (!stackAvailable) {
-      ctx.skip();
-      return;
-    }
-    const user = userEvent.setup();
-    renderPage();
+describe("assessment wizard (real backend)", () => {
+  it(
+    "search -> select -> draw -> verify -> confirm triggers real POST /farms then POST /reports and routes to the run page",
+    async (ctx) => {
+      if (!stackAvailable) {
+        ctx.skip();
+        return;
+      }
+      const user = userEvent.setup();
+      renderPage();
 
-    // Real village search against the real endpoint (real 300ms debounce).
-    await user.type(screen.getByLabelText("Search village"), "Killari");
-    const [killariResult] = await screen.findAllByText("Killari", { selector: "span" }, { timeout: 5000 });
-    await user.click(killariResult);
+      // Real village search against the real endpoint (real 300ms debounce).
+      await user.type(await screen.findByLabelText("Search village"), "Killari");
+      const [killariResult] = await screen.findAllByText("Killari", { selector: "span" }, { timeout: 5000 });
+      await user.click(killariResult);
 
-    // The map seam: fire the same callback the real map fires on finish.
-    await user.click(screen.getByText("mock: complete polygon"));
+      // Boundary step: the map seam fires the same callback the real map
+      // fires on finish; the preview area renders and gates "Next".
+      await user.click(await screen.findByText("mock: complete polygon"));
+      const preview = await screen.findByText(/ha \(/);
+      expect(preview.textContent).toMatch(/^1[0-9]\.\d{2} ha/);
+      await user.click(screen.getByRole("button", { name: /next: verify/i }));
 
-    // Confirm panel: preview area present and plausible (~14.7 ha class).
-    await screen.findByText("Confirm farm boundary");
-    const preview = await screen.findByText(/ha \(/);
-    expect(preview.textContent).toMatch(/^1[0-9]\.\d{2} ha/);
+      // Verify step: the same preview, plus the combined confirm action.
+      await screen.findByText("Confirm farm boundary");
+      await user.click(screen.getByRole("button", { name: /confirm & generate report/i }));
 
-    // The accountability click -> real POST /farms.
-    await user.click(screen.getByRole("button", { name: /confirm area & save farm/i }));
+      // The combined action: real POST /farms -> real POST
+      // /farms/{id}/reports -> routes to the real job's Run page. A job id
+      // here is only reachable through both real calls succeeding.
+      await waitFor(
+        () => {
+          expect(routerPush).toHaveBeenCalledWith(expect.stringMatching(/^\/assessments\/[0-9a-f-]{36}$/));
+        },
+        { timeout: 15_000 },
+      );
 
-    // Saved panel renders the SERVER's recorded area (the source of truth).
-    await screen.findByText("Farm saved", undefined, { timeout: 10000 });
-    const recorded = await screen.findByText(/ha \(/);
-    expect(recorded.textContent).toMatch(/^1[0-9]\.\d{2} ha/);
-
-    // Map must be locked after the save — no post-save geometry edits.
-    expect(screen.getByTestId("mock-farm-map").getAttribute("data-locked")).toBe("true");
-
-    // P4: the report action is present and enabled (not clicked here —
-    // clicking fires a real Earth Engine job; the trigger + status flow
-    // is covered by the live E2E and the endpoint by backend tests).
-    const generateButton = screen.getByRole("button", { name: /generate climate report/i });
-    expect(generateButton.hasAttribute("disabled")).toBe(false);
-
-    // And the workflow is restartable.
-    await user.click(screen.getByRole("button", { name: /draw another farm/i }));
-    expect(screen.queryByText("Farm saved")).toBeNull();
-  }, 20_000);
+      // Map must be locked once submission begins — no post-submit geometry edits.
+      expect(screen.getByTestId("mock-farm-map").getAttribute("data-locked")).toBe("true");
+    },
+    20_000,
+  );
 });

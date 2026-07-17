@@ -1720,3 +1720,211 @@ mirrored band-threshold table — plus the 6 `recommendation.test.ts`
 tests already covered above). ESLint clean, `tsc --noEmit` clean,
 production build clean (`/reports/[id]` grew 110 kB → 121 kB, all 10
 routes unchanged).
+
+---
+
+### Wizard & session hardening — sliding-session refresh, per-officer draft persistence, Resume/Discard, navigation guard, error-state taxonomy; two real bugs found live (M2B P10, backend addition B6)
+
+**Decision.** Four independent hardening pieces, all additive over the
+existing architecture (owner-or-branch auth, `ReportResponse`, async
+jobs, the wizard's existing farm/report endpoints — none redesigned):
+
+1. **Sliding session (B6).** `POST /auth/refresh` (`app/api/auth.py`) —
+   a caller holding a still-valid bearer token exchanges it for a fresh
+   one via the same `create_access_token` used by login, identical
+   response shape. `get_current_user` already re-validates the token and
+   re-checks the user is active, so the endpoint adds nothing beyond
+   issuing a new token for the same identity. Frontend: `session.ts`
+   gained client-side (display-only, unverified) JWT payload decoding —
+   `getSessionExpiresAt()` / `getSessionUserId()` — and a new
+   `SessionExpiryProvider` (mounted inside the authenticated app shell)
+   that arms a warning modal 2 minutes before the real `exp`, offers
+   "Stay signed in" (calls `/auth/refresh`, re-arms the timers against
+   the new expiry — the actual "sliding" behavior) or "Sign out." The
+   design doc named two acceptable shapes for B6 — "token refresh
+   endpoint (or sliding expiry)" — this implements both halves cheaply
+   rather than choosing one, since the warning UX needs client-side exp
+   visibility regardless of whether refresh exists.
+
+2. **Persistent assessment drafts + Resume/Discard.**
+   `features/assessment-wizard/draft-storage.ts` — a per-officer
+   (keyed by JWT `sub`) localStorage draft `{step, village, ring,
+   savedFarmId, savedFarmAreaHa, triggeredJobId, interruptedBySessionExpiry}`,
+   patched on every meaningful wizard state change. `/assessments/new`
+   (`page.tsx`) now gates on mount: a draft with `triggeredJobId` routes
+   straight to the existing `/assessments/{jobId}` Run page (job
+   recovery — never re-create a running assessment); a resumable draft
+   with no in-flight job shows `ResumeDraftPrompt` (Resume / Discard,
+   never silent overwrite); a draft flagged `interruptedBySessionExpiry`
+   auto-restores with no prompt, since that interruption wasn't the
+   officer's choice.
+
+3. **Four-step stepper wizard.** `/assessments/new` is rewritten from
+   the old single-page conditional-panel flow (`ConfirmPanel` →
+   `FarmSavedPanel`, two separate UI moments for farm-creation and
+   report-trigger) into `AssessmentWizard` — Village → Boundary → Verify
+   → Submit (`features/assessment-wizard/stepper.tsx`,
+   `assessment-wizard.tsx`), matching Product Design v2 §7.2 exactly.
+   The map remains the persistent dominant region across all four steps
+   (only the side panel changes); farm-creation and report-trigger are
+   now genuinely one combined action on the Verify step's confirm click
+   (closing the exact gap §7.2 called out: "today: two separate UI
+   moments"). `FarmSavedPanel` is deleted (superseded, no remaining
+   callers). `FarmMap` gained a `restoreRing` prop — a previously-drawn
+   ring loads onto the map as an already-complete, editable boundary via
+   `TerraDraw.addFeatures([...{properties: {mode: "polygon"}}])` +
+   `setMode("select")`, applied exactly once via a ref guard the first
+   time the map becomes ready — live-verified end to end (see below).
+
+4. **Navigation guard + error-state taxonomy.**
+   `features/navigation-guard/` — a ref-backed (not state-backed, so
+   arming it while actively drawing never re-renders the app shell)
+   context; `useUnsavedWorkGuard(active)` arms both a native
+   `beforeunload` listener (refresh/tab-close/external nav) and the
+   context's `confirmNavigation()` gate, which every in-app navigation
+   trigger in `AppShell` now checks before acting (rail links, mobile
+   drawer, the "+New assessment" buttons, sign-out) — a Next.js
+   client-side `<Link>` transition never fires `beforeunload` itself,
+   since the page never unloads, so the in-app half is a separate
+   mechanism, not a duplicate of the browser one. Armed only when a
+   completed polygon exists and the assessment hasn't been submitted yet
+   (Product Design v2 §7's "warn only when there's real unsaved work").
+   Separately, `components/ui/error-state.tsx` + `empty-state.tsx` +
+   `skeleton.tsx` + `offline-banner.tsx` replace every index/detail
+   page's single hand-rolled generic error card with the four-family
+   taxonomy (network / auth / not-found / server-with-reference-id) the
+   design doc's §7.6 calls for — family is derived from a real HTTP
+   status via a new `ApiError` class (`lib/api/errors.ts`) the affected
+   query hooks now throw, not guessed from message text.
+
+**Two real bugs found and fixed during this phase, not just new
+surface.**
+
+- **Infinite re-render risk in the wizard's resume-gate effect.** The
+  first cut of `/assessments/new/page.tsx` had
+  `useEffect(() => {...}, [router])`. `useRouter()` is stable in real
+  Next.js, so this never manifests in production — but it is not
+  actually idempotent: a live-browser test (see below) reproduced the
+  bug directly, and independently the frontend test suite's real-backend
+  integration test reliably hit a 200–300 second V8 heap-exhaustion crash
+  that turned out to be React StrictMode's development-only double
+  effect invocation combined with a *second*, related bug (next item)
+  spinning in a tight loop. Fixed by moving `router`/`pathname` into refs
+  (`routerRef`, `pathnameRef` — same pattern applied to
+  `SessionExpiryProvider`'s `handleExpired` for consistency) so the
+  effect's own identity never depends on router/pathname reference
+  stability, only on its real trigger (`session` changing).
+- **`takeInterruptedFlag` consumed under React StrictMode's double
+  effect invocation.** `takeInterruptedFlag(draft)` is a read-and-clear
+  side effect, not a pure read. A naive `useEffect(() => {...}, [])`
+  runs twice in development (StrictMode's intentional diagnostic
+  behavior) — the first invocation correctly consumed the flag and
+  requested the auto-restore gate, but the second invocation re-read the
+  now-already-cleared flag and fell back to showing the Resume/Discard
+  prompt instead, with the *second* call's `setGate` winning. Caught
+  live, not by code review: a real short-TTL session was allowed to
+  expire mid-wizard (backend restarted locally with
+  `JWT_EXPIRES_MINUTES=2` for the duration of this test only, restored
+  to 720 immediately after), and after logging back in the Resume prompt
+  appeared where the design requires silent auto-restore. Fixed with a
+  `hasCheckedDraftRef` mount-guard, the standard remedy for this exact
+  StrictMode class of bug — re-verified live afterward: the same
+  short-TTL expiry → re-login round trip landed directly on the restored
+  Boundary step with the polygon reloaded, no prompt, and the frontend
+  test suite (previously reproducibly OOM-crashing on the real-backend
+  integration test at the ~250–300s mark, worker-fork heap exhaustion)
+  went back to a clean ~15s pass. This would not have affected the
+  compiled production build (StrictMode's double-invocation is dev-only),
+  but the underlying non-idempotence was real and worth fixing on its
+  own terms, not just to unblock the test run.
+
+**Alternatives considered.** A full `useRouter`/`usePathname`-based
+`useBlocker` (React Router has one; Next.js App Router does not) for
+in-app navigation protection — rejected as unavailable in this stack;
+the ref-backed context + explicit per-link `confirmNavigation()` checks
+achieves the same effect with what's actually available, at the cost of
+needing each new navigation trigger to remember to call it (documented,
+not hidden). A `job_stage`-style separate table for the assessment draft
+instead of localStorage — rejected: the M2A `session.ts` localStorage
+trade-off already accepted for the session itself applies identically
+here, and a draft is explicitly *client-scoped, pre-persistence* state
+by design (Product Design v2 §7.2: "village + drawn ring held
+client-side"), not a server record. Recomputing `isDraftResumable`
+inline everywhere instead of a shared per-officer-keyed module — rejected
+for the same reason every other shared concern in this codebase gets one
+home, not several ad hoc copies.
+
+**Trade-offs.** The many small new UI primitives this phase introduces
+(`ErrorState`, `EmptyState`, `Skeleton`, `OfflineBanner`, `Stepper`,
+`ResumeDraftPrompt`, `Dialog`) ship without dedicated new unit test
+files — verified instead via `tsc`/`ESLint`/production build (all
+clean) and the live browser walkthrough below, which is a real trade-off
+against this codebase's usual per-module unit-test discipline, made
+under this phase's time budget; flagged here explicitly as a gap worth
+closing with focused component tests, not silently accepted as
+equivalent coverage. `handleDiscardAndRestart` calls `clearDraft()`, but
+the wizard's own state-persistence effect immediately re-saves a blank
+(all-null, `isDraftResumable() === false`) draft object right after —
+functionally inert (a reload correctly shows no Resume prompt, verified
+live) but leaves a harmless empty key in localStorage rather than a
+fully absent one; noted rather than fixed under time pressure, since
+fixing it risks more churn than the cosmetic debt it costs.
+
+**Live verification.** Full walkthrough against the real local stack
+(backend + PostGIS + a real seeded officer): village search → select →
+boundary step transition, confirmed via the accessibility tree (the
+Browser pane's screenshot/zoom capture was independently found to be
+non-functional for this entire session — reproduced on a plain
+WebGL-free page too, so a session-level tooling issue, not a P10 defect;
+all verification below therefore used the accessibility tree, console/
+network inspection, and read-only `javascript_tool` DOM/localStorage
+reads instead of pixel screenshots). Draft persistence: village
+selection and a directly-injected completed ring (a real ~15.87 ha
+Killari-area polygon) were confirmed round-tripping through real
+`localStorage`, correctly keyed per officer id. **The `restoreRing` →
+`TerraDraw.addFeatures` path was proven live, not just by code
+review**: after a hard reload + Resume click, the boundary step rendered
+"Edit boundary" / "Delete" (the post-draw `select`-mode UI) and the
+correct 15.87 ha preview area — meaning the restore actually invoked
+`onPolygonChange(ring, true)` through real TerraDraw/MapLibre logic, not
+a stub. Navigation guard: hooking `window.confirm` before triggering an
+in-app nav click while a polygon was present captured the exact real
+call — `"You have an unsaved farm boundary. Leave without saving?"` —
+proving `confirmNavigation()` genuinely fires, not just that navigation
+happens to succeed (headless browsers auto-accept native dialogs, so a
+successful navigation alone would have been weak evidence). Session
+expiry: the backend was restarted locally with a 2-minute JWT TTL for
+the duration of this test only; the warning dialog appeared
+automatically, "Stay signed in" round-tripped through a real
+`POST /auth/refresh` (confirmed via decoding the new token's `exp`,
+strictly later than the old one), "Sign out" cleared the real session
+and redirected, and a passive (un-acted-on) expiry correctly redirected
+to `/login?next=%2Fassessments%2Fnew` with the draft's
+`interruptedBySessionExpiry` flag set beforehand — followed by a real
+re-login that landed silently back on the restored Boundary step (the
+StrictMode bug fix, re-verified after the fix). Offline banner:
+dispatching real `offline`/`online` window events showed and cleared
+the banner exactly as designed. Backend restored to the real 720-minute
+TTL and confirmed via a fresh login's `expires_in: 43200` before this
+phase's tests were declared final. The full real create-farm →
+trigger-report → route-to-Run-page chain (the one piece not
+independently re-driven through the live browser in this pass, since
+the map's `data-map-loaded` attribute never set on this session's
+Browser pane — WebGL unavailable, consistent with the pane's broader
+screenshot/render issue) is proven instead by the rewritten
+`page.integration.test.ts`, which drives the real wizard end to end
+(real login, real debounced village search, real `POST /farms`, real
+`POST /farms/{id}/reports`) and asserts the resulting navigation target
+matches a real job id — this is strictly the same evidentiary chain the
+live browser would have provided, just exercised via the automated
+suite instead.
+
+**Tests.** Backend: 131/131 (128 prior + 3 new `/auth/refresh` tests —
+valid-token round trip including that the *new* token is itself usable,
+missing-token 401, garbage-token 401). Frontend: 51/51 (50 prior +
+the real-backend integration test rewritten for the combined
+create-farm-and-trigger-report flow, same count since it replaces
+rather than adds — the rewrite's own reasoning, and the two live bugs
+its repeated OOM crashes led to, are documented above). ESLint clean,
+`tsc --noEmit` clean, production build clean (`/assessments/new` grew
+43.7 kB → 43.8 kB; all 10 routes unchanged).

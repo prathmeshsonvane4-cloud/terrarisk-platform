@@ -18,7 +18,10 @@ interface ConfirmPanelProps {
 /**
  * The Blueprint §01 accountability step: the officer explicitly affirms
  * the computed area before anything is persisted. The submit click IS the
- * affirmation — recorded server-side as drawn_by on the created farm.
+ * affirmation — recorded server-side as drawn_by on the created farm. P10:
+ * this click now also triggers report generation in the same action
+ * (Product Design v2 §7.2 — farm-creation and report-trigger are one
+ * officer decision, not two separate UI moments).
  */
 export function ConfirmPanel({
   village,
@@ -58,7 +61,11 @@ export function ConfirmPanel({
       )}
 
       <Button onClick={onSubmit} disabled={isPending || blockedReason !== null}>
-        {isPending ? "Saving farm…" : errorMessage ? "Retry — confirm area & save farm" : "Confirm area & save farm"}
+        {isPending
+          ? "Saving farm…"
+          : errorMessage
+            ? "Retry — confirm & generate report"
+            : "Confirm & generate report"}
       </Button>
     </div>
   );

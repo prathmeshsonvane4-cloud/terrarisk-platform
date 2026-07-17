@@ -1,7 +1,11 @@
 "use client";
 
+import { ListChecksIcon } from "lucide-react";
 import Link from "next/link";
 
+import { EmptyState } from "@/components/ui/empty-state";
+import { ErrorState } from "@/components/ui/error-state";
+import { SkeletonList } from "@/components/ui/skeleton";
 import { useAssessments, type AssessmentListItem } from "@/features/workspace/use-assessments";
 import { RISK_BANDS } from "@/lib/risk-bands";
 import { cn } from "@/lib/utils";
@@ -26,27 +30,23 @@ function targetHref(item: AssessmentListItem): string {
  * what failed, what's ready to open.
  */
 export default function AssessmentsPage() {
-  const { data: assessments, isPending, isError, error } = useAssessments();
+  const { data: assessments, isPending, isError, error, refetch } = useAssessments();
 
   return (
     <div className="mx-auto flex w-full max-w-4xl flex-1 flex-col gap-4 p-4 md:p-6">
       <h1 className="text-lg font-semibold">Assessments</h1>
 
-      {isPending && <p className="text-sm text-muted-foreground">Loading assessments…</p>}
+      {isPending && <SkeletonList rows={4} />}
 
-      {isError && (
-        <p role="alert" className="text-sm text-muted-foreground">
-          {error.message}
-        </p>
-      )}
+      {isError && <ErrorState error={error} onRetry={() => refetch()} />}
 
       {!isPending && !isError && assessments.length === 0 && (
-        <div className="rounded-lg border p-5 text-sm">
-          <p className="font-medium">No assessments yet</p>
-          <p className="mt-1 text-muted-foreground">
-            Runs triggered by you or a colleague at your branch will appear here.
-          </p>
-        </div>
+        <EmptyState
+          icon={ListChecksIcon}
+          title="No assessments yet"
+          description="Runs triggered by you or a colleague at your branch will appear here."
+          action={{ label: "Start an assessment", href: "/assessments/new" }}
+        />
       )}
 
       {!isPending && !isError && assessments.length > 0 && (

@@ -1,7 +1,11 @@
 "use client";
 
+import { FileTextIcon } from "lucide-react";
 import Link from "next/link";
 
+import { EmptyState } from "@/components/ui/empty-state";
+import { ErrorState } from "@/components/ui/error-state";
+import { SkeletonList } from "@/components/ui/skeleton";
 import { useReports } from "@/features/workspace/use-reports";
 import { formatArea } from "@/lib/format";
 import { RISK_BANDS } from "@/lib/risk-bands";
@@ -14,27 +18,22 @@ import { cn } from "@/lib/utils";
  * me every farm" — deliberately not collapsed to latest-per-farm.
  */
 export default function ReportsPage() {
-  const { data: reports, isPending, isError, error } = useReports();
+  const { data: reports, isPending, isError, error, refetch } = useReports();
 
   return (
     <div className="mx-auto flex w-full max-w-4xl flex-1 flex-col gap-4 p-4 md:p-6">
       <h1 className="text-lg font-semibold">Reports</h1>
 
-      {isPending && <p className="text-sm text-muted-foreground">Loading reports…</p>}
+      {isPending && <SkeletonList rows={4} />}
 
-      {isError && (
-        <p role="alert" className="text-sm text-muted-foreground">
-          {error.message}
-        </p>
-      )}
+      {isError && <ErrorState error={error} onRetry={() => refetch()} />}
 
       {!isPending && !isError && reports.length === 0 && (
-        <div className="rounded-lg border p-5 text-sm">
-          <p className="font-medium">No reports issued yet</p>
-          <p className="mt-1 text-muted-foreground">
-            Every completed climate assessment for your branch will appear here.
-          </p>
-        </div>
+        <EmptyState
+          icon={FileTextIcon}
+          title="No reports issued yet"
+          description="Every completed climate assessment for your branch will appear here."
+        />
       )}
 
       {!isPending && !isError && reports.length > 0 && (

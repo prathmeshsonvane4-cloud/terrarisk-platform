@@ -3,7 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 
 import { apiClient } from "@/lib/api/client";
-import { extractApiErrorMessage } from "@/lib/api/errors";
+import { ApiError, extractApiErrorMessage } from "@/lib/api/errors";
 import type { components } from "@/lib/api/schema";
 
 export type ReportResponse = components["schemas"]["ReportResponse"];
@@ -12,11 +12,11 @@ export function useReport(riskScoreId: string) {
   return useQuery({
     queryKey: ["reports", riskScoreId],
     queryFn: async (): Promise<ReportResponse> => {
-      const { data, error } = await apiClient.GET("/api/v1/reports/{risk_score_id}", {
+      const { data, error, response } = await apiClient.GET("/api/v1/reports/{risk_score_id}", {
         params: { path: { risk_score_id: riskScoreId } },
       });
       if (error) {
-        throw new Error(extractApiErrorMessage(error));
+        throw new ApiError(extractApiErrorMessage(error), response.status);
       }
       return data;
     },

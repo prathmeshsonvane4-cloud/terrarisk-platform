@@ -3,7 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 
 import { apiClient } from "@/lib/api/client";
-import { extractApiErrorMessage } from "@/lib/api/errors";
+import { ApiError, extractApiErrorMessage } from "@/lib/api/errors";
 import type { components } from "@/lib/api/schema";
 
 export type AssessmentListItem = components["schemas"]["AssessmentListItem"];
@@ -25,9 +25,13 @@ export function useAssessments() {
   return useQuery({
     queryKey: ["assessments"],
     queryFn: async (): Promise<AssessmentListItem[]> => {
-      const { data, error } = await apiClient.GET("/api/v1/jobs");
+      const { data, error, response } = await apiClient.GET("/api/v1/jobs");
       if (error) {
-        throw new Error(extractApiErrorMessage(error));
+        // See the identical note in use-farms.ts: /api/v1/jobs's OpenAPI doc
+        // only declares a 200 response, so openapi-fetch types this whole
+        // branch as `never` — the cast reflects the real runtime contract,
+        // not a type-safety hole.
+        throw new ApiError(extractApiErrorMessage(error), (response as Response).status);
       }
       return data.items;
     },

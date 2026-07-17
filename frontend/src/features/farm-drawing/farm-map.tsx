@@ -1,7 +1,7 @@
 "use client";
 
 import maplibregl from "maplibre-gl";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
 import {
   TerraDraw,
   TerraDrawPolygonMode,
@@ -12,7 +12,7 @@ import { TerraDrawMapLibreGLAdapter } from "terra-draw-maplibre-gl-adapter";
 
 import { BaseMap } from "@/components/map/base-map";
 import { Button } from "@/components/ui/button";
-import type { Ring } from "@/lib/geo";
+import { toFarmGeometry, type Ring } from "@/lib/geo";
 
 import type { Village } from "./types";
 
@@ -43,15 +43,31 @@ interface FarmMapProps {
    * farm" after a save) — an imperative act expressed as data so the page
    * never needs a ref into map internals. Initial value never triggers. */
   clearSignal?: number;
+  /** A previously-drawn ring to load onto the map as an already-complete,
+   * editable boundary, applied exactly once as soon as the map is ready
+   * (P10 draft restore — refreshing/resuming must bring the actual
+   * boundary back, not just its computed area). A one-shot operation
+   * (tracked via an internal ref, not a prop signal) rather than something
+   * that re-applies on every `restoreRing` identity change — the officer
+   * may go on to edit or delete the restored boundary, and this must never
+   * fight that by re-adding it. */
+  restoreRing?: Ring | null;
   className?: string;
 }
 
-export function FarmMap({
+// P10 requirement 10 (performance): a WebGL map is the single most
+// expensive thing this app renders — memoized so the wizard's frequent
+// submit-phase re-renders (aria-live status text ticking, stepper state)
+// don't re-run FarmMap's render for props that haven't actually changed.
+// The wizard already passes a useCallback-stabilized onPolygonChange and
+// otherwise-primitive props, so this is a real hit rate, not a no-op.
+export const FarmMap = memo(function FarmMap({
   village,
   hasPolygon,
   onPolygonChange,
   locked = false,
   clearSignal = 0,
+  restoreRing = null,
   className,
 }: FarmMapProps) {
   const mapRef = useRef<maplibregl.Map | null>(null);
@@ -59,6 +75,7 @@ export function FarmMap({
   const markerRef = useRef<maplibregl.Marker | null>(null);
   const throttleRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [uiMode, setUiMode] = useState<DrawUiMode>("static");
+  const [mapLoaded, setMapLoaded] = useState(false);
 
   const onPolygonChangeRef = useRef(onPolygonChange);
   onPolygonChangeRef.current = onPolygonChange;
@@ -149,6 +166,7 @@ export function FarmMap({
         });
 
         drawRef.current = draw;
+        setMapLoaded(true);
       });
     },
     [scheduleReport],
@@ -175,6 +193,32 @@ export function FarmMap({
     map.flyTo({ center, zoom: VILLAGE_ZOOM, duration: 2500, essential: true });
   }, [village]);
 
+  // Draft restore (P10): load a previously-drawn ring back onto the map as
+  // an already-complete, editable boundary — exactly once, the first time
+  // the map becomes ready with a restoreRing present. Declared after the
+  // village-centering effect above so, on the resuming mount where both
+  // fire together, the (at that point empty, so harmless) clear the
+  // village effect performs happens first, never after.
+  const hasRestoredRef = useRef(false);
+  useEffect(() => {
+    if (!mapLoaded || hasRestoredRef.current) return;
+    const draw = drawRef.current;
+    if (!draw || !restoreRing || restoreRing.length < 3) return;
+    hasRestoredRef.current = true;
+
+    const [closedRing] = toFarmGeometry(restoreRing).coordinates;
+    draw.addFeatures([
+      {
+        type: "Feature",
+        geometry: { type: "Polygon", coordinates: [closedRing] },
+        properties: { mode: "polygon" },
+      },
+    ]);
+    draw.setMode("select");
+    setUiMode("select");
+    onPolygonChangeRef.current(restoreRing, true);
+  }, [mapLoaded, restoreRing]);
+
   // Entering the locked state (submit in flight / farm saved) forces the
   // map out of any draw/edit mode so no interaction can mutate geometry
   // the server is recording or has recorded.
@@ -185,8 +229,8 @@ export function FarmMap({
     }
   }, [locked]);
 
-  // "Draw another farm": the page bumps clearSignal after a save; skip the
-  // mount-time initial value so a fresh page never self-clears.
+  // "Discard and start over": the wizard bumps clearSignal to reset the
+  // map; skip the mount-time initial value so a fresh page never self-clears.
   const lastClearSignalRef = useRef(clearSignal);
   useEffect(() => {
     if (clearSignal === lastClearSignalRef.current) return;
@@ -295,4 +339,4 @@ export function FarmMap({
       )}
     </div>
   );
-}
+});

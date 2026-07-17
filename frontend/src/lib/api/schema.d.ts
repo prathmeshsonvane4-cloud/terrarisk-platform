@@ -21,6 +21,32 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/auth/refresh": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Refresh
+         * @description Sliding-session refresh (Product Design v2 B6): a caller holding a
+         *     still-valid bearer token exchanges it for a fresh one with a full new
+         *     expiry window, so an officer actively working doesn't get logged out
+         *     mid-assessment purely because the 12h JWT clock ran out. `get_current_user`
+         *     already re-validates the token and re-checks the user is active — this
+         *     endpoint adds nothing beyond issuing a new token for the same identity,
+         *     identical role-check-free shape as login's response.
+         */
+        post: operations["refresh_api_v1_auth_refresh_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/villages": {
         parameters: {
             query?: never;
@@ -871,6 +897,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    refresh_api_v1_auth_refresh_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LoginResponse"];
                 };
             };
         };

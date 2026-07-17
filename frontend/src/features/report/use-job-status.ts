@@ -3,7 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 
 import { apiClient } from "@/lib/api/client";
-import { extractApiErrorMessage } from "@/lib/api/errors";
+import { ApiError, extractApiErrorMessage } from "@/lib/api/errors";
 import type { components } from "@/lib/api/schema";
 
 import { isTerminalStatus } from "./status-copy";
@@ -30,11 +30,11 @@ export function useJobStatus(jobId: string) {
   return useQuery({
     queryKey: ["jobs", jobId],
     queryFn: async (): Promise<JobStatusResponse> => {
-      const { data, error } = await apiClient.GET("/api/v1/jobs/{job_id}", {
+      const { data, error, response } = await apiClient.GET("/api/v1/jobs/{job_id}", {
         params: { path: { job_id: jobId } },
       });
       if (error) {
-        throw new Error(extractApiErrorMessage(error));
+        throw new ApiError(extractApiErrorMessage(error), response.status);
       }
       return data;
     },

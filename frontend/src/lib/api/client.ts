@@ -21,12 +21,28 @@ apiClient.use({
   onResponse({ response }) {
     // A 401 means the session is gone (expired/invalid) — clear it and
     // send the officer back to login rather than let every caller
-    // separately handle a half-authenticated state.
+    // separately handle a half-authenticated state. Preserves ?next= like
+    // the route guard does (P10 — a mid-work 401 must not drop the
+    // officer's location any more than an unauthenticated visit does), and
+    // flags any in-progress assessment draft as interrupted-not-abandoned
+    // before the session that scopes it disappears (draft-storage.ts).
     if (response.status === 401 && typeof window !== "undefined") {
-      clearSession();
-      if (window.location.pathname !== "/login") {
-        window.location.href = "/login";
-      }
+      // Dynamic import: draft-storage.ts is a feature-layer module and this
+      // is a low-level infra client — a static import here would invert
+      // that dependency direction for the sake of one rare error path.
+      // The flag MUST be written before clearSession() runs, since it
+      // needs the still-present token to resolve which officer's draft to
+      // mark — hence the explicit await/ordering rather than a fire-and-
+      // forget .then().
+      void (async () => {
+        const { markDraftInterruptedBySessionExpiry } = await import("@/features/assessment-wizard/draft-storage");
+        markDraftInterruptedBySessionExpiry();
+        clearSession();
+        if (window.location.pathname !== "/login") {
+          const next = `?next=${encodeURIComponent(window.location.pathname)}`;
+          window.location.href = `/login${next}`;
+        }
+      })();
     }
     return response;
   },

@@ -5,6 +5,7 @@ import { useEffect, type ReactNode } from "react";
 
 import { AppShell } from "@/components/workspace/app-shell";
 import { useAuth } from "@/features/auth/auth-context";
+import { SessionExpiryProvider } from "@/features/auth/session-expiry-provider";
 
 export default function AppLayout({ children }: { children: ReactNode }) {
   const { session, isInitialized } = useAuth();
@@ -29,17 +30,26 @@ export default function AppLayout({ children }: { children: ReactNode }) {
     // one render tick (localStorage read on mount), but a bare `return
     // null` here was indistinguishable from a broken page on a slow device.
     return (
-      <div className="flex min-h-screen items-center justify-center text-sm text-muted-foreground">
+      <div role="status" aria-label="Loading" className="flex min-h-screen items-center justify-center text-sm text-muted-foreground">
         Loading…
       </div>
     );
   }
 
   if (!session) {
-    // The redirect above is already in flight — render nothing rather
-    // than flash the authenticated shell before it takes effect.
-    return null;
+    // P10: the redirect above is already in flight — a real, announced
+    // loading state (not a bare `return null`, which reads as a broken
+    // page on a slow device or screen reader) while it takes effect.
+    return (
+      <div role="status" aria-label="Redirecting to sign in" className="flex min-h-screen items-center justify-center text-sm text-muted-foreground">
+        Redirecting to sign in…
+      </div>
+    );
   }
 
-  return <AppShell>{children}</AppShell>;
+  return (
+    <SessionExpiryProvider>
+      <AppShell>{children}</AppShell>
+    </SessionExpiryProvider>
+  );
 }

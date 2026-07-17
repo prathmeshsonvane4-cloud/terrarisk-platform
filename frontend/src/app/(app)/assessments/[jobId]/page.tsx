@@ -5,6 +5,8 @@ import { useParams, useRouter } from "next/navigation";
 import { useEffect } from "react";
 
 import { Button, buttonVariants } from "@/components/ui/button";
+import { ErrorState } from "@/components/ui/error-state";
+import { Skeleton } from "@/components/ui/skeleton";
 import { AssessmentTimeline } from "@/features/assessment/assessment-timeline";
 import { ReportTriggerConflictError, useTriggerReport } from "@/features/report/use-trigger-report";
 import { useJobStatus } from "@/features/report/use-job-status";
@@ -23,7 +25,7 @@ import { cn } from "@/lib/utils";
 export default function AssessmentStatusPage() {
   const { jobId } = useParams<{ jobId: string }>();
   const router = useRouter();
-  const { data: job, isPending, isError, error } = useJobStatus(jobId);
+  const { data: job, isPending, isError, error, refetch } = useJobStatus(jobId);
   const { data: farms } = useFarms();
   const retry = useTriggerReport();
 
@@ -55,14 +57,16 @@ export default function AssessmentStatusPage() {
 
   return (
     <div className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-4 p-4 md:p-6">
-      {isPending && <p className="text-sm text-muted-foreground">Checking assessment status…</p>}
+      {isPending && (
+        <div role="status" aria-label="Checking assessment status" className="flex flex-col gap-3">
+          <Skeleton className="h-5 w-56" />
+          <Skeleton className="h-40 w-full" />
+        </div>
+      )}
 
       {isError && (
-        <div className="flex flex-col gap-3 rounded-lg border p-5 text-sm">
-          <p className="font-medium">Could not load this assessment</p>
-          <p role="alert" className="text-muted-foreground">
-            {error.message}
-          </p>
+        <div className="flex flex-col gap-3">
+          <ErrorState error={error} onRetry={() => refetch()} referenceId={jobId} />
           <Link href="/assessments/new" className={cn(buttonVariants({ variant: "outline" }), "self-start")}>
             Start a new assessment
           </Link>

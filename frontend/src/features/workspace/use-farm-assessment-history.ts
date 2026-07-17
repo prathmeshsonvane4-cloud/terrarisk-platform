@@ -3,7 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 
 import { apiClient } from "@/lib/api/client";
-import { extractApiErrorMessage } from "@/lib/api/errors";
+import { ApiError, extractApiErrorMessage } from "@/lib/api/errors";
 import type { components } from "@/lib/api/schema";
 
 export type FarmAssessmentHistoryResponse = components["schemas"]["FarmAssessmentHistoryResponse"];
@@ -14,11 +14,11 @@ export function useFarmAssessmentHistory(farmId: string) {
   return useQuery({
     queryKey: ["farms", farmId, "assessments"],
     queryFn: async (): Promise<FarmAssessmentHistoryResponse> => {
-      const { data, error } = await apiClient.GET("/api/v1/farms/{farm_id}/assessments", {
+      const { data, error, response } = await apiClient.GET("/api/v1/farms/{farm_id}/assessments", {
         params: { path: { farm_id: farmId } },
       });
       if (error) {
-        throw new Error(extractApiErrorMessage(error));
+        throw new ApiError(extractApiErrorMessage(error), response.status);
       }
       return data;
     },

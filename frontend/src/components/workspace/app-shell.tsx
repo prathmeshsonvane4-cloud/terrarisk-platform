@@ -3,14 +3,16 @@
 import { FileText, LayoutDashboard, ListChecks, LogOut, Map, Menu, Plus } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useState, type ReactNode } from "react";
+import { useState, type MouseEvent, type ReactNode } from "react";
 
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { useAuth } from "@/features/auth/auth-context";
+import { useNavigationGuard } from "@/features/navigation-guard/navigation-guard-context";
 import { useAssessments } from "@/features/workspace/use-assessments";
 import { ROLE_LABELS, type UserRole } from "@/lib/roles";
 import { cn } from "@/lib/utils";
+import { OfflineBanner } from "@/components/ui/offline-banner";
 
 const NAV_ITEMS = [
   { href: "/", label: "Overview", icon: LayoutDashboard },
@@ -25,13 +27,26 @@ function isActive(pathname: string, href: string): boolean {
 }
 
 function NavLinks({ pathname, onNavigate }: { pathname: string; onNavigate?: () => void }) {
+  const { confirmNavigation } = useNavigationGuard();
+
+  function handleClick(event: MouseEvent<HTMLAnchorElement>) {
+    // P10 navigation protection: a Next.js <Link> transition never fires
+    // beforeunload (the page doesn't unload), so in-app nav links need
+    // their own confirm gate wherever the wizard has armed the guard.
+    if (!confirmNavigation()) {
+      event.preventDefault();
+      return;
+    }
+    onNavigate?.();
+  }
+
   return (
     <nav className="flex flex-col gap-0.5">
       {NAV_ITEMS.map(({ href, label, icon: Icon }) => (
         <Link
           key={href}
           href={href}
-          onClick={onNavigate}
+          onClick={handleClick}
           aria-current={isActive(pathname, href) ? "page" : undefined}
           className={cn(
             "flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm font-medium transition-colors",
@@ -55,6 +70,7 @@ function NavLinks({ pathname, onNavigate }: { pathname: string; onNavigate?: () 
  * happening on the server without navigating to check. */
 function ActivityIndicator() {
   const { data: assessments } = useAssessments();
+  const { confirmNavigation } = useNavigationGuard();
   const inFlight = assessments?.filter((item) => item.status === "pending" || item.status === "running").length ?? 0;
 
   if (inFlight === 0) return null;
@@ -62,6 +78,9 @@ function ActivityIndicator() {
   return (
     <Link
       href="/assessments"
+      onClick={(event) => {
+        if (!confirmNavigation()) event.preventDefault();
+      }}
       className="flex items-center gap-1.5 rounded-full border bg-muted/50 px-2.5 py-1 text-xs font-medium text-foreground hover:bg-muted"
     >
       <span aria-hidden className="size-1.5 animate-pulse rounded-full bg-primary" />
@@ -72,6 +91,7 @@ function ActivityIndicator() {
 
 function UserMenu() {
   const { session, logout } = useAuth();
+  const { confirmNavigation } = useNavigationGuard();
   const router = useRouter();
   if (!session) return null;
 
@@ -86,6 +106,7 @@ function UserMenu() {
         size="icon-sm"
         aria-label="Log out"
         onClick={() => {
+          if (!confirmNavigation()) return;
           logout();
           router.replace("/login");
         }}
@@ -97,8 +118,14 @@ function UserMenu() {
 }
 
 function NewAssessmentButton({ className }: { className?: string }) {
+  const { confirmNavigation } = useNavigationGuard();
+
+  function handleClick(event: MouseEvent<HTMLAnchorElement>) {
+    if (!confirmNavigation()) event.preventDefault();
+  }
+
   return (
-    <Link href="/assessments/new" className={cn(buttonVariants({ size: "sm" }), "gap-1.5", className)}>
+    <Link href="/assessments/new" onClick={handleClick} className={cn(buttonVariants({ size: "sm" }), "gap-1.5", className)}>
       <Plus aria-hidden className="size-4" />
       New assessment
     </Link>
@@ -112,12 +139,18 @@ function NewAssessmentButton({ className }: { className?: string }) {
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const { confirmNavigation } = useNavigationGuard();
+
+  function guardedClick(event: MouseEvent<HTMLAnchorElement>) {
+    if (!confirmNavigation()) event.preventDefault();
+  }
 
   return (
     <div className="flex min-h-screen flex-col md:flex-row">
+      <OfflineBanner />
       {/* Desktop rail */}
       <aside className="hidden w-56 shrink-0 flex-col gap-4 border-r p-4 md:flex">
-        <Link href="/" className="font-heading text-base font-semibold">
+        <Link href="/" onClick={guardedClick} className="font-heading text-base font-semibold">
           TerraRisk
         </Link>
         <NewAssessmentButton />
@@ -147,7 +180,12 @@ export function AppShell({ children }: { children: ReactNode }) {
           </Sheet>
           <span className="font-heading text-sm font-semibold">TerraRisk</span>
         </div>
-        <Link href="/assessments/new" className={buttonVariants({ size: "icon-sm" })} aria-label="New assessment">
+        <Link
+          href="/assessments/new"
+          onClick={guardedClick}
+          className={buttonVariants({ size: "icon-sm" })}
+          aria-label="New assessment"
+        >
           <Plus aria-hidden className="size-4" />
         </Link>
       </header>

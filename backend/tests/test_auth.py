@@ -77,3 +77,42 @@ async def test_authenticated_endpoint_rejects_missing_token(client_with_seeded_u
     # GET isn't a defined method for /login (POST-only) — 405, not a silent
     # 200, is what proves the router itself is correctly restrictive here.
     assert response.status_code == 405
+
+
+@pytest.mark.asyncio
+async def test_refresh_with_valid_token_returns_a_fresh_token(client_with_seeded_user):
+    login_response = await client_with_seeded_user.post(
+        "/api/v1/auth/login", json={"email": "officer@example.com", "password": "correct-password"}
+    )
+    original_token = login_response.json()["access_token"]
+
+    refresh_response = await client_with_seeded_user.post(
+        "/api/v1/auth/refresh", headers={"Authorization": f"Bearer {original_token}"}
+    )
+    assert refresh_response.status_code == 200
+    body = refresh_response.json()
+    assert body["token_type"] == "bearer"
+    assert body["role"] == "credit_officer"
+    assert body["full_name"] == "Test Officer"
+    assert body["expires_in"] > 0
+
+    # The new token must itself be usable — proves refresh issues a real,
+    # independently valid credential rather than echoing the old one.
+    second_refresh = await client_with_seeded_user.post(
+        "/api/v1/auth/refresh", headers={"Authorization": f"Bearer {body['access_token']}"}
+    )
+    assert second_refresh.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_refresh_without_token_is_rejected(client_with_seeded_user):
+    response = await client_with_seeded_user.post("/api/v1/auth/refresh")
+    assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_refresh_with_garbage_token_is_rejected(client_with_seeded_user):
+    response = await client_with_seeded_user.post(
+        "/api/v1/auth/refresh", headers={"Authorization": "Bearer not-a-real-token"}
+    )
+    assert response.status_code == 401

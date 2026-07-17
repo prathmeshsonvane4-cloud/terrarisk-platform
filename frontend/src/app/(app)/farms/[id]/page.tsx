@@ -4,9 +4,13 @@ import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 
 import { Button, buttonVariants } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/empty-state";
+import { ErrorState } from "@/components/ui/error-state";
+import { Skeleton } from "@/components/ui/skeleton";
 import { ReportTriggerConflictError, useTriggerReport } from "@/features/report/use-trigger-report";
 import { useFarmAssessmentHistory } from "@/features/workspace/use-farm-assessment-history";
 import { useFarms } from "@/features/workspace/use-farms";
+import { ApiError } from "@/lib/api/errors";
 import { formatArea } from "@/lib/format";
 import { RISK_BANDS } from "@/lib/risk-bands";
 import { cn } from "@/lib/utils";
@@ -24,7 +28,7 @@ export default function FarmDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
   const { data: farms, isPending: farmsPending } = useFarms();
-  const { data: history, isPending: historyPending, isError, error } = useFarmAssessmentHistory(id);
+  const { data: history, isPending: historyPending, isError, error, refetch } = useFarmAssessmentHistory(id);
   const triggerReport = useTriggerReport();
 
   const farm = farms?.find((item) => item.id === id);
@@ -41,18 +45,38 @@ export default function FarmDetailPage() {
   }
 
   if (farmsPending || historyPending) {
-    return <div className="p-6 text-sm text-muted-foreground">Loading farm…</div>;
+    return (
+      <div role="status" aria-label="Loading farm" className="flex flex-1 flex-col gap-4 p-4 md:p-6">
+        <Skeleton className="h-6 w-64" />
+        <Skeleton className="h-4 w-48" />
+        <Skeleton className="h-32 w-full" />
+      </div>
+    );
   }
 
-  if (isError || !farm) {
+  if (isError) {
     return (
       <div className="flex flex-1 items-center justify-center p-6">
-        <div className="flex w-full max-w-md flex-col gap-3 rounded-lg border p-5 text-sm">
-          <p className="font-medium">Could not load this farm</p>
-          <p role="alert" className="text-muted-foreground">
-            {isError ? error.message : "This farm was not found, or you don't have access to it."}
-          </p>
-          <Link href="/farms" className={cn(buttonVariants({ variant: "outline" }), "self-start")}>
+        <div className="w-full max-w-md">
+          <ErrorState error={error} onRetry={() => refetch()} referenceId={id} />
+          <Link href="/farms" className={cn(buttonVariants({ variant: "outline" }), "mt-3 w-full")}>
+            Back to Farms
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
+  if (!farm) {
+    // Not present in the officer's own-or-branch farm list — indistinguishable
+    // from "doesn't exist" by design (owner-or-branch authorization never
+    // reveals which case it is), so this renders the same "not-found" family
+    // ErrorState a real 404 from the API would.
+    return (
+      <div className="flex flex-1 items-center justify-center p-6">
+        <div className="w-full max-w-md">
+          <ErrorState error={new ApiError("Farm not found", 404)} />
+          <Link href="/farms" className={cn(buttonVariants({ variant: "outline" }), "mt-3 w-full")}>
             Back to Farms
           </Link>
         </div>
@@ -104,10 +128,10 @@ export default function FarmDetailPage() {
         <h2 className="mb-2 text-sm font-medium">Assessment history</h2>
 
         {!hasHistory && (
-          <div className="rounded-lg border p-5 text-sm">
-            <p className="font-medium">No assessments yet for this farm</p>
-            <p className="mt-1 text-muted-foreground">Run the first one to get a climate risk score.</p>
-          </div>
+          <EmptyState
+            title="No assessments yet for this farm"
+            description="Run the first one to get a climate risk score."
+          />
         )}
 
         {hasHistory && (

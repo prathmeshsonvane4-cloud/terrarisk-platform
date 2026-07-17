@@ -37,3 +37,40 @@ export function extractConflictingJobId(error: unknown): string | null {
   const jobId = (inner as { job_id?: unknown }).job_id;
   return typeof jobId === "string" ? jobId : null;
 }
+
+/**
+ * A fetch error carrying the HTTP status the backend actually returned —
+ * plain `Error` (used throughout the codebase's mutation hooks) loses this
+ * the moment it's constructed. Query hooks that back the P10 error-state
+ * taxonomy (`ErrorState`, `components/ui/error-state.tsx`) throw this
+ * instead, so the family (network / auth / not-found / server) can be
+ * derived from a real status code rather than guessed from message text.
+ */
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    public readonly status: number,
+  ) {
+    super(message);
+    this.name = "ApiError";
+  }
+}
+
+export type ErrorFamily = "network" | "auth" | "not-found" | "server";
+
+/**
+ * Classifies any error a query hook can throw into one of the four
+ * families the P10 error-state design (Product Design v2 §7.6) treats
+ * distinctly. Anything that isn't a classified `ApiError` — a rejected
+ * `fetch()` itself (offline, DNS failure, CORS) — is the "network" family,
+ * the safest default for an unrecognized failure in this codebase (no
+ * other class of error is expected to reach a query's `onError`).
+ */
+export function classifyError(error: unknown): ErrorFamily {
+  if (error instanceof ApiError) {
+    if (error.status === 401 || error.status === 403) return "auth";
+    if (error.status === 404) return "not-found";
+    return "server";
+  }
+  return "network";
+}
