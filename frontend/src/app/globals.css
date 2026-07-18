@@ -4,6 +4,24 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* Production bug, found on a real deployed server: MapLibre GL's own
+   stylesheet (imported by components/map/base-map.tsx) sets
+   `.maplibregl-map { position: relative }`. Every BaseMap consumer
+   (farm-drawing/farm-map.tsx, report/report-map.tsx) passes an
+   `absolute inset-0` className expecting the map to fill its parent --
+   which only works if `position` actually resolves to `absolute`.
+   Whether Tailwind's utility or MapLibre's own base rule wins is decided
+   by which stylesheet lands later in the final cascade, which differs
+   between `next dev` (works) and the production Turbopack build (does
+   not) -- confirmed live: the map container collapsed to zero height in
+   production, MapLibre's `position: relative` had won. Pinning this
+   explicitly removes the dependency on import/bundling order entirely,
+   rather than trying to out-order two independently built stylesheets. */
+.maplibregl-map {
+  position: absolute !important;
+  inset: 0 !important;
+}
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
