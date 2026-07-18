@@ -64,6 +64,13 @@ services:
     volumes:
       - pdf_cache:/app/var/pdf_cache
       - uploads:/app/app/uploads
+      # DEPLOY-1 finding: the backend runs as a non-root user (Dockerfile),
+      # so GEE_SERVICE_ACCOUNT_JSON_HOST_PATH must be readable by that user
+      # on the host before this mount works — `chmod 644` the file and
+      # `chmod 711` its parent directory (see docs/Deployment_Guide.md §2).
+      # A `chmod 600` file (a common scp/cp default) causes every report
+      # job to fail immediately with a permission error, reproduced on a
+      # real deployment.
       - ${GEE_SERVICE_ACCOUNT_JSON_HOST_PATH}:/run/secrets/gee-service-account.json:ro
     networks:
       - terrarisk_net

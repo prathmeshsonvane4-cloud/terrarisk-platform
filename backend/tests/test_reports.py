@@ -245,6 +245,45 @@ async def test_full_service_1_workflow_end_to_end(api_client, scenario):
     assert all(point["source_dates"] == [] for point in report["series"]["rainfall"])
 
 
+async def test_trigger_report_fails_fast_when_satellite_provider_construction_raises(
+    api_client, scenario, monkeypatch
+):
+    """DEPLOY-1 finding, reproduced on a real server: constructing
+    GeeProvider() (Earth Engine auth/init) happens in _run_report_job,
+    *before* generate_farm_report()'s own try/except begins. A real
+    deployment hit this exactly — a misconfigured/unreadable service
+    account key raised inside GeeProvider.__init__(), and because nothing
+    caught it there, the job stayed PENDING forever with no error_message
+    instead of failing immediately like every other report failure mode.
+    """
+
+    class _RaisingProvider:
+        def __init__(self) -> None:
+            raise PermissionError("[Errno 13] Permission denied: '/run/secrets/gee-service-account.json'")
+
+    monkeypatch.setattr("app.api.reports.GeeProvider", _RaisingProvider)
+
+    token = await _login(api_client, scenario["officer"].email)
+    farm_id = await _create_farm(api_client, token, scenario["village"].id)
+
+    trigger_response = await api_client.post(
+        f"/api/v1/farms/{farm_id}/reports", headers={"Authorization": f"Bearer {token}"}, json={}
+    )
+    assert trigger_response.status_code == 202, trigger_response.text
+    job_id = trigger_response.json()["job_id"]
+
+    job_response = await api_client.get(f"/api/v1/jobs/{job_id}", headers={"Authorization": f"Bearer {token}"})
+    assert job_response.status_code == 200
+    job_json = job_response.json()
+    assert job_json["status"] == "failed", (
+        "a satellite-provider construction failure must fail the job immediately, "
+        f"not leave it stuck (status was {job_json['status']!r})"
+    )
+    # Same generic, safe message every other report failure uses — never the
+    # raw PermissionError/credential-path text.
+    assert job_json["error_message"] == "Report generation failed. Please retry; contact support if this persists."
+
+
 @pytest.mark.asyncio
 async def test_trigger_report_rejects_unknown_farm(api_client, scenario):
     token = await _login(api_client, scenario["officer"].email)

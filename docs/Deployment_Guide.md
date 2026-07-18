@@ -52,6 +52,18 @@ cp .env.example .env
 # GEE_SERVICE_ACCOUNT_JSON_HOST_PATH (absolute path to the key file on this
 # server), FRONTEND_ORIGIN (your real domain), ENVIRONMENT=production.
 
+# The backend container runs as a non-root user by design (Dockerfile).
+# The GEE key file must be readable by that user once bind-mounted — on a
+# real Linux host this means the file (and every parent directory in its
+# path) needs at least world-execute/read, not just owner access. Found
+# during a real deployment: a key file left at the default `chmod 600` a
+# `scp`/`cp` typically produces caused every report job to fail
+# immediately with a permission error. World-readable is fine here since
+# the file is already access-controlled by the host filesystem itself —
+# nothing this container exposes lets a caller retrieve it.
+chmod 644 /path/to/your/gee-service-account.json
+chmod 711 "$(dirname /path/to/your/gee-service-account.json)"
+
 docker compose --env-file .env -f docker/docker-compose.prod.yml up -d --build
 ```
 

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import re
 from pathlib import Path
 from uuid import UUID, uuid4
@@ -24,6 +25,7 @@ from sqlalchemy.orm import aliased
 
 from app.api.deps import get_current_user, owned_or_branch_filter, require_role, user_can_access_owned_resource
 from app.core.config import get_settings
+from app.database.base import AsyncSessionLocal
 from app.database.session import get_db
 from app.models.admin import AdminBoundary
 from app.models.enums import JobStatus, JobType, RiskEntityType, SatelliteIndexType, UserRole
@@ -46,11 +48,12 @@ from app.schemas.report import (
 from app.schemas.workspace import ReportListItem, ReportListResponse
 from app.services.reporting.map_snapshot import fetch_map_snapshot
 from app.services.reporting.pdf_renderer import PDF_LAYOUT_VERSION, render_report_pdf
-from app.services.reporting.report_generator import generate_farm_report
+from app.services.reporting.report_generator import _GENERIC_FAILURE_MESSAGE, generate_farm_report
 from app.services.risk.engine import RiskEngine
 from app.services.satellite.gee_provider import GeeProvider, _monthly_periods
 
 router = APIRouter(tags=["Reports"])
+logger = logging.getLogger(__name__)
 
 
 async def _run_report_job(job_id: UUID, farm_id: UUID, lookback_years: int) -> None:
@@ -68,8 +71,33 @@ async def _run_report_job(job_id: UUID, farm_id: UUID, lookback_years: int) -> N
     variant) — calling it directly here would still block this process's
     event loop for that first call, even though we're already inside a
     background task.
+
+    DEPLOY-1 finding, reproduced on a real server: a GeeProvider()
+    construction failure (bad/unreadable credentials, revoked service
+    account) happens here, *before* generate_farm_report()'s own
+    try/except begins — so it was never caught, leaving the job stuck at
+    PENDING with no error_message. The RC2 job reaper's periodic sweep
+    would eventually fail it, but only after its 20-minute window, with a
+    generic "took too long" message that doesn't point at the real cause.
+    This mirrors generate_farm_report's own except-block pattern exactly
+    (log the real exception server-side only, terminal status + the same
+    generic client-facing message), so this failure mode surfaces
+    immediately instead of 20 minutes later.
     """
-    satellite_provider = await asyncio.to_thread(GeeProvider)
+    try:
+        satellite_provider = await asyncio.to_thread(GeeProvider)
+    except Exception:
+        logger.exception(
+            "gee_provider_initialization_failed", extra={"job_id": str(job_id), "farm_id": str(farm_id)}
+        )
+        async with AsyncSessionLocal() as db:
+            job = await db.get(Job, job_id)
+            if job is not None:
+                job.status = JobStatus.FAILED
+                job.error_message = _GENERIC_FAILURE_MESSAGE
+                await db.commit()
+        return
+
     await generate_farm_report(
         job_id=job_id,
         farm_id=farm_id,
