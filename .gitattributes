@@ -1,0 +1,25 @@
+# DEPLOY-1 finding: docker-entrypoint.sh reached a real Ubuntu server with
+# CRLF line endings (git's autocrlf=true on this Windows dev machine
+# converted it during `git archive`/checkout), corrupting the shebang
+# (`#!/bin/sh\r`) and crashing the backend container in a boot loop
+# ("exec ./docker-entrypoint.sh: no such file or directory" — the kernel
+# looking for an interpreter literally named "/bin/sh\r"). The stored git
+# blob was already LF-only; the corruption happened purely at checkout
+# time and would hit any Windows-based engineer cloning this repo with
+# autocrlf enabled (a common default), not just this deployment's transfer
+# method. Forcing LF here makes checkout line endings deterministic
+# regardless of the cloning machine's local git config.
+* text=auto eol=lf
+
+*.sh text eol=lf
+Dockerfile text eol=lf
+*.py text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.conf text eol=lf
+
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.pdf binary
+*.ico binary
