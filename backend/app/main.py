@@ -1,4 +1,8 @@
+import asyncio
+import contextlib
 import logging
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
@@ -14,6 +18,7 @@ from app.api.villages import router as villages_router
 from app.core.config import get_settings
 from app.core.logging import configure_logging
 from app.database.base import AsyncSessionLocal
+from app.services.jobs.reaper import periodic_stuck_job_sweep, sweep_orphaned_on_startup
 
 settings = get_settings()
 configure_logging(level="DEBUG" if settings.debug else "INFO")
@@ -23,10 +28,29 @@ logger.info(
     extra={"app_name": settings.app_name, "app_version": settings.app_version, "environment": settings.environment},
 )
 
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    # RC2 reliability fix — see app/services/jobs/reaper.py's module
+    # docstring: without this, a job killed mid-flight by a routine
+    # redeploy stays PENDING/RUNNING forever, and trigger_report's
+    # in-flight-job check then permanently refuses any future report for
+    # that farm with no operator recovery path.
+    await sweep_orphaned_on_startup()
+    reaper_task = asyncio.create_task(periodic_stuck_job_sweep())
+    try:
+        yield
+    finally:
+        reaper_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await reaper_task
+
+
 app = FastAPI(
     title="TerraRisk Credit Intelligence API",
     description="Climate Risk Intelligence Platform for Financial Institutions",
     version="0.1.0",
+    lifespan=lifespan,
 )
 
 # M2A: the Next.js frontend is a separate origin. A single explicit origin,
@@ -125,8 +149,16 @@ async def health_ready() -> JSONResponse:
         async with AsyncSessionLocal() as db:
             await db.execute(text("SELECT 1"))
         checks["database"] = {"status": "ok"}
-    except Exception as exc:  # noqa: BLE001 — any DB failure means "not ready", not a 500
-        checks["database"] = {"status": "error", "detail": str(exc)}
+    except Exception:  # noqa: BLE001 — any DB failure means "not ready", not a 500
+        # RC2 security finding: this endpoint has no auth dependency (an
+        # orchestrator readiness probe can't carry one), so the raw
+        # exception text — which can include hostnames/ports/db names —
+        # must never reach the response body. Every other failure path in
+        # this codebase already keeps exception detail server-log-only
+        # (see the generic exception handler above); this one hadn't
+        # matched that convention.
+        logger.exception("health_ready_database_check_failed")
+        checks["database"] = {"status": "error"}
 
     gee_configured = bool(settings.gee_project_id and settings.gee_service_account_json_path)
     gee_key_present = gee_configured and Path(settings.gee_service_account_json_path).is_file()

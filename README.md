@@ -94,7 +94,8 @@ Requires Docker and Docker Compose.
 git clone <repo-url> && cd terrarisk-platform
 cp .env.example .env                       # fill in real secrets — see comments in the file
 docker compose --env-file .env -f docker/docker-compose.prod.yml up -d --build
-python backend/scripts/create_admin_user.py --email you@example.com --password ... --full-name "Your Name" --role branch_manager
+docker compose --env-file .env -f docker/docker-compose.prod.yml exec backend \
+    python scripts/create_admin_user.py --email you@example.com --password ... --full-name "Your Name" --role branch_manager
 ```
 
 Open `http://localhost/`. Full walkthrough — including SSL, domain setup,

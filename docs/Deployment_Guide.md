@@ -63,10 +63,9 @@ automatically before it starts serving (see §4).
 Verify:
 
 ```bash
-docker compose -f docker/docker-compose.prod.yml ps           # all "healthy"/"running"
-curl -i http://localhost/health                                 # via nginx once the backend location is proxied, or:
-docker compose -f docker/docker-compose.prod.yml exec backend \
-    python -c "import urllib.request; print(urllib.request.urlopen('http://localhost:8000/health/ready').read())"
+docker compose --env-file .env -f docker/docker-compose.prod.yml ps   # all "healthy"/"running"
+curl -i http://localhost/health         # proxied by nginx directly to the backend
+curl -i http://localhost/health/ready   # DB + Earth Engine config checks
 ```
 
 Then create the first officer account (see

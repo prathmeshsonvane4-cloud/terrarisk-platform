@@ -65,8 +65,13 @@ Whenever the backend's API shape changes, regenerate before relying on the
 new shape:
 
 ```bash
-npm run generate:api   # requires a running backend at NEXT_PUBLIC_API_BASE_URL
+npm run generate:api
 ```
+
+The target URL (`http://127.0.0.1:8000/openapi.json`) is hardcoded in
+`package.json`'s script, independent of `NEXT_PUBLIC_API_BASE_URL` — it
+always requires a backend running locally on the default port, regardless
+of what `NEXT_PUBLIC_API_BASE_URL` is set to.
 
 `NEXT_PUBLIC_API_BASE_URL` is a Next.js public env var — inlined into the
 client bundle at **build time**, not read at runtime. Locally it defaults

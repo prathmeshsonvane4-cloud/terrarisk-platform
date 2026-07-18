@@ -144,8 +144,9 @@ pytest
 
 Tests that need a live PostGIS instance skip cleanly when one isn't
 reachable (see `tests/conftest.py`); schema correctness is otherwise
-verified offline via DDL compilation (`tests/test_schema_ddl.py`). 134
-tests as of the RC1 audit — run `pytest -q` for the current count.
+verified offline via DDL compilation (`tests/test_schema_ddl.py`). Test
+count changes as the codebase grows — run `pytest -q` for the current
+count rather than trusting a number here.
 
 ## Deployment
 

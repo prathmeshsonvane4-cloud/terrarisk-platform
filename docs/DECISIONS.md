@@ -2300,3 +2300,268 @@ scale.
 `test_routes_are_versioned_under_api_v1` was updated, not newly added, to
 exclude the new top-level `/health/ready` path the same way it already
 excluded `/health`).
+
+---
+
+## RC2-level implementation decisions
+
+### Job reaper — startup + periodic sweep for orphaned/stuck jobs
+
+**Decision.** New `app/services/jobs/reaper.py`, wired into `app/main.py`
+via a FastAPI `lifespan` handler: on process startup, any `job` row still
+`PENDING`/`RUNNING` is immediately marked `FAILED` (nothing about a new
+process's startup could be continuing it); for the process's lifetime, a
+background task also fails any `PENDING`/`RUNNING` job whose `updated_at`
+is older than 20 minutes, independent of any restart.
+
+**Reason.** RC2 production-readiness audit, reliability review: found —
+and reproduced live — that a job killed mid-flight by a routine
+`docker compose up -d --build` redeploy (a normal pilot operation) stayed
+`RUNNING` forever. `trigger_report`'s own in-flight-job check (`reports.py`)
+then permanently refused any future report for that farm, with no operator
+recovery path short of a manual database `UPDATE`. `generate_farm_report`'s
+own try/except (`report_generator.py`) only guarantees a terminal status
+for exceptions raised *within* that process — it cannot catch the process
+being killed. `Job.updated_at` is bumped by every `ProgressTracker` stage
+transition (`progress.py`), not just job creation, so the periodic sweep's
+age check measures "time since last observed sign of life," not "time
+since the job started" — a legitimately long-running job that's still
+actively progressing is never killed just because its total runtime
+crosses the threshold.
+
+**Alternatives considered.** A reaper triggered only on startup (rejected
+— doesn't catch a job whose background task is still alive but hung, e.g.
+a network call that never times out, since the process never restarts to
+trigger a fresh sweep). Adding a real timeout to every individual Earth
+Engine call instead (a complementary, not alternative, fix — deferred as
+a Medium-priority recommendation in the RC2 report, not implemented this
+pass, since the age-based reaper already bounds the failure mode's
+duration without needing to instrument every call site).
+
+**Trade-offs.** A job that is genuinely still running at the 20-minute
+mark (never observed in practice — typical runtime is 2-4 minutes) would
+be failed and require a manual retry. Judged acceptable: 20 minutes is
+generous headroom, and a false failure is strictly better than the
+previous behavior (permanently stuck, unrecoverable without database
+access).
+
+**Future migration path.** None anticipated at this job volume/architecture.
+If Earth Engine call-level timeouts are added later, the periodic sweep's
+threshold remains a correct backstop regardless.
+
+---
+
+### `pool_pre_ping=True` + `pool_recycle=1800` on the async engine
+
+**Decision.** `app/database/base.py`'s `create_async_engine` call now sets
+`pool_pre_ping=True` and `pool_recycle=1800`.
+
+**Reason.** RC2 reliability review, reproduced live: `postgres` runs as
+its own independently restartable container. Stopping and restarting it
+while `backend` stayed up left every pooled connection stale; without
+pre-ping, the *next* API request to check one out failed with a raw
+connection error (a 500) instead of transparently getting a fresh
+connection. Verified the fix directly: stopped and restarted the
+`postgres` container without touching `backend`, and confirmed API calls
+succeeded immediately afterward with zero manual intervention.
+
+**Alternatives considered.** Relying on `restart: unless-stopped` to
+eventually recover (rejected — that only fires if the *backend* container
+itself crashes, which a stale-connection 500 does not cause; the backend
+process stays up and stays broken until either an operator restarts it or
+enough requests happen to cycle every stale connection out of the pool
+naturally).
+
+**Trade-offs.** `pool_pre_ping` adds one cheap round-trip on connection
+checkout — negligible next to any real query latency.
+
+**Future migration path.** None anticipated.
+
+---
+
+### nginx rate limiting on login, plus a general API backstop
+
+**Decision.** `docker/nginx/nginx.conf` adds `limit_req_zone`s: `login_limit`
+(5 requests/minute, per client IP, `burst=3 nodelay`) applied only to
+`POST /api/v1/auth/login`, and a looser `api_limit` (60 requests/minute)
+applied to `/api/` generally. `limit_req_status 429`.
+
+**Reason.** RC2 security audit: nothing anywhere — application or proxy
+layer — throttled login attempts. bcrypt's cost factor slows one guess but
+does nothing against parallel/distributed guessing against a small, fixed
+set of named bank-officer accounts (the only account-provisioning path is
+`create_admin_user.py`). Verified live: 8 rapid login POSTs from one
+client returned `401 401 401 401 429 429 429 429` — the limiter engages
+exactly as configured.
+
+**Alternatives considered.** An application-level, per-account failed-
+attempt lockout (rejected as the *sole* mechanism — an account-keyed
+lockout is itself a denial-of-service vector, since an attacker who knows
+a real officer's email could deliberately lock them out; per-IP at the
+proxy layer doesn't have that failure mode). Rate-limiting `/api/`
+generally without a tighter login-specific rule (rejected — 60r/m is
+reasonable for normal API usage patterns but far too loose to meaningfully
+slow credential guessing).
+
+**Trade-offs.** A per-IP limiter can't distinguish multiple legitimate
+users behind one NAT/proxy from an attacker — acceptable at pilot scale (a
+handful of named officers, not a large shared-NAT deployment); revisit if
+that changes.
+
+**Future migration path.** None anticipated at pilot scale.
+
+---
+
+### `/health/ready` no longer returns raw exception text
+
+**Decision.** The database-check failure path in `GET /health/ready`
+(`app/main.py`) now logs the exception server-side and returns
+`{"status": "error"}` with no `detail` field, instead of `str(exc)`.
+
+**Reason.** RC2 security audit: this route has no auth dependency (an
+orchestrator/LB probe can't carry one), and asyncpg connection exceptions
+can include hostnames, ports, or database/user names. Every other failure
+path in this codebase already keeps exception detail server-log-only (the
+generic exception handler in the same file); this one hadn't matched that
+convention. Low exploitability as shipped (`nginx.conf` only proxied
+`/api/` and `/` to the public origin at the time this was found — see the
+next entry), but the fix is free and closes the gap regardless of future
+proxy config changes.
+
+**Alternatives considered.** None — straightforward application of the
+existing "exception detail is server-log-only" convention.
+
+**Trade-offs.** None.
+
+**Future migration path.** None anticipated.
+
+---
+
+### `/health` and `/health/ready` now proxied through the public nginx origin
+
+**Decision.** `docker/nginx/nginx.conf` adds `location = /health` and
+`location = /health/ready`, both proxying to the backend.
+
+**Reason.** RC2 documentation-accuracy audit found `docs/Deployment_Guide.md`
+told operators to `curl http://localhost/health` as a post-deploy
+verification step — but neither endpoint was actually reachable through
+the public origin; only `/api/` and `/` were proxied, so that curl hit the
+frontend's catch-all and got a 404. Beyond fixing the doc, the more
+complete fix is making the claim true: an external uptime monitor or load
+balancer pointed at the public domain now has a real, unauthenticated (by
+design) health surface to hit, not just an internal-Docker-network one.
+
+**Alternatives considered.** Just fixing the documentation to stop
+claiming this works (rejected — the underlying capability is genuinely
+useful for a real deployment's external monitoring, and adding it is two
+cheap `location` blocks).
+
+**Trade-offs.** None — both endpoints are already designed to be
+safely unauthenticated (see the M3 `/health/ready` entry above).
+
+**Future migration path.** None anticipated.
+
+---
+
+### `create_admin_user.py --reset-password`, and a minimum password length
+
+**Decision.** The account-provisioning script gains a `--reset-password`
+mode (rotates `password_hash` for an existing `--email`, mirroring
+`create_user()`'s pattern exactly) and a 12-character minimum enforced on
+every password, create or reset.
+
+**Reason.** RC2 security audit: there was no supported way to rotate a
+compromised, forgotten, or routinely-due-for-rotation officer credential
+short of direct database surgery, and no minimum length was enforced on
+the only account-provisioning path in the system.
+
+**Alternatives considered.** Composition rules (uppercase/digit/symbol
+requirements) instead of a length minimum — rejected in favor of current
+NIST guidance that length is the stronger predictor of guess-resistance,
+and composition rules mostly push users toward predictable substitutions.
+
+**Trade-offs.** None identified.
+
+**Future migration path.** If self-service password reset is ever needed
+(not currently in scope — the pilot's fixed, named-officer-account posture
+per the M2A entry above), this script's `reset_password()` is the natural
+reference for that endpoint's business logic, the same relationship
+`create_user()` has to a hypothetical future `POST /users`.
+
+---
+
+### `docker-entrypoint.sh` — distinguish "database not ready" from "genuinely broken config"
+
+**Decision.** The migration-retry logic added in M3 (bounded retry around
+`alembic upgrade head`) is replaced with a two-phase script: first wait
+for raw database *connectivity* (a direct `asyncpg.connect()` against
+`DATABASE_URL`, before Settings/Alembic load), retrying only on
+connection-level errors; once connected, run `alembic upgrade head`
+exactly once, letting any real failure (bad config, bad migration SQL)
+surface immediately.
+
+**Reason.** RC2 error-recovery testing reproduced a real diagnostic gap
+live: starting a container with `JWT_SECRET` unset (a config error,
+nothing to do with database readiness) produced 15 repeated "database
+likely still starting — retrying in 2s" log lines over ~30 seconds before
+finally showing the real `pydantic.ValidationError` at the bottom — because
+the old script retried on *any* nonzero exit from `alembic upgrade head`,
+which itself imports and validates `Settings` as a side effect. An
+operator debugging a failed production deploy would have to scroll past
+misleading noise to find the actual cause. Verified the fix both ways: the
+same missing-`JWT_SECRET` case now fails in ~10 seconds with the real
+error immediately visible and no retry noise; a genuine fresh-volume
+database-startup race (the scenario M3's original fix targeted) still
+retries correctly (`Database not reachable yet (attempt 1/15)...`) and
+proceeds once Postgres is actually ready.
+
+**Alternatives considered.** Keeping the M3 version as-is (rejected — the
+diagnostic-quality gap is real and was reproduced, not hypothetical).
+Parsing `DATABASE_URL` to run a lighter-weight raw TCP check instead of a
+real `asyncpg.connect()` (rejected as unnecessary complexity — a real
+connection attempt is barely more expensive and directly exercises the
+actual thing that needs to succeed).
+
+**Trade-offs.** None identified — this is a strict diagnostic-quality
+improvement; both the legitimate-race and genuine-failure paths were
+re-verified live after the change.
+
+**Future migration path.** None anticipated.
+
+---
+
+### RC2 audit scope note — what was reviewed but deliberately not changed
+
+**Decision.** Several findings from the RC2 audit are recorded as known,
+accepted limitations rather than fixed in this pass: (1) the sliding
+refresh token (`POST /auth/refresh`) has no absolute session-length
+ceiling independent of repeated refresh, and no revocation mechanism
+beyond deactivating the account (`is_active`, already enforced on every
+request) — this compounds the already-documented localStorage-token
+trade-off (see the M2A entry above) but closing it properly needs a
+session-epoch or similar mechanism, which is a real design decision, not
+a quick fix; (2) no retry-with-backoff around individual Earth Engine
+calls for transient network failures (partially mitigated already: cached
+per-stage observations mean a manual retry only re-fetches what failed,
+not the whole pipeline); (3) no container resource limits, log-rotation
+config, or Linux-capability hardening in `docker-compose.prod.yml`; (4) no
+metrics/APM endpoint; (5) backups remain a documented manual `pg_dump`
+cron recipe, not automated or verified by anything in this repository.
+
+**Reason.** The RC2 audit's own brief: "Only implement fixes if they are
+genuine release blockers... Do NOT invent work." None of these prevent a
+correctly-operated pilot from functioning; each either has a partial
+mitigation already, requires a real design decision this audit pass
+shouldn't rush, or depends on production load/scale data that doesn't
+exist yet to size correctly (resource limits sized blind risk causing the
+OOM-kills they're meant to prevent).
+
+**Trade-offs.** Documented explicitly here, and in `docs/RC2_Final_Signoff.md`'s
+Known Limitations section, specifically so they are a tracked, visible
+backlog — not a silently-dropped audit finding.
+
+**Future migration path.** Revisit session revocation before any
+deployment beyond a controlled pilot (same trigger condition already
+named in the M2A entry). Revisit resource limits and monitoring once real
+pilot load data exists to size them against. Revisit GEE retry if transient
+failures are observed in practice to be more than a rare inconvenience.
