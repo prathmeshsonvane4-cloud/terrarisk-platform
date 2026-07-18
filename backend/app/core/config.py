@@ -1,6 +1,14 @@
 from functools import lru_cache
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# The literal placeholder value shipped in backend/.env.example and
+# .env.example — never a real secret, but a plausible one someone could
+# forget to replace. Checked by value, not just length, since a copy-pasted
+# placeholder can happen to be long enough to pass a length check alone.
+_EXAMPLE_JWT_SECRET = "replace-with-a-generated-secret"
+_MIN_PRODUCTION_JWT_SECRET_LENGTH = 32
 
 
 class Settings(BaseSettings):
@@ -43,6 +51,34 @@ class Settings(BaseSettings):
     # backend working directory; deployments should point this at a
     # persistent volume.
     report_pdf_cache_dir: str = "var/pdf_cache"
+
+    @model_validator(mode="after")
+    def _validate_production_safety(self) -> "Settings":
+        """M3 — quick production-configuration checks, not an auth redesign.
+
+        A weak/placeholder JWT_SECRET or DEBUG=True currently starts up
+        without complaint in any environment, including production — this
+        closes that gap the same fail-loudly way this class already treats
+        every other required setting (see the class docstring). Local/dev/
+        test environments are untouched; `ENVIRONMENT=production` is the
+        explicit opt-in these checks gate on.
+        """
+        if self.environment != "production":
+            return self
+
+        if self.jwt_secret == _EXAMPLE_JWT_SECRET or len(self.jwt_secret) < _MIN_PRODUCTION_JWT_SECRET_LENGTH:
+            raise ValueError(
+                "JWT_SECRET is missing, is the example placeholder, or is under "
+                f"{_MIN_PRODUCTION_JWT_SECRET_LENGTH} characters — refusing to start with "
+                "ENVIRONMENT=production. Generate a real secret: "
+                'python -c "import secrets; print(secrets.token_urlsafe(32))"'
+            )
+        if self.debug:
+            raise ValueError(
+                "DEBUG=True with ENVIRONMENT=production — verbose SQL logging can log PII-bearing "
+                "bound parameters (see this file's own debug field comment). Refusing to start."
+            )
+        return self
 
 
 @lru_cache

@@ -1,8 +1,10 @@
 import logging
+from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from sqlalchemy import text
 
 from app.api.auth import router as auth_router
 from app.api.farms import router as farms_router
@@ -11,10 +13,15 @@ from app.api.reports import router as reports_router
 from app.api.villages import router as villages_router
 from app.core.config import get_settings
 from app.core.logging import configure_logging
+from app.database.base import AsyncSessionLocal
 
 settings = get_settings()
 configure_logging(level="DEBUG" if settings.debug else "INFO")
 logger = logging.getLogger(__name__)
+logger.info(
+    "application_startup",
+    extra={"app_name": settings.app_name, "app_version": settings.app_version, "environment": settings.environment},
+)
 
 app = FastAPI(
     title="TerraRisk Credit Intelligence API",
@@ -94,3 +101,44 @@ async def root():
 @app.get("/health")
 async def health():
     return {"status": "healthy"}
+
+
+@app.get("/health/ready")
+async def health_ready() -> JSONResponse:
+    """Deployment readiness probe (M3) — distinct from /health, which is a
+    cheap liveness check with no dependencies and stays unchanged (asserted
+    verbatim by tests/test_health.py). This one actually verifies the
+    things a fresh deployment can get wrong: DB connectivity, and whether
+    Earth Engine credentials are configured.
+
+    Earth Engine's check is deliberately config/credential-file presence,
+    not a live ee.Initialize() call — actually initializing here would mean
+    a real network round-trip (and, per GeeProvider's own design, a
+    thread-pool hop — see docs/DECISIONS.md) on every orchestrator probe
+    hit, which is impractical to do on a health-check cadence, not just
+    undesirable. Container/compose healthchecks target the cheap /health,
+    not this endpoint, for the same reason.
+    """
+    checks: dict[str, dict] = {}
+
+    try:
+        async with AsyncSessionLocal() as db:
+            await db.execute(text("SELECT 1"))
+        checks["database"] = {"status": "ok"}
+    except Exception as exc:  # noqa: BLE001 — any DB failure means "not ready", not a 500
+        checks["database"] = {"status": "error", "detail": str(exc)}
+
+    gee_configured = bool(settings.gee_project_id and settings.gee_service_account_json_path)
+    gee_key_present = gee_configured and Path(settings.gee_service_account_json_path).is_file()
+    if gee_configured and gee_key_present:
+        checks["earth_engine"] = {"status": "configured"}
+    elif gee_configured:
+        checks["earth_engine"] = {"status": "misconfigured", "detail": "service account key file not found on disk"}
+    else:
+        checks["earth_engine"] = {"status": "not_configured"}
+
+    overall_ok = checks["database"]["status"] == "ok" and checks["earth_engine"]["status"] == "configured"
+    return JSONResponse(
+        status_code=200 if overall_ok else 503,
+        content={"status": "ok" if overall_ok else "degraded", "checks": checks},
+    )

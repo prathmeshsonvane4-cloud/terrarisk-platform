@@ -1,0 +1,15 @@
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+var/
+app/uploads/
+tests/
+docs/
+.env
+.env.*
+!.env.example
+*.md

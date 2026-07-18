@@ -2179,3 +2179,124 @@ the test suite already exercises exactly this path end to end.
 **Tests.** Backend: 134/134 (132 prior + 2 new: the IDOR regression
 test above, and `test_rejects_ring_over_max_points` /
 `test_rejects_non_finite_coordinates` in `test_farm_schema.py`).
+
+---
+
+## M3-level implementation decisions
+
+### Missing user-provisioning path — `scripts/create_admin_user.py`
+
+**Decision.** A new CLI script, `backend/scripts/create_admin_user.py`,
+creates an `app_user` row (hashed password via the existing
+`hash_password()`, any `UserRole`, optional `branch_id`), following the
+exact async-script pattern `seed_default_config_weight.py` already
+established (`sys.path` bootstrap, `AsyncSessionLocal`, `asyncio.run`).
+
+**Reason.** Found while implementing M3 ("a new engineer should be able to
+clone the repository and launch TerraRisk using documented steps"):
+`app/api/auth.py` has only `/login` and `/refresh` — no registration
+endpoint, no admin-creation endpoint, and no seed script for `app_user`
+existed anywhere. A fresh deployment would have a fully working API and an
+empty `app_user` table with no way to authenticate at all. This is a
+release blocker for "clone and launch," not a nice-to-have — filled the
+same way every other one-off provisioning need in this codebase already is
+(a script, not a new API surface), consistent with the pilot's fixed,
+named-officer-account posture (no self-service signup — see the M2A
+"Bearer token in localStorage" entry above for that posture's origin).
+
+**Alternatives considered.** An admin-only `POST /users` API endpoint —
+rejected as unnecessary API surface for what is, at pilot scale, a handful
+of manually-provisioned accounts; a script matches the actual operational
+need without adding a new authenticated write path to audit. A raw SQL
+`INSERT` documented in the deployment guide — rejected because it would
+either hardcode a bcrypt hash (awkward, easy to get wrong) or require the
+operator to hash a password by hand outside the app's own `hash_password()`,
+duplicating logic that already exists.
+
+**Trade-offs.** None identified — purely additive; no existing behavior
+changes.
+
+**Future migration path.** If TerraRisk ever needs self-service account
+creation (a second bank, a larger officer roster), this script is the
+natural reference for a future `POST /users` endpoint's business logic —
+not a placeholder to be deleted, since manual/CLI provisioning by an
+administrator remains a reasonable path even alongside a future API.
+
+---
+
+### Production deployment architecture — single-origin nginx, migrate-on-boot, config-presence GEE readiness
+
+**Decision.** Three infrastructure choices made together for M3 ("Production
+Deployment & Pilot Infrastructure"):
+
+1. **nginx as the single public origin.** `docker/nginx/nginx.conf`
+   reverse-proxies `/api/` to the backend and everything else to the
+   frontend, both under one public origin. The frontend's production
+   Docker build sets `NEXT_PUBLIC_API_BASE_URL` to an empty (relative)
+   string by default, so browser API calls resolve to `/api/v1/...`
+   same-origin — CORS is a non-issue for real traffic in this topology.
+   `FRONTEND_ORIGIN`-scoped CORS (M2A) remains in the backend as
+   defense-in-depth for any caller that bypasses nginx, not removed.
+
+2. **Migrations run automatically on backend container start.**
+   `backend/docker-entrypoint.sh` runs `alembic upgrade head` then execs
+   `uvicorn` — idempotent, so this is the same code path for a first
+   deployment and every subsequent redeploy. Rollback
+   (`alembic downgrade -1`) stays a deliberate, manual, documented step
+   (`docs/Deployment_Guide.md`) — never automatic.
+
+3. **`GET /health/ready`'s Earth Engine check is credential/config
+   presence, not a live `ee.Initialize()` call.** `GET /health` (unchanged
+   since M0, asserted verbatim by `tests/test_health.py`) stays the cheap
+   liveness probe with zero dependencies. The new `/health/ready` checks DB
+   connectivity (`SELECT 1`) and whether `GEE_PROJECT_ID` +
+   `GEE_SERVICE_ACCOUNT_JSON_PATH` are set and the key file exists on disk.
+
+**Reason.** (1) reuses the backend's existing `/api/v1` route prefix with
+zero backend routing changes, and removes an entire class of CORS
+misconfiguration from the deployed system rather than just documenting
+around it. (2) is the standard pattern at this project's scale — a
+separate one-off "migrate" service/step would be more moving parts for no
+real benefit at current job/deploy volume, matching this codebase's
+existing "add infrastructure when the current approach actually strains,
+not preemptively" pattern (see the async-job-as-DB-table decision above).
+(3) is a deliberate reading of the M3 requirement's own "(where
+practical)" qualifier: actually calling `ee.Initialize()` on every
+orchestrator health-check hit would mean a real network round-trip (and,
+per the existing `asyncio.to_thread()` decision above, a thread-pool hop)
+on a health-check cadence — not merely undesirable but the wrong shape of
+check for a readiness probe an orchestrator may call every few seconds.
+
+**Alternatives considered.** A separate one-shot "migrate" Compose service
+run before `backend` starts (rejected — more infrastructure than this
+project's deploy cadence justifies; the idempotent-entrypoint approach
+gives the same guarantee with less to maintain, and remains easy to split
+out later if migrations ever need to run before multiple backend replicas
+start concurrently). A live `ee.Initialize()` health check, possibly
+cached/rate-limited (rejected as unnecessary complexity for what a
+config/file-presence check already answers correctly: "will the next real
+report-generation attempt find its credentials?" — a stale-but-valid cached
+"OK" from an earlier successful live check would be actively misleading if
+the credentials were revoked since).
+
+**Trade-offs.** The `/health/ready` Earth Engine check cannot catch every
+possible failure mode (e.g. valid-looking credentials that Google has since
+revoked, or an IAM role removed after initial setup — see the M1 "GEE
+service account IAM roles" entry above for the kind of failure this
+wouldn't catch) — it only catches "credentials aren't configured at all,"
+which is the actual failure mode a fresh/misconfigured deployment hits.
+Real IAM/credential-validity problems still surface as errors on the first
+real report-generation attempt, exactly as they do today.
+
+**Future migration path.** If the platform ever runs multiple backend
+replicas, the migrate-on-boot pattern needs revisiting (concurrent
+`alembic upgrade head` calls from multiple containers racing on startup) —
+a dedicated migrate-then-deploy step at that point, not before. None
+anticipated for `/health/ready`'s design or the nginx topology at pilot
+scale.
+
+**Tests.** Backend: 135/135 (134 prior + 1 new:
+`test_health_ready_endpoint_reports_component_checks`; the existing
+`test_routes_are_versioned_under_api_v1` was updated, not newly added, to
+exclude the new top-level `/health/ready` path the same way it already
+excluded `/health`).

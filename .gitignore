@@ -64,6 +64,14 @@ dist/
 .DS_Store
 *.pem
 
+# ==========================================
+# Docker / nginx — never commit real TLS material
+# ==========================================
+docker/nginx/certs/*
+!docker/nginx/certs/.gitkeep
+*.crt
+*.key
+
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*

@@ -1,0 +1,205 @@
+# TerraRisk — Deployment Guide
+
+This guide covers running TerraRisk in production: Docker deployment (the
+supported path), environment variables, SSL/domain setup, updating an
+existing deployment, and backup/recovery. For first-time local setup
+(cloning, local dev servers, creating the first account), see
+[`Getting_Started.md`](Getting_Started.md). For the reasoning behind any
+architectural choice referenced here, see [`DECISIONS.md`](DECISIONS.md).
+
+## Prerequisites
+
+- A server (Ubuntu 22.04/24.04 LTS assumed below; any Docker-capable Linux
+  host works the same way).
+- Docker Engine + the Docker Compose plugin.
+- A domain name pointed at the server, if you want a real HTTPS URL rather
+  than plain HTTP on an IP address (recommended for anything beyond a
+  closed internal network).
+- A Google Earth Engine service-account key file (see `DECISIONS.md`'s GEE
+  setup walkthrough) — copied to the server, outside the repo.
+
+## 1. Ubuntu server setup
+
+```bash
+sudo apt-get update && sudo apt-get upgrade -y
+
+# Docker Engine + Compose plugin (see https://docs.docker.com/engine/install/ubuntu/
+# for the current official steps if this drifts)
+curl -fsSL https://get.docker.com | sudo sh
+sudo usermod -aG docker "$USER"
+# log out/in (or `newgrp docker`) for the group change to take effect
+
+# Open only what's needed: SSH + HTTP/HTTPS. Adjust to your actual SSH port.
+sudo ufw allow OpenSSH
+sudo ufw allow 80/tcp
+sudo ufw allow 443/tcp
+sudo ufw enable
+```
+
+TerraRisk itself does not need any other inbound port open — PostgreSQL
+and the backend/frontend containers are only reachable from nginx, on the
+Docker-internal network (see `docker/docker-compose.prod.yml`).
+
+## 2. Docker deployment (primary path)
+
+```bash
+git clone <repo-url> terrarisk-platform
+cd terrarisk-platform
+
+cp .env.example .env
+# Edit .env: real POSTGRES_PASSWORD, JWT_SECRET (32+ random chars — see the
+# generation command in .env.example), GEE_PROJECT_ID,
+# GEE_SERVICE_ACCOUNT_JSON_HOST_PATH (absolute path to the key file on this
+# server), FRONTEND_ORIGIN (your real domain), ENVIRONMENT=production.
+
+docker compose --env-file .env -f docker/docker-compose.prod.yml up -d --build
+```
+
+This builds and starts four containers (`postgres`, `backend`, `frontend`,
+`nginx`) on one internal Docker network; only `nginx` publishes ports (80
+and 443) to the host. The backend container runs `alembic upgrade head`
+automatically before it starts serving (see §4).
+
+Verify:
+
+```bash
+docker compose -f docker/docker-compose.prod.yml ps           # all "healthy"/"running"
+curl -i http://localhost/health                                 # via nginx once the backend location is proxied, or:
+docker compose -f docker/docker-compose.prod.yml exec backend \
+    python -c "import urllib.request; print(urllib.request.urlopen('http://localhost:8000/health/ready').read())"
+```
+
+Then create the first officer account (see
+[`Getting_Started.md`](Getting_Started.md#create-the-first-admin-officer-account)
+for the exact command, run inside the `backend` container) and open your
+domain (or `http://<server-ip>/` before SSL is configured) in a browser.
+
+## 3. Environment variables
+
+The root `.env` file (from `.env.example`) configures the production
+Compose stack. Every variable is documented inline in `.env.example` —
+read it before deploying, don't just copy it blind. Summary of what each
+group controls:
+
+| Group | Variables | Notes |
+| --- | --- | --- |
+| Database | `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB` | `DATABASE_URL` is derived automatically in `docker-compose.prod.yml` — don't set it separately here. |
+| Auth | `JWT_SECRET`, `JWT_ALGORITHM`, `JWT_EXPIRES_MINUTES` | Startup refuses a placeholder/short `JWT_SECRET` when `ENVIRONMENT=production` (`backend/app/core/config.py`). |
+| Earth Engine | `GEE_PROJECT_ID`, `GEE_SERVICE_ACCOUNT_JSON_HOST_PATH` | The host path is bind-mounted read-only into the backend container; see `DECISIONS.md` for the GCP project/service-account setup itself. |
+| App | `APP_NAME`, `APP_VERSION`, `ENVIRONMENT`, `DEBUG` | `ENVIRONMENT=production` and `DEBUG=False` for any real deployment. |
+| Public origin | `FRONTEND_ORIGIN`, `NEXT_PUBLIC_API_BASE_URL` | Leave `NEXT_PUBLIC_API_BASE_URL` blank (same-origin via nginx) unless you're deploying the frontend without nginx in front of it. |
+| TLS | `NGINX_CERTS_HOST_PATH` | See §4 below. |
+
+`backend/.env.example` and `frontend/.env.example` are separate files for
+running the services directly on your machine (no Docker) — see
+`Getting_Started.md`.
+
+## 4. SSL / domain
+
+A fresh clone comes up over plain HTTP so `docker compose up` never fails
+on a missing certificate. To enable HTTPS once you have a real domain
+pointed at the server:
+
+```bash
+# Obtain a certificate with certbot in standalone mode (stop nginx first,
+# since both need port 80):
+docker compose -f docker/docker-compose.prod.yml stop nginx
+sudo apt-get install -y certbot
+sudo certbot certonly --standalone -d your-domain.example
+
+# Copy (or symlink) the issued cert where nginx expects it:
+sudo mkdir -p docker/nginx/certs
+sudo cp /etc/letsencrypt/live/your-domain.example/fullchain.pem docker/nginx/certs/
+sudo cp /etc/letsencrypt/live/your-domain.example/privkey.pem docker/nginx/certs/
+```
+
+Then edit `docker/nginx/nginx.conf`: uncomment the `server { listen 443
+ssl; ... }` block at the bottom, set `server_name` to your real domain, and
+restart:
+
+```bash
+docker compose -f docker/docker-compose.prod.yml up -d nginx
+```
+
+Set up renewal (Let's Encrypt certs expire every 90 days) via a cron job
+running `certbot renew` followed by the copy step and an `nginx` restart,
+or use certbot's nginx plugin if you prefer it managing the config
+directly.
+
+**Alternative**: if TLS is already terminated upstream (a cloud load
+balancer, a bank-managed WAF/reverse proxy in front of this server), leave
+nginx on plain HTTP and point that upstream at port 80 — nginx's own HTTPS
+block is only needed when this server terminates TLS itself.
+
+## 5. Reverse proxy design
+
+nginx (`docker/nginx/nginx.conf`) is the only container with a published
+port. It proxies `/api/` to the backend and everything else to the
+frontend, both on the same public origin — this is why
+`NEXT_PUBLIC_API_BASE_URL` can be a relative empty string in production
+(browser requests to `/api/v1/...` are same-origin, so CORS never enters
+the picture for real traffic; the backend's `FRONTEND_ORIGIN`-scoped CORS
+policy stays in place as defense-in-depth for any direct, non-proxied
+access). It also handles gzip, baseline security headers, and long-lived
+immutable caching for Next.js's content-hashed static assets. See the
+comments in `nginx.conf` for what's deliberately left disabled by default
+(HSTS, a Content-Security-Policy) and why.
+
+## 6. Updating an existing deployment
+
+```bash
+cd terrarisk-platform
+git pull
+docker compose --env-file .env -f docker/docker-compose.prod.yml up -d --build
+```
+
+The backend container re-runs `alembic upgrade head` on every start — this
+is a no-op if the schema is already current, and applies any new
+migrations otherwise. **Take a database backup before updating** (§7) —
+this is a standing recommendation, not optional for anything beyond a demo
+environment.
+
+## 7. Backup recommendations
+
+Daily `pg_dump`, kept off the same host if possible:
+
+```bash
+# Add to root's crontab (crontab -e), adjust paths/retention as needed:
+0 2 * * * docker compose -f /path/to/terrarisk-platform/docker/docker-compose.prod.yml \
+    exec -T postgres pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB" \
+    | gzip > /var/backups/terrarisk/terrarisk-$(date +\%Y\%m\%d).sql.gz
+```
+
+Also back up (separately, not part of the database dump):
+
+- The `.env` file (contains secrets — store it somewhere access-controlled, not in the backup directory above verbatim).
+- The GEE service-account key file.
+- The `pdf_cache` and `uploads` named Docker volumes, if report re-generation cost matters to you — both are regenerable from the database, so this is optional, not critical.
+
+## 8. Recovery
+
+```bash
+# Stop the backend so nothing writes during restore:
+docker compose -f docker/docker-compose.prod.yml stop backend
+
+gunzip -c /var/backups/terrarisk/terrarisk-YYYYMMDD.sql.gz | \
+    docker compose -f docker/docker-compose.prod.yml exec -T postgres \
+    psql -U "$POSTGRES_USER" "$POSTGRES_DB"
+
+# Re-verify schema state (should be a no-op if the dump was already current):
+docker compose -f docker/docker-compose.prod.yml up -d backend
+docker compose -f docker/docker-compose.prod.yml exec backend alembic upgrade head
+```
+
+## Rollback (migrations)
+
+Alembic downgrades are a deliberate manual step, never automatic:
+
+```bash
+docker compose -f docker/docker-compose.prod.yml exec backend alembic downgrade -1
+```
+
+Alembic downgrades are not a substitute for a real backup — some
+migrations (e.g. ones that drop a column) lose data a downgrade cannot
+recreate. Restoring from the most recent `pg_dump` (§8) is the reliable
+rollback path for anything beyond a purely additive migration.
