@@ -14,6 +14,7 @@ import asyncio
 import json
 import logging
 import re
+from datetime import datetime
 from pathlib import Path
 from uuid import UUID, uuid4
 
@@ -37,6 +38,8 @@ from app.models.user import AppUser
 from app.schemas.report import (
     FactorScoreResponse,
     ObservationPoint,
+    ReportAuditContext,
+    ReportComparisonContext,
     ReportEvidenceContext,
     ReportFarmContext,
     ReportGenerateRequest,
@@ -255,6 +258,59 @@ async def _load_report_response(
         else None
     )
 
+    # REPORT V2 — the same farm's most recent PRIOR assessment (real
+    # cross-assessment history via the append-only risk_score table),
+    # strictly older than the one being viewed so browsing an older report
+    # in the ledger still compares against what came before it, not the
+    # farm's current latest. None when this is the farm's first assessment
+    # — never assumed/backfilled.
+    previous_score = (
+        await db.execute(
+            select(RiskScore)
+            .where(
+                RiskScore.entity_type == RiskEntityType.FARM,
+                RiskScore.entity_id == farm.id,
+                RiskScore.computed_at < risk_score.computed_at,
+            )
+            .order_by(RiskScore.computed_at.desc())
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+
+    comparison = ReportComparisonContext()
+    if previous_score is not None:
+        previous_factor_rows = (
+            await db.execute(select(RiskFactorScore).where(RiskFactorScore.risk_score_id == previous_score.id))
+        ).scalars().all()
+        comparison = ReportComparisonContext(
+            has_previous_assessment=True,
+            previous_computed_at=previous_score.computed_at,
+            previous_overall_score=previous_score.overall_score,
+            previous_factor_scores={row.factor.value: row.value for row in previous_factor_rows},
+        )
+
+    # REPORT V2 — real processing time, read back from the completed Job's
+    # own stage timeline (progress.py). generate_farm_report() overwrites
+    # Job.entity_id with the resulting risk_score.id once DONE (reports.py's
+    # trigger_report comment explains the same reuse), so this is a direct,
+    # unambiguous lookup — not a fabricated duration.
+    audit = ReportAuditContext()
+    originating_job = (
+        await db.execute(
+            select(Job).where(
+                Job.type == JobType.FARM_REPORT, Job.entity_id == risk_score.id, Job.status == JobStatus.DONE
+            )
+        )
+    ).scalar_one_or_none()
+    if originating_job is not None and originating_job.progress:
+        stages_by_id = {stage["id"]: stage for stage in originating_job.progress.get("stages", [])}
+        started_raw = stages_by_id.get("preparing", {}).get("started_at")
+        completed_raw = stages_by_id.get("completed", {}).get("completed_at")
+        audit = ReportAuditContext(
+            processing_started_at=datetime.fromisoformat(started_raw) if started_raw else None,
+            processing_completed_at=datetime.fromisoformat(completed_raw) if completed_raw else None,
+        )
+
     return ReportResponse(
         id=risk_score.id,
         farm_id=farm.id,
@@ -293,6 +349,8 @@ async def _load_report_response(
             ),
             weighted_average_score=risk_score.weighted_average_score,
         ),
+        comparison=comparison,
+        audit=audit,
     )
 
 

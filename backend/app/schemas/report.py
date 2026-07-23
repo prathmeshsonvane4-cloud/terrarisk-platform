@@ -5,6 +5,12 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.models.enums import RiskBand, RiskFactor
 
+# REPORT V2 note: every new model below is additive-only — new optional
+# fields with safe defaults, appended to ReportResponse without touching
+# any existing field. GET /reports/{id} stays backward compatible for any
+# existing consumer; nothing here changes API shape for what already
+# existed, per the redesign's explicit "do not break existing APIs" rule.
+
 
 class ReportGenerateRequest(BaseModel):
     lookback_years: int = Field(default=3, ge=1, le=10)
@@ -96,6 +102,32 @@ class ReportMethodContext(BaseModel):
     weighted_average_score: float | None
 
 
+class ReportComparisonContext(BaseModel):
+    """REPORT V2 — the farm's own prior assessment, if one exists (real
+    cross-assessment history via the append-only `risk_score` table, never
+    a forecast). `has_previous_assessment=False` and all other fields None
+    means this is the farm's first assessment — the honest answer, not an
+    assumed baseline of zero."""
+
+    has_previous_assessment: bool = False
+    previous_computed_at: datetime | None = None
+    previous_overall_score: float | None = None
+    # RiskFactor.value (e.g. "drought_risk") -> that factor's score on the
+    # prior assessment. Only populated when has_previous_assessment is True.
+    previous_factor_scores: dict[str, float] = Field(default_factory=dict)
+
+
+class ReportAuditContext(BaseModel):
+    """REPORT V2 audit-appendix metadata not otherwise in the payload —
+    real, derived from the completed Job's own stage timeline
+    (app/services/reporting/progress.py), never a synthetic estimate. Both
+    None for reports generated before this field existed, or if the
+    originating Job row is no longer found."""
+
+    processing_started_at: datetime | None = None
+    processing_completed_at: datetime | None = None
+
+
 class ReportResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -117,3 +149,8 @@ class ReportResponse(BaseModel):
     # payload; no second endpoint, no recomputation.
     evidence: ReportEvidenceContext
     method: ReportMethodContext
+    # REPORT V2 additive enrichment — Page 2/3 trend and Page 7 audit
+    # appendix read this same payload; defaults keep every existing
+    # consumer (JSON or PDF) working unchanged if it doesn't look at these.
+    comparison: ReportComparisonContext = Field(default_factory=ReportComparisonContext)
+    audit: ReportAuditContext = Field(default_factory=ReportAuditContext)
