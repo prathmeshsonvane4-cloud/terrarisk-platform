@@ -1,22 +1,28 @@
 # TerraRisk
 
+[![CI](https://github.com/prathmeshsonvane4-cloud/terrarisk-platform/actions/workflows/ci.yml/badge.svg)](https://github.com/prathmeshsonvane4-cloud/terrarisk-platform/actions/workflows/ci.yml)
+![Backend tests](https://img.shields.io/badge/backend%20tests-192%20passing-brightgreen)
+![License](https://img.shields.io/badge/license-proprietary-lightgrey)
+
 Climate risk intelligence for agricultural lending. TerraRisk turns a
 farm's location into a transparent, evidence-backed climate risk report a
-bank credit officer can act on — and rolls those assessments up into
-portfolio-level risk views for branch and district leadership. Built for
-the pilot bank as the first pilot customer.
+bank credit officer can act on. Built for a district cooperative bank as
+its first pilot customer.
 
 ## Overview
 
 Two services, one platform:
 
-1. **Farmer Climate Intelligence Report** — a credit officer draws a farm's
-   boundary on a satellite map, TerraRisk pulls multi-year vegetation,
-   water, and rainfall data for that exact polygon from Google Earth
-   Engine, and a rule-based risk engine produces a Climate Risk Score with
-   a visible factor breakdown and a downloadable PDF report.
+1. **Farmer Climate Intelligence Report** — built and live-verified. A
+   credit officer draws a farm's boundary on a satellite map, TerraRisk
+   pulls multi-year vegetation, water, and rainfall data for that exact
+   polygon from Google Earth Engine, and a rule-based risk engine produces
+   a Climate Risk Score with a visible factor breakdown and a downloadable
+   7-section PDF report.
 2. **Portfolio Climate Risk Dashboard** — aggregated risk views across a
-   bank's villages, branches, and district (in progress).
+   bank's villages, branches, and district. The data model and API surface
+   reserve space for this; it is not yet built (planned for a later
+   milestone, see [`docs/Product_Design_v2.md`](docs/Product_Design_v2.md)).
 
 The risk score is deliberately **rule-based and configurable**, not an
 opaque ML prediction — a bank needs to understand and trust a score before
@@ -142,13 +148,36 @@ terrarisk-platform/
 
 ## Screenshots
 
-Not yet captured for this README — the pilot workspace covers the
-Overview, New Assessment wizard, Assessment Run (progress/trust screen),
-Farm detail, and the three-tab Climate Report (see
-[`docs/Product_Design_v2.md`](docs/Product_Design_v2.md) §7 for the full
-wireframe descriptions). Add real screenshots here once the pilot UI is
-stable.
+The generated report — real renderer output on fixture data, not a mockup:
+
+| Executive Summary | Risk Dashboard |
+| --- | --- |
+| [![Report page 1](docs/screenshots/report-page1-executive-summary.png)](docs/screenshots/report-page1-executive-summary.png) | [![Report page 2](docs/screenshots/report-page2-risk-dashboard.png)](docs/screenshots/report-page2-risk-dashboard.png) |
+
+The report runs to 7 sections (Executive Summary, Risk Dashboard,
+Historical Analysis, Climate Outlook, Farm Intelligence, Methodology,
+Audit Appendix). Workspace UI screenshots (Overview, New Assessment
+wizard, Assessment Run progress screen, Farm detail) are not yet captured
+— see [`docs/Product_Design_v2.md`](docs/Product_Design_v2.md) §7 for the
+wireframe descriptions in the meantime.
+
+## Roadmap
+
+- [x] Farm boundary drawing, server-authoritative area calculation
+- [x] Multi-year Earth Engine time series (NDVI/MNDWI/NDMI/rainfall) per farm
+- [x] Rule-based Climate Risk Score with a visible per-factor breakdown
+- [x] 7-section PDF Climate Credit Report
+- [x] Async report generation with live progress tracking
+- [x] Production deployment (Docker Compose + nginx)
+- [ ] HTTPS on the live pilot deployment (pending a domain name)
+- [ ] Portfolio Climate Risk Dashboard (village/branch/district rollups)
+- [ ] Farmer-facing access (distribution model still being evaluated —
+      see `docs/DECISIONS.md`)
+- [ ] Progressive Web App / mobile
 
 ## License
 
-Private — TerraRisk © 2026
+See [`LICENSE`](LICENSE) — all rights reserved. This repository is
+public for portfolio, demonstration, and evaluation purposes; it is not
+open source, and no license to use, modify, or deploy the code is
+granted without written permission.
