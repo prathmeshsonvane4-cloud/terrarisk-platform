@@ -1,10 +1,10 @@
 # TerraRisk Frontend
 
 Next.js web application for **TerraRisk** — the credit-officer workspace
-for farm-level climate risk assessment (Service 1) and, in progress,
-portfolio-level risk dashboards (Service 2). See the repo-root
-[README](../README.md) for the product overview and [`../docs`](../docs)
-for the full engineering record.
+for farm-level climate risk assessment (Service 1, built and
+live-verified). Portfolio-level risk dashboards (Service 2) are reserved
+but not yet built. See the repo-root [README](../README.md) for the
+product overview and [`../docs`](../docs) for the full engineering record.
 
 ## Tech stack
 

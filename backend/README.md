@@ -1,9 +1,10 @@
 # TerraRisk Backend
 
-FastAPI service powering TerraRisk's two pilot services: farm-level climate
-risk reports (Service 1) and portfolio-level risk rollups (Service 2, in
-progress). See the repo-root [README](../README.md) for the product
-overview and [`docs/`](../docs) for the full engineering record.
+FastAPI service powering TerraRisk's Farmer Climate Intelligence Report
+(built and live-verified). Portfolio-level risk rollups (Service 2) are
+reserved in the data model but not yet built. See the repo-root
+[README](../README.md) for the product overview and [`docs/`](../docs)
+for the full engineering record.
 
 ## Architecture
 

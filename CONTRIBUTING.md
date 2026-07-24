@@ -1,9 +1,9 @@
 # Contributing to TerraRisk
 
-TerraRisk is an early-stage product built for a single pilot customer
-(DCCB Latur) — the priorities right now are pilot stability and the
-farmer-facing roadmap, not a broad open-source contributor base. That
-said, issues and pull requests are welcome, especially for bugs,
+TerraRisk is an early-stage product built for a single pilot customer (a
+district cooperative bank) — the priorities right now are pilot stability
+and the farmer-facing roadmap, not a broad open-source contributor base.
+That said, issues and pull requests are welcome, especially for bugs,
 documentation gaps, and test coverage.
 
 ## Before you start

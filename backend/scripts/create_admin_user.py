@@ -5,7 +5,7 @@ load_admin_boundaries.py) has a way to provision itself without a running
 API — this is the missing one for app_user. There is no registration
 endpoint and no admin-creation endpoint anywhere in the API (auth.py only
 has /login and /refresh, deliberately: Blueprint/Product Design v2 describe
-a small, fixed set of named DCCB Latur officer accounts, not self-service
+a small, fixed set of named pilot-bank officer accounts, not self-service
 signup). Without this script a fresh deployment has a working API and an
 empty app_user table with no way to log in — this is what M3's
 "create first admin/officer" setup step actually runs.
