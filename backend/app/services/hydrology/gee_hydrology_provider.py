@@ -171,31 +171,45 @@ class GEEHydrologyProvider(HydrologyDataProvider):
             period_start = ee.Date(period.get("start"))
             period_end = ee.Date(period.get("end"))
             month_images = modis_et.filterDate(period_start, period_end).map(_mask_fill_values)
-            composite = month_images.mean()
-            stats = composite.reduceRegion(
-                reducer=ee.Reducer.mean(),
-                geometry=region,
-                scale=_ET_SCALE_METERS,
-                maxPixels=_ET_MAX_PIXELS,
-            )
-            # Guarded lookup — same pattern GeeProvider.get_index_time_series()
-            # and get_rainfall_series() already use: a month with every
-            # 8-day composite fully masked (no valid retrieval anywhere in
-            # the composite window) produces a band-less image, so
-            # reduceRegion returns an EMPTY dictionary and a bare .get()
-            # throws server-side. The If(contains) guard yields null
-            # instead, which _parse_monthly_features() below treats as a
-            # genuinely missing month, never a fabricated zero.
+
+            def _compute_et_value():
+                composite = month_images.mean()
+                stats = composite.reduceRegion(
+                    reducer=ee.Reducer.mean(),
+                    geometry=region,
+                    scale=_ET_SCALE_METERS,
+                    maxPixels=_ET_MAX_PIXELS,
+                )
+                # Guarded lookup — same pattern GeeProvider.get_index_time_series()
+                # and get_rainfall_series() already use: a month where every
+                # retained pixel across all composites is masked still has a
+                # real ET band (just no valid pixel anywhere in the region),
+                # so reduceRegion returns an EMPTY dictionary and a bare
+                # .get() throws server-side. The If(contains) guard yields
+                # null instead, which _parse_monthly_features() below treats
+                # as a genuinely missing month, never a fabricated zero.
+                return ee.Algorithms.If(stats.contains(_ET_BAND), stats.get(_ET_BAND), None)
+
             return ee.Feature(
                 None,
                 {
                     "period_start": period_start.format("YYYY-MM-dd"),
-                    "value": ee.Algorithms.If(stats.contains(_ET_BAND), stats.get(_ET_BAND), None),
+                    # See _run_if_images_exist's own docstring for why this
+                    # guard exists at all: a month with ZERO MODIS granules
+                    # (not just every pixel masked) produces a genuinely
+                    # band-less composite, and reduceRegion tolerates that —
+                    # but this file's own production incident proved other
+                    # per-band image ops do not. Applied here defensively
+                    # for consistency with the two methods below, which do
+                    # have a proven crash on this exact input shape.
+                    "value": self._run_if_images_exist(month_images, _compute_et_value()),
                 },
             )
 
         features = ee.FeatureCollection(period_dicts.map(_compute_period)).getInfo()["features"]
-        return self._parse_monthly_features(features, periods)
+        observations = self._parse_monthly_features(features, periods)
+        self._warn_if_months_missing(observations, source="et")
+        return observations
 
     def get_surface_water_extent_series(
         self,
@@ -261,42 +275,60 @@ class GEEHydrologyProvider(HydrologyDataProvider):
             period_start = ee.Date(period.get("start"))
             period_end = ee.Date(period.get("end"))
             month_images = sentinel1_vv.filterDate(period_start, period_end)
-            # Monthly-mean VV composite, then classified against the fixed
-            # threshold — smooths single-scene speckle noise before
-            # thresholding, rather than thresholding every scene and
-            # averaging binary masks (either is defensible; this matches
-            # get_et_series()'s own "composite first, reduce second" shape
-            # so every method here reads the same way).
-            composite = month_images.mean()
-            is_water = composite.lt(_SAR_VV_WATER_THRESHOLD_DB).rename("is_water")
-            stats = is_water.reduceRegion(
-                reducer=ee.Reducer.mean(),
-                geometry=region,
-                scale=_SURFACE_WATER_SCALE_METERS,
-                maxPixels=_SURFACE_WATER_MAX_PIXELS,
-            )
-            # Guarded lookup — same pattern every method in this file
-            # uses: a month with zero Sentinel-1 passes produces a
-            # band-less composite, so reduceRegion returns an EMPTY
-            # dictionary and a bare .get() throws server-side. The
-            # If(contains) guard yields null instead, which
-            # _parse_monthly_features() below treats as a genuinely
-            # missing month, never a fabricated zero. The mean of a 0/1
-            # water mask is already the water-covered fraction of the
-            # catchment (0.0-1.0); *100 converts it to the 0-100 percent
-            # get_surface_water_extent_series() promises.
+
+            def _compute_water_percent():
+                # Monthly-mean VV composite, then classified against the
+                # fixed threshold — smooths single-scene speckle noise
+                # before thresholding, rather than thresholding every scene
+                # and averaging binary masks (either is defensible; this
+                # matches get_et_series()'s own "composite first, reduce
+                # second" shape so every method here reads the same way).
+                composite = month_images.mean()
+                is_water = composite.lt(_SAR_VV_WATER_THRESHOLD_DB).rename("is_water")
+                stats = is_water.reduceRegion(
+                    reducer=ee.Reducer.mean(),
+                    geometry=region,
+                    scale=_SURFACE_WATER_SCALE_METERS,
+                    maxPixels=_SURFACE_WATER_MAX_PIXELS,
+                )
+                # Guarded lookup — a month with every pixel masked (but a
+                # real is_water band) still needs this: reduceRegion omits
+                # the key entirely when no valid pixel exists anywhere in
+                # the region. The If(contains) guard yields null instead,
+                # which _parse_monthly_features() below treats as a
+                # genuinely missing month, never a fabricated zero. The
+                # mean of a 0/1 water mask is already the water-covered
+                # fraction of the catchment (0.0-1.0); *100 converts it to
+                # the 0-100 percent get_surface_water_extent_series()
+                # promises.
+                return ee.Algorithms.If(
+                    stats.contains("is_water"), ee.Number(stats.get("is_water")).multiply(100), None
+                )
+
             return ee.Feature(
                 None,
                 {
                     "period_start": period_start.format("YYYY-MM-dd"),
-                    "value": ee.Algorithms.If(
-                        stats.contains("is_water"), ee.Number(stats.get("is_water")).multiply(100), None
-                    ),
+                    # PRODUCTION INCIDENT, fixed here: a month with ZERO
+                    # Sentinel-1 passes (not just a masked pixel — no
+                    # granule at all) makes month_images.mean() a
+                    # genuinely band-less image. Calling .lt() on it
+                    # directly (the code that used to sit where
+                    # _compute_water_percent() is called from below)
+                    # crashed server-side with "Image.lt: If one image has
+                    # no bands, the other must also have no bands. Got 0
+                    # and 1." — reduceRegion tolerates a band-less image
+                    # (see the ET method above), but per-band comparison
+                    # ops like .lt() do not. _run_if_images_exist() checks
+                    # for at least one image BEFORE any such op ever runs.
+                    "value": self._run_if_images_exist(month_images, _compute_water_percent()),
                 },
             )
 
         features = ee.FeatureCollection(period_dicts.map(_compute_period)).getInfo()["features"]
-        return self._parse_monthly_features(features, periods, scale_factor=1.0)
+        observations = self._parse_monthly_features(features, periods, scale_factor=1.0)
+        self._warn_if_months_missing(observations, source="surface_water_sar")
+        return observations
 
     def _get_mndwi_surface_water_extent_series(
         self, geometry_geojson: dict, start: date, end: date
@@ -343,35 +375,56 @@ class GEEHydrologyProvider(HydrologyDataProvider):
             period = ee.Dictionary(period)
             period_start = ee.Date(period.get("start"))
             period_end = ee.Date(period.get("end"))
+            # Gated on the RAW joined collection, before
+            # _mask_clouds_and_compute_mndwi runs: .map() over zero images
+            # is always safe (the callback — including its own .normalizedDifference()
+            # call — is simply never invoked), but if there are zero images
+            # to begin with, the mapped-then-.mean() composite has no bands
+            # at all, and .gt() below would hit the same class of crash SAR
+            # had. Checking size() on the pre-map collection catches that
+            # case before _mask_clouds_and_compute_mndwi (and its own
+            # .normalizedDifference()) ever runs, not just before .gt().
             month_images = joined.filterDate(period_start, period_end)
-            # Same "composite first, reduce second" shape as SAR above and
-            # get_et_series(): mean the cloud-masked MNDWI values across
-            # the month, then threshold the composite once.
-            composite = month_images.map(_mask_clouds_and_compute_mndwi).mean()
-            is_water = composite.gt(_MNDWI_WATER_THRESHOLD).rename("is_water")
-            stats = is_water.reduceRegion(
-                reducer=ee.Reducer.mean(),
-                geometry=region,
-                scale=_SURFACE_WATER_SCALE_METERS,
-                maxPixels=_SURFACE_WATER_MAX_PIXELS,
-            )
-            # Guarded lookup — identical rationale to the SAR branch: a
-            # month entirely cloud-blanked (no clear Sentinel-2 pixel
-            # anywhere in the composite window) produces a band-less
-            # image; the If(contains) guard yields null, treated as a
-            # genuinely missing month below, never a fabricated zero.
+
+            def _compute_water_percent():
+                # Same "composite first, reduce second" shape as SAR above
+                # and get_et_series(): mean the cloud-masked MNDWI values
+                # across the month, then threshold the composite once.
+                composite = month_images.map(_mask_clouds_and_compute_mndwi).mean()
+                is_water = composite.gt(_MNDWI_WATER_THRESHOLD).rename("is_water")
+                stats = is_water.reduceRegion(
+                    reducer=ee.Reducer.mean(),
+                    geometry=region,
+                    scale=_SURFACE_WATER_SCALE_METERS,
+                    maxPixels=_SURFACE_WATER_MAX_PIXELS,
+                )
+                # Guarded lookup — a month entirely cloud-blanked (every
+                # image present but every pixel masked) still has a real
+                # is_water band; reduceRegion just omits the key when no
+                # valid pixel exists anywhere in the region. The
+                # If(contains) guard yields null, treated as a genuinely
+                # missing month below, never a fabricated zero.
+                return ee.Algorithms.If(
+                    stats.contains("is_water"), ee.Number(stats.get("is_water")).multiply(100), None
+                )
+
             return ee.Feature(
                 None,
                 {
                     "period_start": period_start.format("YYYY-MM-dd"),
-                    "value": ee.Algorithms.If(
-                        stats.contains("is_water"), ee.Number(stats.get("is_water")).multiply(100), None
-                    ),
+                    # Same class of production incident as the SAR method
+                    # above, for Sentinel-2 instead of Sentinel-1: a month
+                    # with zero joined images makes the composite
+                    # band-less, and .gt()/.normalizedDifference() on that
+                    # crash the same way .lt() did. Guarded the same way.
+                    "value": self._run_if_images_exist(month_images, _compute_water_percent()),
                 },
             )
 
         features = ee.FeatureCollection(period_dicts.map(_compute_period)).getInfo()["features"]
-        return self._parse_monthly_features(features, periods, scale_factor=1.0)
+        observations = self._parse_monthly_features(features, periods, scale_factor=1.0)
+        self._warn_if_months_missing(observations, source="surface_water_mndwi")
+        return observations
 
     def _get_combined_surface_water_extent_series(
         self, geometry_geojson: dict, start: date, end: date
@@ -430,6 +483,58 @@ class GEEHydrologyProvider(HydrologyDataProvider):
                 "disagreement_rate": disagreements / len(comparable),
             },
         )
+
+    @staticmethod
+    def _run_if_images_exist(collection: ee.ImageCollection, computed_value):
+        """Server-side existence guard, used by every monthly-composite
+        computation in this file (production incident fix, see the SAR/
+        MNDWI call sites' own comments for the exact traceback this
+        prevents).
+
+        `.mean()` (or any other reducer) over a genuinely EMPTY
+        ImageCollection produces an image with ZERO bands — not a real
+        band whose pixels all happen to be masked, which is a different
+        and already-safe case (reduceRegion tolerates that fine; see
+        get_et_series()). Calling a per-band op — `.lt()`, `.gt()`,
+        `.normalizedDifference()`, or anything else that compares/combines
+        band counts — directly on a band-less composite raises
+        server-side: `Image.lt: If one image has no bands, the other must
+        also have no bands. Got 0 and 1.` This is exactly what happened in
+        production for a Sentinel-1-empty month.
+
+        `computed_value` is passed in already constructed (`ee.*` method
+        calls only build a computation graph client-side; they never
+        execute anything by themselves — the earthengine-api's whole
+        client/server split), and `ee.Algorithms.If` is a genuine SERVER-SIDE
+        conditional: Earth Engine only evaluates whichever branch the
+        condition actually selects at `.getInfo()` time, so the risky
+        per-band ops inside `computed_value`'s graph are simply never
+        executed when `collection` turns out to be empty — the same
+        pattern this file's own `stats.contains(...)` guards already use
+        for "did reduceRegion produce this key," applied one step earlier,
+        to "does this collection have any images at all."
+        """
+        return ee.Algorithms.If(collection.size().gt(0), computed_value, None)
+
+    @staticmethod
+    def _warn_if_months_missing(observations: list[MonthlyValue], *, source: str) -> None:
+        """Logs (never raises) whenever a freshly-parsed monthly series
+        has at least one month with no usable value — no imagery that
+        month, or every pixel in the region masked. Purely an
+        operator-visible signal: the caller already treats a `None`
+        `MonthlyValue` as a genuinely missing month (WaterBalanceEngine's/
+        RechargeStressEngine's own "missing is missing" convention, and
+        `_run_if_images_exist` above's whole point is to reach this `None`
+        safely instead of raising) — this does not change what gets
+        returned, only makes a previously-silent gap visible without
+        failing the report job over it.
+        """
+        missing_months = [obs.period_start.isoformat() for obs in observations if obs.value is None]
+        if missing_months:
+            logger.warning(
+                "gee_hydrology_missing_months",
+                extra={"source": source, "missing_month_count": len(missing_months), "missing_months": missing_months},
+            )
 
     @staticmethod
     def _parse_monthly_features(

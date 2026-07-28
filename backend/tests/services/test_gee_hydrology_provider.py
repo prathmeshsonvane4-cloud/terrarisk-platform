@@ -346,6 +346,141 @@ class TestMndwiThreshold:
         assert hasattr(module, "_MNDWI_WATER_THRESHOLD")
 
 
+class TestWarnIfMonthsMissing:
+    """Pure function, zero ee.* calls — the missing-months warning
+    (production-robustness fix) is offline-testable directly, mirroring
+    TestLogSarMndwiAgreement's own style for the pre-existing agreement
+    log. This is a genuinely new behavior (previously a missing month was
+    silently returned as None with no operator-visible signal at all),
+    not just a re-test of the existing "missing is missing" convention."""
+
+    def test_logs_a_warning_when_any_month_is_missing(self, caplog):
+        observations = [
+            MonthlyValue(period_start=date(2024, 1, 1), value=10.0),
+            MonthlyValue(period_start=date(2024, 2, 1), value=None),
+        ]
+
+        with caplog.at_level(logging.WARNING, logger="app.services.hydrology.gee_hydrology_provider"):
+            GEEHydrologyProvider._warn_if_months_missing(observations, source="et")
+
+        record = caplog.records[-1]
+        assert record.msg == "gee_hydrology_missing_months"
+        assert record.source == "et"
+        assert record.missing_month_count == 1
+        assert record.missing_months == ["2024-02-01"]
+
+    def test_does_not_log_when_every_month_has_a_value(self, caplog):
+        observations = [
+            MonthlyValue(period_start=date(2024, 1, 1), value=10.0),
+            MonthlyValue(period_start=date(2024, 2, 1), value=20.0),
+        ]
+
+        with caplog.at_level(logging.WARNING, logger="app.services.hydrology.gee_hydrology_provider"):
+            GEEHydrologyProvider._warn_if_months_missing(observations, source="et")
+
+        assert caplog.records == []
+
+    def test_logs_every_missing_month_not_just_the_first(self, caplog):
+        observations = [
+            MonthlyValue(period_start=date(2024, 1, 1), value=None),
+            MonthlyValue(period_start=date(2024, 2, 1), value=10.0),
+            MonthlyValue(period_start=date(2024, 3, 1), value=None),
+        ]
+
+        with caplog.at_level(logging.WARNING, logger="app.services.hydrology.gee_hydrology_provider"):
+            GEEHydrologyProvider._warn_if_months_missing(observations, source="surface_water_sar")
+
+        record = caplog.records[-1]
+        assert record.missing_month_count == 2
+        assert record.missing_months == ["2024-01-01", "2024-03-01"]
+
+    def test_does_not_raise_on_an_empty_observation_list(self, caplog):
+        with caplog.at_level(logging.WARNING, logger="app.services.hydrology.gee_hydrology_provider"):
+            GEEHydrologyProvider._warn_if_months_missing([], source="et")  # must not raise
+
+        assert caplog.records == []
+
+
+# =====================================================================
+# Live regression tests — production incident fix (empty ImageCollection
+# crashing per-band ops like .lt()/.gt() before reaching the already-safe
+# reduceRegion guard). Real Earth Engine calls, gated the same way as
+# every other live test in this file: skip cleanly without credentials,
+# run for real wherever GEE_HYDROLOGY_* is configured (this codebase's
+# own "run live or skip cleanly" convention, not mocked ee.* objects —
+# see this file's own module docstring for why).
+#
+# Pre-launch date windows are used to *deterministically* reproduce a
+# genuinely empty ImageCollection against real Earth Engine — not a
+# guess or a flaky "usually no data" window: Sentinel-1 (COPERNICUS/
+# S1_GRD) has zero images anywhere on Earth before 2014-04-03 (S1A
+# launch); Sentinel-2 (COPERNICUS/S2_SR_HARMONIZED) has zero images
+# anywhere before 2015-06-23 (S2A launch). A date range entirely before
+# either launch date is guaranteed empty for that sensor, not merely
+# likely to be.
+# =====================================================================
+
+
+@_requires_gee_hydrology_credentials
+def test_sar_returns_none_for_a_month_with_zero_sentinel1_images_never_raises():
+    """PRODUCTION INCIDENT regression: a month with zero Sentinel-1
+    granules used to crash server-side with `Image.lt: If one image has
+    no bands, the other must also have no bands. Got 0 and 1.` A
+    pre-launch window deterministically reproduces "zero images this
+    month" against real Earth Engine — the exact condition that crashed
+    in production, not a simulation of it."""
+    provider = GEEHydrologyProvider()
+    observations = provider.get_surface_water_extent_series(
+        _SAMPLE_POLYGON_GEOJSON, date(2010, 1, 1), date(2010, 3, 1), SurfaceWaterMethod.SAR
+    )
+    # One MonthlyValue per requested calendar month — never a shorter
+    # list, even though every month here is unmeasured.
+    assert len(observations) == 2
+    assert all(obs.value is None for obs in observations)
+
+
+@_requires_gee_hydrology_credentials
+def test_mndwi_returns_none_for_a_month_with_zero_sentinel2_images_never_raises():
+    """Same class of production incident, for Sentinel-2/.gt()/
+    .normalizedDifference() instead of Sentinel-1/.lt()."""
+    provider = GEEHydrologyProvider()
+    observations = provider.get_surface_water_extent_series(
+        _SAMPLE_POLYGON_GEOJSON, date(2010, 1, 1), date(2010, 3, 1), SurfaceWaterMethod.MNDWI
+    )
+    assert len(observations) == 2
+    assert all(obs.value is None for obs in observations)
+
+
+@_requires_gee_hydrology_credentials
+def test_empty_monthly_composite_still_returns_a_full_length_series():
+    """A genuinely empty ImageCollection's .mean() composite has zero
+    bands (not a masked-but-present band) — proves the guard is applied
+    independently per period, not just "the whole request is empty": the
+    returned series length always matches the number of requested
+    calendar months, regardless of how many turn out to have no
+    imagery."""
+    provider = GEEHydrologyProvider()
+    observations = provider.get_surface_water_extent_series(
+        _SAMPLE_POLYGON_GEOJSON, date(2010, 1, 1), date(2010, 4, 1), SurfaceWaterMethod.SAR
+    )
+    assert len(observations) == 3
+    assert all(obs.value is None for obs in observations)
+
+
+@_requires_gee_hydrology_credentials
+def test_et_series_also_tolerates_a_zero_image_month():
+    """get_et_series() is defensively guarded the same way as SAR/MNDWI
+    (ticket fix review, "not just the failing method") even though MODIS
+    MOD16A2's near-daily 8-day-composite cadence makes a genuinely empty
+    month far less likely in practice than for Sentinel-1/2 — a pre-1972
+    MODIS-launch-era window (MOD16A2 data itself starts 2000) still proves
+    the guard doesn't change behavior when applied defensively."""
+    provider = GEEHydrologyProvider()
+    observations = provider.get_et_series(_SAMPLE_POLYGON_GEOJSON, date(1990, 1, 1), date(1990, 3, 1))
+    assert len(observations) == 2
+    assert all(obs.value is None for obs in observations)
+
+
 @_requires_gee_hydrology_credentials
 def test_et_monthly_time_series_returns_real_values():
     provider = GEEHydrologyProvider()
