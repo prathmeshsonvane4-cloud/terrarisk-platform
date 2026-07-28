@@ -291,19 +291,13 @@ class GEEHydrologyProvider(HydrologyDataProvider):
                     scale=_SURFACE_WATER_SCALE_METERS,
                     maxPixels=_SURFACE_WATER_MAX_PIXELS,
                 )
-                # Guarded lookup — a month with every pixel masked (but a
-                # real is_water band) still needs this: reduceRegion omits
-                # the key entirely when no valid pixel exists anywhere in
-                # the region. The If(contains) guard yields null instead,
-                # which _parse_monthly_features() below treats as a
-                # genuinely missing month, never a fabricated zero. The
-                # mean of a 0/1 water mask is already the water-covered
-                # fraction of the catchment (0.0-1.0); *100 converts it to
-                # the 0-100 percent get_surface_water_extent_series()
-                # promises.
-                return ee.Algorithms.If(
-                    stats.contains("is_water"), ee.Number(stats.get("is_water")).multiply(100), None
-                )
+                # Guarded lookup — the mean of a 0/1 water mask is already
+                # the water-covered fraction of the catchment (0.0-1.0);
+                # *100 converts it to the 0-100 percent
+                # get_surface_water_extent_series() promises. See
+                # _safe_percent()'s own docstring for why "contains()
+                # first" alone isn't a sufficient guard here.
+                return self._safe_percent(stats, "is_water")
 
             return ee.Feature(
                 None,
@@ -398,15 +392,9 @@ class GEEHydrologyProvider(HydrologyDataProvider):
                     scale=_SURFACE_WATER_SCALE_METERS,
                     maxPixels=_SURFACE_WATER_MAX_PIXELS,
                 )
-                # Guarded lookup — a month entirely cloud-blanked (every
-                # image present but every pixel masked) still has a real
-                # is_water band; reduceRegion just omits the key when no
-                # valid pixel exists anywhere in the region. The
-                # If(contains) guard yields null, treated as a genuinely
-                # missing month below, never a fabricated zero.
-                return ee.Algorithms.If(
-                    stats.contains("is_water"), ee.Number(stats.get("is_water")).multiply(100), None
-                )
+                # Guarded lookup — see _safe_percent()'s own docstring for
+                # why "contains() first" alone isn't sufficient here.
+                return self._safe_percent(stats, "is_water")
 
             return ee.Feature(
                 None,
@@ -515,6 +503,35 @@ class GEEHydrologyProvider(HydrologyDataProvider):
         to "does this collection have any images at all."
         """
         return ee.Algorithms.If(collection.size().gt(0), computed_value, None)
+
+    @staticmethod
+    def _safe_percent(stats: ee.Dictionary, key: str):
+        """Null-safe read of a `reduceRegion()` result, converted to a
+        0-100 percent (`*100`) — used by both SAR and MNDWI's identical
+        "fraction of masked pixels -> percent" step.
+
+        SECOND production finding from the same incident: `stats.contains(key)`
+        alone is not a sufficient guard. It correctly detects "the key is
+        absent entirely" (reduceRegion's documented behavior for zero
+        valid pixels in the region), but a real production run surfaced a
+        case where the key is PRESENT with an explicit null value instead
+        — `ee.Number(null).multiply(100)` then crashes server-side with
+        `Number.multiply: Parameter 'left' is required and may not be
+        null.`, the same failure class as `_run_if_images_exist` fixes for
+        images, one level down at the scalar/Number level. This checks
+        both: the key's presence (so `.get()` itself never raises for a
+        genuinely absent key) and, separately, whether the retrieved
+        value is itself null, before ever calling `.multiply()` on it.
+
+        `get_et_series()` does not need this: it returns the raw
+        `stats.get(...)` value directly with no server-side arithmetic on
+        it, so a null value there simply flows through to
+        `_parse_monthly_features()` as JSON `null`, which the existing
+        client-side `raw_value is not None` check already treats as a
+        missing month — safe without this guard.
+        """
+        value = ee.Algorithms.If(stats.contains(key), stats.get(key), None)
+        return ee.Algorithms.If(ee.Algorithms.IsEqual(value, None), None, ee.Number(value).multiply(100))
 
     @staticmethod
     def _warn_if_months_missing(observations: list[MonthlyValue], *, source: str) -> None:

@@ -468,6 +468,62 @@ def test_empty_monthly_composite_still_returns_a_full_length_series():
 
 
 @_requires_gee_hydrology_credentials
+def test_one_missing_month_does_not_fail_or_blank_out_the_rest_of_the_series():
+    """Empirically-grounded, not guessed: this exact window
+    (2023-11 to 2024-02, over _SAMPLE_POLYGON_GEOJSON) is the real
+    production incident's own confirmed data — the live fix logged
+    `gee_hydrology_missing_months` for December 2023 specifically at this
+    geometry, with the rest of a 36-month production run (which includes
+    this window) completing normally. December 2023 having zero usable
+    Sentinel-1 passes at this specific ~0.02x0.02-degree AOI is a real,
+    observed satellite-coverage gap (revisit/orbit timing at this exact
+    footprint), not a launch-era absence like the pre-2014 tests above —
+    it cannot be reconstructed from a general rule the way "before
+    Sentinel-1 existed" can, so this test is pinned to the real window
+    that already proved it, rather than a guessed one."""
+    provider = GEEHydrologyProvider()
+    observations = provider.get_surface_water_extent_series(
+        _SAMPLE_POLYGON_GEOJSON, date(2023, 11, 1), date(2024, 2, 1), SurfaceWaterMethod.SAR
+    )
+    assert len(observations) == 3
+    missing = {obs.period_start for obs in observations if obs.value is None}
+    present = {obs.period_start for obs in observations if obs.value is not None}
+    assert date(2023, 12, 1) in missing
+    # "Successful execution after an empty month": at least one other
+    # month in the same request produced a real value — the guard on
+    # December doesn't poison or short-circuit any other period.
+    assert len(present) >= 1
+    for obs in observations:
+        if obs.value is not None:
+            assert 0.0 <= obs.value <= 100.0
+
+
+@_requires_gee_hydrology_credentials
+def test_mndwi_completes_over_a_real_monsoon_heavy_window_without_raising():
+    """SECOND production incident regression, discovered while verifying
+    the first fix live: reduceRegion() can return a dictionary with a key
+    PRESENT but an explicit null value (not merely absent) —
+    `stats.contains(key)` alone missed this, and
+    `ee.Number(null).multiply(100)` crashed server-side with
+    "Number.multiply: Parameter 'left' is required and may not be null."
+    Unlike "zero images" (deterministically forced by a pre-launch date),
+    the exact key-present-vs-null EE internal condition isn't something a
+    date range can force on demand — this test instead re-runs the same
+    class of request (MNDWI, the cloud-limited method) over a real
+    monsoon window with heavy expected Sentinel-2 cloud cover, and
+    asserts only that it completes without raising, which is the
+    property that actually matters here."""
+    provider = GEEHydrologyProvider()
+    observations = provider.get_surface_water_extent_series(
+        _SAMPLE_POLYGON_GEOJSON, date(2025, 6, 1), date(2025, 12, 1), SurfaceWaterMethod.MNDWI
+    )
+    assert len(observations) == 6
+    for obs in observations:
+        if obs.value is not None:
+            assert 0.0 <= obs.value <= 100.0
+
+
+@_requires_gee_hydrology_credentials
 def test_et_series_also_tolerates_a_zero_image_month():
     """get_et_series() is defensively guarded the same way as SAR/MNDWI
     (ticket fix review, "not just the failing method") even though MODIS
