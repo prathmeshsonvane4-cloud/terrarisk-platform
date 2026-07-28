@@ -22,6 +22,10 @@ from datetime import date, datetime, timezone
 import ee
 
 from app.core.config import get_settings
+from app.services.satellite._gee_common import CLOUD_PROBABILITY_COLLECTION as _CLOUD_PROBABILITY_COLLECTION
+from app.services.satellite._gee_common import CLOUD_PROBABILITY_THRESHOLD as _CLOUD_PROBABILITY_THRESHOLD
+from app.services.satellite._gee_common import SENTINEL2_COLLECTION as _SENTINEL2_COLLECTION
+from app.services.satellite._gee_common import monthly_periods as _monthly_periods
 from app.services.satellite.provider import (
     IndexObservation,
     SatelliteDataProvider,
@@ -29,15 +33,8 @@ from app.services.satellite.provider import (
     WaterHistorySummary,
 )
 
-_SENTINEL2_COLLECTION = "COPERNICUS/S2_SR_HARMONIZED"
-_CLOUD_PROBABILITY_COLLECTION = "COPERNICUS/S2_CLOUD_PROBABILITY"
 _CHIRPS_COLLECTION = "UCSB-CHG/CHIRPS/DAILY"
 _JRC_SURFACE_WATER = "JRC/GSW1_4/GlobalSurfaceWater"
-
-# Approved methodology (docs/DECISIONS.md) — frozen for M1, not a tunable
-# left to guesswork: a scene pixel is masked out at or above this cloud
-# probability.
-_CLOUD_PROBABILITY_THRESHOLD = 20
 
 # 30-year climate-normal window (WMO-standard normal period length),
 # computed relative to the last fully-completed calendar year rather than
@@ -53,19 +50,15 @@ _INDEX_BANDS: dict[SatelliteIndex, tuple[str, str]] = {
     SatelliteIndex.NDMI: ("B8", "B11"),  # (NIR - SWIR1) / (NIR + SWIR1)
 }
 
-
-def _monthly_periods(start: date, end: date) -> list[tuple[date, date]]:
-    """(period_start, period_end) pairs for each calendar month touching
-    [start, end), used as the compositing window for both the optical
-    index series and the rainfall series (Blueprint §06 "Time-series
-    generation": all indices composited on the same period boundaries)."""
-    periods: list[tuple[date, date]] = []
-    current = date(start.year, start.month, 1)
-    while current < end:
-        next_month = date(current.year + 1, 1, 1) if current.month == 12 else date(current.year, current.month + 1, 1)
-        periods.append((current, next_month))
-        current = next_month
-    return periods
+# `_monthly_periods`, `_CLOUD_PROBABILITY_THRESHOLD`,
+# `_CLOUD_PROBABILITY_COLLECTION`, and `_SENTINEL2_COLLECTION` are
+# re-exported under their original module-private names above (tickets
+# M1-002, M1-005) so every existing
+# `from app.services.satellite.gee_provider import _monthly_periods`-style
+# import keeps working unmodified. The canonical definitions now live in
+# `_gee_common.py`, shared with `GEEHydrologyProvider`'s MNDWI branch —
+# new code should import from `_gee_common` directly rather than through
+# here.
 
 
 class GeeProvider(SatelliteDataProvider):

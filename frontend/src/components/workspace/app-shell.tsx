@@ -1,6 +1,6 @@
 "use client";
 
-import { FileText, LayoutDashboard, ListChecks, LogOut, Map, Menu, Plus } from "lucide-react";
+import { Droplets, FileText, LayoutDashboard, ListChecks, LogOut, Map, Menu, Plus } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useState, type MouseEvent, type ReactNode } from "react";
@@ -10,7 +10,7 @@ import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/s
 import { useAuth } from "@/features/auth/auth-context";
 import { useNavigationGuard } from "@/features/navigation-guard/navigation-guard-context";
 import { useAssessments } from "@/features/workspace/use-assessments";
-import { ROLE_LABELS, type UserRole } from "@/lib/roles";
+import { isWaterIntelligenceRole, ROLE_LABELS, type UserRole } from "@/lib/roles";
 import { cn } from "@/lib/utils";
 import { OfflineBanner } from "@/components/ui/offline-banner";
 
@@ -21,6 +21,13 @@ const NAV_ITEMS = [
   { href: "/reports", label: "Reports", icon: FileText },
 ] as const;
 
+// Shown only for Water Intelligence's own roles (M6-001) — Service 1's
+// four items above stay unconditional for every role, unchanged: adding
+// role-gating to those too is a real, separate UX improvement (a bank
+// role currently sees Farms/Assessments/Reports links that 403), but
+// isn't part of this ticket's scope and isn't touched here.
+const WATER_INTELLIGENCE_NAV_ITEM = { href: "/catchments", label: "Catchments", icon: Droplets } as const;
+
 function isActive(pathname: string, href: string): boolean {
   if (href === "/") return pathname === "/";
   return pathname === href || pathname.startsWith(`${href}/`);
@@ -28,6 +35,11 @@ function isActive(pathname: string, href: string): boolean {
 
 function NavLinks({ pathname, onNavigate }: { pathname: string; onNavigate?: () => void }) {
   const { confirmNavigation } = useNavigationGuard();
+  const { session } = useAuth();
+  const navItems = [
+    ...NAV_ITEMS,
+    ...(session && isWaterIntelligenceRole(session.role) ? [WATER_INTELLIGENCE_NAV_ITEM] : []),
+  ];
 
   function handleClick(event: MouseEvent<HTMLAnchorElement>) {
     // P10 navigation protection: a Next.js <Link> transition never fires
@@ -42,7 +54,7 @@ function NavLinks({ pathname, onNavigate }: { pathname: string; onNavigate?: () 
 
   return (
     <nav className="flex flex-col gap-0.5">
-      {NAV_ITEMS.map(({ href, label, icon: Icon }) => (
+      {navItems.map(({ href, label, icon: Icon }) => (
         <Link
           key={href}
           href={href}

@@ -8,6 +8,7 @@ wherever this suite runs with Docker available.
 
 import enum
 
+from sqlalchemy import CheckConstraint, UniqueConstraint
 from sqlalchemy import Enum as SAEnum
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.schema import CreateTable
@@ -17,16 +18,21 @@ from app.models import (  # noqa: F401 — import registers every table on Base.
     AdminBoundary,
     AppUser,
     Branch,
+    Catchment,
+    CgwbGroundwaterObservation,
     ConfigWeight,
     FarmerIdentity,
     FarmPolygon,
     Job,
     Loan,
+    Organization,
+    RechargeStressScore,
     RiskFactorScore,
     RiskRollup,
     RiskScore,
     SatelliteObservation,
     VillageBranchLookup,
+    WaterBalanceResult,
 )
 
 EXPECTED_TABLES = {
@@ -34,15 +40,20 @@ EXPECTED_TABLES = {
     "branch",
     "village_branch_lookup",
     "app_user",
+    "catchment",
     "farm_polygon",
     "farmer_identity",
     "loan",
     "satellite_observation",
+    "organization",
     "config_weight",
+    "cgwb_groundwater_observation",
+    "recharge_stress_score",
     "risk_score",
     "risk_factor_score",
     "risk_rollup",
     "job",
+    "water_balance_result",
 }
 
 
@@ -60,10 +71,36 @@ def test_every_table_compiles_to_valid_postgres_ddl():
 def test_geometry_columns_use_srid_4326():
     admin_boundary = Base.metadata.tables["admin_boundary"]
     farm_polygon = Base.metadata.tables["farm_polygon"]
+    catchment = Base.metadata.tables["catchment"]
 
     assert admin_boundary.c.geometry.type.srid == 4326
     assert admin_boundary.c.geometry_simplified.type.srid == 4326
     assert farm_polygon.c.geometry.type.srid == 4326
+    assert catchment.c.geometry.type.srid == 4326
+    assert catchment.c.pour_point.type.srid == 4326
+
+
+def test_catchment_geometry_is_multipolygon_not_polygon():
+    """Regression test for the specific TDR §4 finding: v1 typed
+    catchment.geometry as POLYGON by copying FarmPolygon's shape without
+    checking a real watershed is guaranteed simply connected. It isn't."""
+    catchment = Base.metadata.tables["catchment"]
+    assert catchment.c.geometry.type.geometry_type == "MULTIPOLYGON"
+
+
+def test_catchment_check_constraints_are_present():
+    """Offline-verifiable half of the CHECK-constraint requirement — proves
+    the constraints exist and compile with the expected names/conditions.
+    Whether Postgres actually *enforces* them on insert is proven by the
+    live-database tests in tests/test_catchment_model.py, which this
+    sandbox cannot run without a reachable PostGIS instance."""
+    catchment = Base.metadata.tables["catchment"]
+    check_constraints = {c.name: str(c.sqltext) for c in catchment.constraints if isinstance(c, CheckConstraint)}
+
+    assert "chk_catchment_area" in check_constraints
+    assert "BETWEEN 0.5 AND 50000" in check_constraints["chk_catchment_area"]
+    assert "chk_catchment_vertex_count" in check_constraints
+    assert "ST_NPoints(geometry) <= 2000" in check_constraints["chk_catchment_vertex_count"]
 
 
 def test_every_enum_column_binds_by_value_not_by_member_name():
@@ -88,6 +125,54 @@ def test_every_enum_column_binds_by_value_not_by_member_name():
                 f"{table_name}.{column.name} binds enum labels {actual_labels}, "
                 f"expected values {expected_labels} (bug: bound by .name, not .value)"
             )
+
+
+def test_water_balance_result_has_no_weights_version_id():
+    """Regression test for a real TDR finding (§6): v1 of the Water
+    Intelligence blueprint copied weights_version_id onto
+    water_balance_result by pattern-matching off risk_score's shape,
+    without checking whether it applied. It doesn't — a P-ET-Q=dS mass
+    balance is an arithmetic sum of physical terms, not a weighted
+    composite. Weights genuinely belong only on recharge_stress_score
+    (M0-005). This test exists so the field can't be silently
+    reintroduced by a future engineer pattern-matching the same way v1 did.
+    """
+    water_balance_result = Base.metadata.tables["water_balance_result"]
+    assert "weights_version_id" not in water_balance_result.columns
+
+
+def test_recharge_stress_score_has_weights_version_id():
+    """The mirror image of the test above (M0-005's own acceptance
+    criteria): recharge_stress_score genuinely is a weighted composite
+    (rainfall anomaly + VCI + surface-water trend), the same shape as
+    risk_score's four-factor weighting — so weights_version_id belongs
+    here, FK'd to config_weight, exactly where it was moved to in
+    Blueprint v2 (TDR §6)."""
+    recharge_stress_score = Base.metadata.tables["recharge_stress_score"]
+    assert "weights_version_id" in recharge_stress_score.columns
+    fk_targets = {fk.target_fullname for fk in recharge_stress_score.c.weights_version_id.foreign_keys}
+    assert fk_targets == {"config_weight.id"}
+
+
+def test_recharge_stress_score_catchment_computed_at_index_exists():
+    """Regression test for the TDR finding: v1 was missing an index on
+    recharge_stress_score(catchment_id, computed_at) — this is the query
+    shape "latest + historical stress scores for a catchment" (Blueprint v2
+    Part 6's GET /catchments/{id}/recharge-stress) will always use."""
+    recharge_stress_score = Base.metadata.tables["recharge_stress_score"]
+    index_columns = {tuple(c.name for c in idx.columns) for idx in recharge_stress_score.indexes}
+    assert ("catchment_id", "computed_at") in index_columns
+
+
+def test_cgwb_block_period_uniqueness_constraint_is_present():
+    """Offline-verifiable half of the M0-006 requirement — proves
+    uq_cgwb_block_period exists with the expected columns. Whether Postgres
+    actually *enforces* it on a duplicate insert is proven by the
+    live-database test in tests/test_cgwb_model.py, which this sandbox
+    cannot run without a reachable PostGIS instance."""
+    cgwb = Base.metadata.tables["cgwb_groundwater_observation"]
+    unique_constraints = {c.name: {col.name for col in c.columns} for c in cgwb.constraints if isinstance(c, UniqueConstraint)}
+    assert unique_constraints.get("uq_cgwb_block_period") == {"block_code", "assessment_period"}
 
 
 def test_farmer_identity_is_the_only_table_with_pii_columns():

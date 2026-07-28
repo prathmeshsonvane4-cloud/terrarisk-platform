@@ -40,6 +40,17 @@ class Settings(BaseSettings):
     gee_project_id: str | None = None
     gee_service_account_json_path: str | None = None
 
+    # Water Intelligence (docs/Water_Intelligence_Service_Blueprint.md, D9)
+    # — a SEPARATE service-account credential from gee_project_id /
+    # gee_service_account_json_path above, even when both point at the same
+    # GCP project, so a Water Intelligence usage spike cannot degrade
+    # Service 1's GEE quota/SLA. No fallback to the Service 1 credential:
+    # this class's own docstring says a missing required setting should
+    # fail loudly, not silently reuse a value that would defeat the whole
+    # point of the isolation.
+    gee_hydrology_project_id: str | None = None
+    gee_hydrology_service_account_json_path: str | None = None
+
     # M2A (Blueprint §10 M2) — the Next.js frontend's origin, and only that
     # origin: no wildcard, since requests carry a bearer token. Defaults to
     # the local Next.js dev server so `npm run dev` works out of the box;

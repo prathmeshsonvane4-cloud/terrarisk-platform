@@ -265,6 +265,133 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/catchments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Catchments
+         * @description Every catchment the caller created, newest first. Scoped by
+         *     `created_by` (see module docstring for why, not organization
+         *     membership) — a query that is IDOR-safe by construction: the WHERE
+         *     clause itself excludes every other user's catchments, so there is no
+         *     separate check to forget.
+         *
+         *     Pagination via `limit`/`offset` query params (default 50, capped at
+         *     200 — "keep queries efficient" means bounding page size, not just
+         *     indexing); total count is returned as the `X-Total-Count` response
+         *     header rather than a wrapper response body, so this endpoint's
+         *     response can stay a plain `list[CatchmentResponse]` without adding a
+         *     new schema type (`Do NOT: Modify schemas`).
+         */
+        get: operations["list_catchments_api_v1_catchments_get"];
+        put?: never;
+        /**
+         * Create Catchment
+         * @description Persist a manually-drawn catchment boundary. Geometry validity,
+         *     closedness, coordinate range, hole structure, and total vertex count
+         *     are already enforced by `CatchmentCreateRequest` at the
+         *     request-parsing boundary (`app/schemas/catchment.py`, M4-001).
+         */
+        post: operations["create_catchment_api_v1_catchments_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/catchments/upload": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Upload Catchment
+         * @description Persist a catchment boundary from an uploaded GeoJSON, KML, or
+         *     zipped-Shapefile file (`boundary_parser.py`, M4-002) — everything
+         *     after the file is parsed into a `GeoJSONMultiPolygon` is identical to
+         *     `create_catchment()` above, via the shared `_persist_catchment()`.
+         *
+         *     `name`/`organization_id`/`admin_boundary_id` arrive as multipart form
+         *     fields (not a JSON body — this is a file upload), but are still
+         *     validated through `CatchmentUploadRequest` (M4-001) before use, the
+         *     same schema-level length/type checks `create_catchment()` gets for
+         *     free from `CatchmentCreateRequest` — not re-implemented here.
+         */
+        post: operations["upload_catchment_api_v1_catchments_upload_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/catchments/{catchment_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Catchment
+         * @description A single catchment by id — 404 for both "doesn't exist" and
+         *     "exists but isn't yours", the same `app/api/farms.py::get_farm`
+         *     IDOR-safe convention: a resource outside the caller's scope must be
+         *     indistinguishable from one that was never created at all, never
+         *     revealed via a 403 that would confirm the id is real.
+         */
+        get: operations["get_catchment_api_v1_catchments__catchment_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/catchments/{catchment_id}/water-reports": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Latest Water Report
+         * @description The latest completed water report for a catchment — see the
+         *     module docstring for the full "latest DONE job == latest computed_at
+         *     result pair" correlation rationale. 404, not an empty/partial
+         *     response, whenever no completed report exists yet (never triggered,
+         *     still in flight, or every run so far has failed) or the catchment
+         *     itself is outside the caller's own scope — the same IDOR-safe,
+         *     not-found-vs-forbidden convention `get_catchment` already uses.
+         */
+        get: operations["get_latest_water_report_api_v1_catchments__catchment_id__water_reports_get"];
+        put?: never;
+        /**
+         * Trigger Water Report
+         * @description Create a water-report job for a catchment and schedule its
+         *     background run — job creation only, per this ticket's scope (see the
+         *     module docstring). Mirrors `app/api/reports.py::trigger_report`
+         *     field-for-field: same IDOR-safe ownership check, same
+         *     advisory-lock-guarded duplicate-in-flight-job check, same
+         *     Job-then-BackgroundTasks split, same `ReportTriggerResponse` shape
+         *     (reused as-is, not a new schema — `Do NOT: Modify schemas`).
+         */
+        post: operations["trigger_water_report_api_v1_catchments__catchment_id__water_reports_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/": {
         parameters: {
             query?: never;
@@ -291,6 +418,38 @@ export interface paths {
         };
         /** Health */
         get: operations["health_health_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/health/ready": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Health Ready
+         * @description Deployment readiness probe (M3) — distinct from /health, which is a
+         *     cheap liveness check with no dependencies and stays unchanged (asserted
+         *     verbatim by tests/test_health.py). This one actually verifies the
+         *     things a fresh deployment can get wrong: DB connectivity, and whether
+         *     Earth Engine credentials are configured.
+         *
+         *     Earth Engine's check is deliberately config/credential-file presence,
+         *     not a live ee.Initialize() call — actually initializing here would mean
+         *     a real network round-trip (and, per GeeProvider's own design, a
+         *     thread-pool hop — see docs/DECISIONS.md) on every orchestrator probe
+         *     hit, which is impractical to do on a health-check cadence, not just
+         *     undesirable. Container/compose healthchecks target the cheap /health,
+         *     not this endpoint, for the same reason.
+         */
+        get: operations["health_ready_health_ready_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -388,6 +547,111 @@ export interface components {
             /** Model Version */
             model_version: string;
         };
+        /**
+         * BaselineWindow
+         * @description Which historical window a recharge-stress or storage-change figure
+         *     was benchmarked against (Blueprint v2 Part 4). Recharge-stress scoring
+         *     uses CLIMATOLOGY_30YR, not TRAILING_3YR — a deliberate v2 fix: a short
+         *     trailing window can silently redefine "normal" as "already stressed" if
+         *     the recent years happen to be a drought sequence.
+         * @enum {string}
+         */
+        BaselineWindow: "climatology_30yr" | "trailing_3yr";
+        /** Body_upload_catchment_api_v1_catchments_upload_post */
+        Body_upload_catchment_api_v1_catchments_upload_post: {
+            /** File */
+            file: string;
+            /** Name */
+            name: string;
+            /** Organization Id */
+            organization_id?: string | null;
+            /** Admin Boundary Id */
+            admin_boundary_id?: string | null;
+        };
+        /**
+         * CalibrationStatus
+         * @description Whether a water_balance_result has ever been checked against real
+         *     field data (Blueprint v2 D5) — deliberately separate from the
+         *     data_completeness confidence score, which measures satellite data
+         *     quality, not calibration. Defaults to UNCALIBRATED in MVP for every
+         *     generic customer; see Blueprint v2 Risk Register #7.
+         * @enum {string}
+         */
+        CalibrationStatus: "uncalibrated" | "partially_calibrated" | "field_calibrated";
+        /**
+         * CatchmentCreateRequest
+         * @description `POST /catchments` request body (manual-draw path, a later
+         *     ticket). `delineation_method` is deliberately NOT a client-supplied
+         *     field on either request schema in this file — it is determined by
+         *     which endpoint received the request (this one always means MANUAL;
+         *     the upload endpoint always means UPLOAD), the same "one validation
+         *     boundary, two ways in" design Blueprint v2 D2 already establishes,
+         *     not a value the client should be trusted to assert.
+         */
+        CatchmentCreateRequest: {
+            /** Name */
+            name: string;
+            geometry: components["schemas"]["GeoJSONMultiPolygon"];
+            /**
+             * Organization Id
+             * @description Nullable in MVP — schema-ready for multi-tenancy, not yet enforced (Blueprint v2 D8).
+             */
+            organization_id?: string | null;
+            /**
+             * Admin Boundary Id
+             * @description Optional link for village-level aggregation, not required for a catchment to exist on its own.
+             */
+            admin_boundary_id?: string | null;
+        };
+        /**
+         * CatchmentResponse
+         * @description Mirrors `FarmResponse`'s exact convention: no raw geometry field
+         *     in the basic response (geometry is fetched separately, e.g. for map
+         *     rendering, by a later ticket's dedicated endpoint) — only scalar and
+         *     list fields a client needs to display or reference a catchment by
+         *     id.
+         */
+        CatchmentResponse: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+            /** Area Ha */
+            area_ha: number;
+            delineation_method: components["schemas"]["DelineationMethod"];
+            /** Organization Id */
+            organization_id: string | null;
+            /** Admin Boundary Id */
+            admin_boundary_id: string | null;
+            /**
+             * Resolution Flags
+             * @description e.g. ["rainfall_sub_pixel", "et_sub_pixel", "high_relief_terrain"] — computed once at creation and reused by every downstream report (Blueprint v2 Part 4/Part 5).
+             */
+            resolution_flags: string[];
+            /**
+             * Created By
+             * Format: uuid
+             */
+            created_by: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
+        /**
+         * DelineationMethod
+         * @description How a catchment's boundary was obtained (Blueprint v2 Part 5).
+         *
+         *     AUTO_DEM is Phase 2 (D2) — reserved here now so the column that will use
+         *     it doesn't need a later migration to add a value it was always going to
+         *     need.
+         * @enum {string}
+         */
+        DelineationMethod: "manual" | "upload" | "auto_dem";
         /** FactorScoreResponse */
         FactorScoreResponse: {
             factor: components["schemas"]["RiskFactor"];
@@ -491,6 +755,37 @@ export interface components {
             created_at: string;
         };
         /**
+         * GeoJSONMultiPolygon
+         * @description A GeoJSON MultiPolygon — `Catchment.geometry`'s exact shape
+         *     (`app/models/catchment.py`: MULTIPOLYGON, not POLYGON, "unlike a
+         *     single farm field, a real watershed is not guaranteed to be simply
+         *     connected"). A client submitting a single simply-connected boundary
+         *     still uses this type, wrapped as a one-element MultiPolygon — valid,
+         *     ordinary GeoJSON, not a special case this schema needs to detect.
+         *
+         *     Unlike `farm.py::GeoJSONPolygon`, holes (rings after the first, per
+         *     polygon) are structurally permitted — a real watershed excluding an
+         *     enclosed area is physically meaningful in a way a single farm
+         *     field's boundary is not, so no "single ring only" restriction is
+         *     imposed here.
+         */
+        GeoJSONMultiPolygon: {
+            /**
+             * Type
+             * @constant
+             */
+            type: "MultiPolygon";
+            /** Coordinates */
+            coordinates: [
+                number,
+                number
+            ][][][];
+            /** Crs */
+            crs?: {
+                [key: string]: unknown;
+            } | null;
+        };
+        /**
          * GeoJSONPolygon
          * @description A single-ring GeoJSON Polygon (no holes, no MultiPolygon) — a
          *     hand-drawn farm boundary is expected to be one simple, contiguous
@@ -557,7 +852,7 @@ export interface components {
          * JobType
          * @enum {string}
          */
-        JobType: "farm_report" | "portfolio_aggregation";
+        JobType: "farm_report" | "portfolio_aggregation" | "catchment_water_report" | "catchment_boundary_upload";
         /** LoginRequest */
         LoginRequest: {
             /**
@@ -624,6 +919,82 @@ export interface components {
             metadata?: {
                 [key: string]: unknown;
             } | null;
+        };
+        /**
+         * RechargeStressScoreResponse
+         * @description Field-for-field mirror of `app.models.water_balance.RechargeStressScore`
+         *     — `weights_version_id` deliberately excluded: it is always `None`
+         *     today (see `water_report_generator.py`'s own architecture-decision
+         *     docstring, point 3 — no ConfigWeight row exists for this factor set
+         *     yet), so exposing it would only ever show a client a field that
+         *     never has a value.
+         */
+        RechargeStressScoreResponse: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Stress Score */
+            stress_score: number;
+            stress_band: components["schemas"]["StressBand"];
+            baseline_window: components["schemas"]["BaselineWindow"];
+            /** Rainfall Anomaly Ratio */
+            rainfall_anomaly_ratio: number | null;
+            /** Vci */
+            vci: number | null;
+            /** Surface Water Trend */
+            surface_water_trend: number | null;
+            /** Cgwb Category */
+            cgwb_category: string | null;
+            /** Cgwb Category As Of */
+            cgwb_category_as_of: string | null;
+            /** Raw Inputs */
+            raw_inputs: {
+                [key: string]: unknown;
+            };
+            /**
+             * Computed At
+             * Format: date-time
+             */
+            computed_at: string;
+        };
+        /**
+         * ReportAuditContext
+         * @description REPORT V2 audit-appendix metadata not otherwise in the payload —
+         *     real, derived from the completed Job's own stage timeline
+         *     (app/services/reporting/progress.py), never a synthetic estimate. Both
+         *     None for reports generated before this field existed, or if the
+         *     originating Job row is no longer found.
+         */
+        ReportAuditContext: {
+            /** Processing Started At */
+            processing_started_at?: string | null;
+            /** Processing Completed At */
+            processing_completed_at?: string | null;
+        };
+        /**
+         * ReportComparisonContext
+         * @description REPORT V2 — the farm's own prior assessment, if one exists (real
+         *     cross-assessment history via the append-only `risk_score` table, never
+         *     a forecast). `has_previous_assessment=False` and all other fields None
+         *     means this is the farm's first assessment — the honest answer, not an
+         *     assumed baseline of zero.
+         */
+        ReportComparisonContext: {
+            /**
+             * Has Previous Assessment
+             * @default false
+             */
+            has_previous_assessment: boolean;
+            /** Previous Computed At */
+            previous_computed_at?: string | null;
+            /** Previous Overall Score */
+            previous_overall_score?: number | null;
+            /** Previous Factor Scores */
+            previous_factor_scores?: {
+                [key: string]: number;
+            };
         };
         /**
          * ReportEvidenceContext
@@ -777,6 +1148,8 @@ export interface components {
             series: components["schemas"]["ReportSeries"];
             evidence: components["schemas"]["ReportEvidenceContext"];
             method: components["schemas"]["ReportMethodContext"];
+            comparison?: components["schemas"]["ReportComparisonContext"];
+            audit?: components["schemas"]["ReportAuditContext"];
         };
         /**
          * ReportSeries
@@ -820,10 +1193,30 @@ export interface components {
          */
         RiskFactor: "vegetation_stability" | "water_availability" | "drought_risk" | "flood_exposure";
         /**
+         * StorageChangeBand
+         * @description The MVP headline figure for a water balance result (Blueprint v2 D5)
+         *     — a qualitative, climatology-relative descriptor. The underlying mm
+         *     value and its confidence interval are computed and stored, but shown
+         *     only in the technical/detailed report view, never as the headline,
+         *     because the mm figure is an unvalidated residual for every generic
+         *     customer at MVP (calibration_status defaults to UNCALIBRATED).
+         * @enum {string}
+         */
+        StorageChangeBand: "much_below_normal" | "below_normal" | "normal" | "above_normal" | "much_above_normal";
+        /**
+         * StressBand
+         * @description Recharge-stress classification (Blueprint v2 Part 4) — mirrors
+         *     RiskBand's exact vocabulary rather than inventing new terminology, since
+         *     recharge-stress scoring reuses RiskEngine's percentile-rank statistical
+         *     shape (Blueprint v2 D6).
+         * @enum {string}
+         */
+        StressBand: "low" | "moderate" | "high" | "very_high";
+        /**
          * UserRole
          * @enum {string}
          */
-        UserRole: "credit_officer" | "branch_manager" | "risk_officer" | "ceo" | "chairman";
+        UserRole: "credit_officer" | "branch_manager" | "risk_officer" | "ceo" | "chairman" | "programme_officer" | "programme_admin";
         /** ValidationError */
         ValidationError: {
             /** Location */
@@ -858,6 +1251,77 @@ export interface components {
             /** District */
             district: string;
             centroid: components["schemas"]["VillageCentroid"];
+        };
+        /**
+         * WaterBalanceResultResponse
+         * @description Field-for-field mirror of `app.models.water_balance.WaterBalanceResult`
+         *     (see that model for the full column-by-column rationale) — no
+         *     catchment_id (redundant with the parent response's own field).
+         */
+        WaterBalanceResultResponse: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Period Start
+             * Format: date
+             */
+            period_start: string;
+            /**
+             * Period End
+             * Format: date
+             */
+            period_end: string;
+            /** Rainfall Mm */
+            rainfall_mm: number | null;
+            /** Et Mm */
+            et_mm: number | null;
+            /** Runoff Mm */
+            runoff_mm: number | null;
+            /** Storage Change Mm */
+            storage_change_mm: number | null;
+            storage_change_band: components["schemas"]["StorageChangeBand"];
+            /** Data Completeness */
+            data_completeness: number;
+            calibration_status: components["schemas"]["CalibrationStatus"];
+            /** Closed Catchment Assumed */
+            closed_catchment_assumed: boolean;
+            /** Resolution Flags */
+            resolution_flags: string[];
+            /** Model Version */
+            model_version: string;
+            /**
+             * Computed At
+             * Format: date-time
+             */
+            computed_at: string;
+        };
+        /**
+         * WaterReportDetailResponse
+         * @description `GET /catchments/{id}/water-reports`' full response — the latest
+         *     completed run's `WaterBalanceResult` + `RechargeStressScore`
+         *     siblings, the `Job` that produced them, and a single `generated_at`
+         *     timestamp: the shared `computed_at` both result rows are stamped
+         *     with in the same orchestrator run (`water_report_generator.py`
+         *     computes it once and passes it to both), not a third, independently
+         *     meaningful value.
+         */
+        WaterReportDetailResponse: {
+            /**
+             * Catchment Id
+             * Format: uuid
+             */
+            catchment_id: string;
+            /**
+             * Generated At
+             * Format: date-time
+             */
+            generated_at: string;
+            water_balance: components["schemas"]["WaterBalanceResultResponse"];
+            recharge_stress: components["schemas"]["RechargeStressScoreResponse"];
+            job: components["schemas"]["JobStatusResponse"];
         };
     };
     responses: never;
@@ -1235,6 +1699,197 @@ export interface operations {
             };
         };
     };
+    list_catchments_api_v1_catchments_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CatchmentResponse"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_catchment_api_v1_catchments_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CatchmentCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CatchmentResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    upload_catchment_api_v1_catchments_upload_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_upload_catchment_api_v1_catchments_upload_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CatchmentResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_catchment_api_v1_catchments__catchment_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                catchment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CatchmentResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_latest_water_report_api_v1_catchments__catchment_id__water_reports_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                catchment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WaterReportDetailResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    trigger_water_report_api_v1_catchments__catchment_id__water_reports_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                catchment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReportTriggerResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     root__get: {
         parameters: {
             query?: never;
@@ -1256,6 +1911,26 @@ export interface operations {
         };
     };
     health_health_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    health_ready_health_ready_get: {
         parameters: {
             query?: never;
             header?: never;

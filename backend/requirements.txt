@@ -3,6 +3,11 @@ uvicorn[standard]==0.50.0
 pydantic-settings==2.14.2
 pydantic[email]==2.13.4
 python-dotenv==1.2.2
+# Multipart form/file parsing (ticket M4-004 — POST /catchments/upload is
+# the first endpoint using FastAPI's File()/Form()). Already present as a
+# transitive dependency today, but pinned explicitly now that code
+# directly depends on it, not just an incidental sub-dependency.
+python-multipart==0.0.32
 
 # Database (Blueprint §04 — PostgreSQL + PostGIS, async)
 sqlalchemy==2.0.51
@@ -14,6 +19,18 @@ shapely==2.1.2
 # Auth (Blueprint §01/§03 — minimal login, bearer JWT)
 bcrypt==5.0.0
 pyjwt==2.13.0
+
+# Catchment boundary upload parsing (ticket M4-002) — GeoJSON needs no new
+# dependency (shapely, above, already handles it); KML needs none either
+# (stdlib xml.etree.ElementTree — KML coordinates are WGS84 lon/lat by the
+# OGC KML spec itself, so no reprojection library is needed for it).
+# pyshp (pure Python, no GDAL) parses zipped Shapefiles; pyproj (wraps
+# PROJ, no GDAL either) reprojects a Shapefile's declared CRS (from its
+# .prj sidecar) to EPSG:4326 when it isn't already WGS84 — deliberately
+# NOT fiona/geopandas, which would pull in a full GDAL dependency this
+# project has consistently avoided elsewhere (docs/DECISIONS.md).
+pyshp==3.1.6
+pyproj==3.7.2
 
 # Earth Engine adapter (Blueprint §06)
 earthengine-api==1.7.34
