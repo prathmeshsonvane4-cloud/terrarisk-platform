@@ -40,6 +40,25 @@ function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString("en-IN", { day: "numeric", month: "short" });
 }
 
+/** "1st"/"2nd"/"3rd"/"4th"... — found via a real production run reporting
+ * "3th percentile." Only the last two digits matter (11th/12th/13th are
+ * the exception to the usual last-digit rule). */
+function ordinal(value: number): string {
+  const rounded = Math.round(value);
+  const lastTwoDigits = rounded % 100;
+  if (lastTwoDigits >= 11 && lastTwoDigits <= 13) return `${rounded}th`;
+  switch (rounded % 10) {
+    case 1:
+      return `${rounded}st`;
+    case 2:
+      return `${rounded}nd`;
+    case 3:
+      return `${rounded}rd`;
+    default:
+      return `${rounded}th`;
+  }
+}
+
 /** Which of the three recharge-stress sub-factors is driving the score —
  * used to give a field-specific action instead of a generic "go check it
  * out." All three come from recharge_stress.raw_inputs, the exact same
@@ -127,7 +146,7 @@ export function deriveRecommendations(history: WaterReportHistoryItem[]): Recomm
     const factorEvidence: Record<"rainfall" | "vegetation" | "surface_water", string> = {
       rainfall: `Rainfall anomaly ratio is ${latest.recharge_stress.rainfall_anomaly_ratio?.toFixed(2) ?? "—"} against the 30-year climatology (below 1.0 means below-normal rainfall).`,
       vegetation: `Vegetation condition index (VCI) is ${latest.recharge_stress.vci?.toFixed(0) ?? "—"}% — low VCI means vegetation is more stressed than usual for this time of year.`,
-      surface_water: `Surface water presence is at the ${latest.recharge_stress.surface_water_trend?.toFixed(0) ?? "—"}th percentile of this catchment's own SAR/MNDWI history.`,
+      surface_water: `Surface water presence is at the ${latest.recharge_stress.surface_water_trend !== null ? ordinal(latest.recharge_stress.surface_water_trend) : "—"} percentile of this catchment's own SAR/MNDWI history.`,
     };
     const factorAction: Record<"rainfall" | "vegetation" | "surface_water", string> = {
       rainfall: "Cross-check against local rain-gauge records — this may reflect a real regional deficit, not a local issue specific to this catchment.",

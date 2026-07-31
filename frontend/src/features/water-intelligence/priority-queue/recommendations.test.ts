@@ -92,6 +92,33 @@ describe("deriveRecommendations", () => {
     expect(visit?.action).toMatch(/canal, tank, or pond/i);
   });
 
+  it("uses correct English ordinal suffixes for the surface-water percentile — found via a real run reporting '3th percentile'", () => {
+    const cases: [number, string][] = [
+      [1, "1st"],
+      [2, "2nd"],
+      [3, "3rd"],
+      [8, "8th"],
+      [11, "11th"],
+      [12, "12th"],
+      [13, "13th"],
+      [21, "21st"],
+    ];
+    for (const [percentile, expected] of cases) {
+      const [recommendation] = deriveRecommendations([
+        historyItem({
+          generatedAt: "2026-07-01T00:00:00Z",
+          stressScore: 85,
+          stressBand: "very_high",
+          surfaceWaterStress: 90,
+          rainfallStress: 20,
+          vegetationStress: 30,
+          surfaceWaterTrend: percentile,
+        }),
+      ]);
+      expect(recommendation.evidence).toContain(`${expected} percentile`);
+    }
+  });
+
   it("gives a rainfall-specific action when rainfall is the dominant stress factor", () => {
     const history = [
       historyItem({
