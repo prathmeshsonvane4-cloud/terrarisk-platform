@@ -1,3 +1,5 @@
+import { ordinal } from "./format-water-report";
+
 /**
  * Renders `surface_water_trend` (0-100: the current reading's percentile
  * position within its own historical series — recharge_stress.py's own
@@ -17,7 +19,7 @@ export function SurfaceWaterIndicator({ percentile }: { percentile: number | nul
   return (
     <div
       role="img"
-      aria-label={`Current surface water extent is at the ${Math.round(clamped)}th percentile of its own historical range`}
+      aria-label={`Current surface water extent is at the ${ordinal(clamped)} percentile of its own historical range`}
       className="flex flex-col gap-1.5"
     >
       <div className="relative h-2.5 w-full overflow-hidden rounded-full bg-muted">
@@ -25,7 +27,7 @@ export function SurfaceWaterIndicator({ percentile }: { percentile: number | nul
       </div>
       <div className="flex justify-between text-[10px] text-muted-foreground">
         <span>Lowest on record</span>
-        <span className="font-medium text-foreground">{Math.round(clamped)}th percentile</span>
+        <span className="font-medium text-foreground">{ordinal(clamped)} percentile</span>
         <span>Highest on record</span>
       </div>
     </div>

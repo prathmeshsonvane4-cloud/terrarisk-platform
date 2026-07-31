@@ -14,18 +14,22 @@ import { isWaterIntelligenceRole, ROLE_LABELS, type UserRole } from "@/lib/roles
 import { cn } from "@/lib/utils";
 import { OfflineBanner } from "@/components/ui/offline-banner";
 
-const NAV_ITEMS = [
-  { href: "/", label: "Overview", icon: LayoutDashboard },
+// Shown for every role — "/" itself is role-aware (app/(app)/page.tsx
+// dispatches to Water Intelligence's own landing content for
+// programme_officer/programme_admin), so "Overview" always points
+// somewhere that role can actually use.
+const COMMON_NAV_ITEM = { href: "/", label: "Overview", icon: LayoutDashboard } as const;
+
+// Service 1's own nav — a Water Intelligence role has no farms,
+// assessments, or bank reports, and these routes have nothing for that
+// role to do (previously shown to every role regardless; a real, now-
+// fixed UX gap — see docs/WELL_Labs_Demo_Guide.md).
+const SERVICE_ONE_NAV_ITEMS = [
   { href: "/assessments", label: "Assessments", icon: ListChecks },
   { href: "/farms", label: "Farms", icon: Map },
   { href: "/reports", label: "Reports", icon: FileText },
 ] as const;
 
-// Shown only for Water Intelligence's own roles (M6-001) — Service 1's
-// four items above stay unconditional for every role, unchanged: adding
-// role-gating to those too is a real, separate UX improvement (a bank
-// role currently sees Farms/Assessments/Reports links that 403), but
-// isn't part of this ticket's scope and isn't touched here.
 const WATER_INTELLIGENCE_NAV_ITEM = { href: "/catchments", label: "Catchments", icon: Droplets } as const;
 
 function isActive(pathname: string, href: string): boolean {
@@ -36,9 +40,11 @@ function isActive(pathname: string, href: string): boolean {
 function NavLinks({ pathname, onNavigate }: { pathname: string; onNavigate?: () => void }) {
   const { confirmNavigation } = useNavigationGuard();
   const { session } = useAuth();
+  const isWaterIntelligence = Boolean(session && isWaterIntelligenceRole(session.role));
   const navItems = [
-    ...NAV_ITEMS,
-    ...(session && isWaterIntelligenceRole(session.role) ? [WATER_INTELLIGENCE_NAV_ITEM] : []),
+    COMMON_NAV_ITEM,
+    ...(isWaterIntelligence ? [] : SERVICE_ONE_NAV_ITEMS),
+    ...(isWaterIntelligence ? [WATER_INTELLIGENCE_NAV_ITEM] : []),
   ];
 
   function handleClick(event: MouseEvent<HTMLAnchorElement>) {
@@ -131,10 +137,16 @@ function UserMenu() {
 
 function NewAssessmentButton({ className }: { className?: string }) {
   const { confirmNavigation } = useNavigationGuard();
+  const { session } = useAuth();
 
   function handleClick(event: MouseEvent<HTMLAnchorElement>) {
     if (!confirmNavigation()) event.preventDefault();
   }
+
+  // Service 1's own action — a Water Intelligence role has nowhere to
+  // use it (own equivalent, "New catchment," lives on their own landing
+  // page and the Catchments page instead).
+  if (session && isWaterIntelligenceRole(session.role)) return null;
 
   return (
     <Link href="/assessments/new" onClick={handleClick} className={cn(buttonVariants({ size: "sm" }), "gap-1.5", className)}>
@@ -152,6 +164,8 @@ export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const { confirmNavigation } = useNavigationGuard();
+  const { session } = useAuth();
+  const isWaterIntelligence = Boolean(session && isWaterIntelligenceRole(session.role));
 
   function guardedClick(event: MouseEvent<HTMLAnchorElement>) {
     if (!confirmNavigation()) event.preventDefault();
@@ -194,14 +208,16 @@ export function AppShell({ children }: { children: ReactNode }) {
           </Sheet>
           <span className="font-heading text-sm font-semibold">TerraRisk</span>
         </div>
-        <Link
-          href="/assessments/new"
-          onClick={guardedClick}
-          className={buttonVariants({ size: "icon-sm" })}
-          aria-label="New assessment"
-        >
-          <Plus aria-hidden className="size-4" />
-        </Link>
+        {!isWaterIntelligence && (
+          <Link
+            href="/assessments/new"
+            onClick={guardedClick}
+            className={buttonVariants({ size: "icon-sm" })}
+            aria-label="New assessment"
+          >
+            <Plus aria-hidden className="size-4" />
+          </Link>
+        )}
       </header>
 
       <main className="flex flex-1 flex-col">{children}</main>

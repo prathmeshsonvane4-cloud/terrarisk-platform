@@ -152,7 +152,10 @@ describe("deriveRecommendations", () => {
     expect(validation).toBeDefined();
     expect(validation?.severity).toBe("high");
     expect(validation?.evidence).toMatch(/30%/);
-    expect(validation?.evidence).toMatch(/et_sub_pixel/);
+    // The raw flag code must never reach the UI verbatim — it's
+    // translated to a plain-language reason instead.
+    expect(validation?.evidence).not.toMatch(/et_sub_pixel/);
+    expect(validation?.evidence).toMatch(/evapotranspiration/i);
   });
 
   it("flags a sharp swing between the two most recent runs as unexpected behaviour", () => {

@@ -10,10 +10,47 @@ import { ErrorState } from "@/components/ui/error-state";
 import { RiskBandChip } from "@/components/ui/risk-band-chip";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/features/auth/auth-context";
+import { PriorityQueueView } from "@/features/water-intelligence/priority-queue/priority-queue-view";
 import { useAssessments } from "@/features/workspace/use-assessments";
 import { useFarms } from "@/features/workspace/use-farms";
 import { useReports } from "@/features/workspace/use-reports";
+import { isWaterIntelligenceRole } from "@/lib/roles";
 import { cn } from "@/lib/utils";
+
+// How many catchments the compact preview on this landing page shows —
+// Water Intelligence's own equivalent of the Service 1 view's "Recent
+// reports" cap, just ranked by urgency instead of recency.
+const LANDING_PRIORITY_QUEUE_PREVIEW_SIZE = 5;
+
+/**
+ * Water Intelligence's own landing content (docs/WELL_Labs_Demo_Guide.md)
+ * — a Programme Officer/Admin logging in was previously shown Service
+ * 1's farm-onboarding empty state ("Map your first farm"), which has
+ * nothing to do with their product and nothing they can even act on.
+ * Reuses PriorityQueueView exactly as /catchments/priority-queue does —
+ * no new data fetching, no new logic, just this role's own real content
+ * on the route every role already lands on after login.
+ */
+function WaterIntelligenceOverview({ firstName }: { firstName: string | undefined }) {
+  return (
+    <div className="mx-auto flex w-full max-w-4xl flex-1 flex-col gap-5 p-4 md:p-6">
+      <header className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h1 className="text-lg font-semibold">{firstName ? `Good to see you, ${firstName}` : "Overview"}</h1>
+          <p className="text-sm text-muted-foreground">
+            TerraRisk Water Intelligence turns satellite rainfall, vegetation, and surface-water readings into a ranked
+            list of which catchments need attention this week, and why.
+          </p>
+        </div>
+        <Link href="/catchments/new" className={cn(buttonVariants({ size: "sm" }), "gap-1.5")}>
+          <Plus aria-hidden className="size-4" />
+          New catchment
+        </Link>
+      </header>
+      <PriorityQueueView maxCatchments={LANDING_PRIORITY_QUEUE_PREVIEW_SIZE} embedded />
+    </div>
+  );
+}
 
 function formatElapsed(isoDate: string): string {
   const ms = Date.now() - new Date(isoDate).getTime();
@@ -25,13 +62,32 @@ function formatElapsed(isoDate: string): string {
 }
 
 /**
- * The post-login workspace home (Product Design v2 §7.1). Replaces the
- * old one-shot funnel: an officer resumes in-flight work, opens recent
- * reports, and sees branch activity before ever touching the wizard.
- * Every number here is a live read of already-persisted backend state —
- * no rollup table, no client-side estimation.
+ * The post-login workspace home. Dispatches by role rather than by
+ * route: Water Intelligence roles (programme_officer/programme_admin)
+ * have no farms, assessments, or bank reports to show here at all, so
+ * showing them Service 1's "map your first farm" empty state is not
+ * just irrelevant, it's actively confusing. Same "/" route, same
+ * useAuth() session either way — this is a presentation choice, not a
+ * new page or a new workflow.
  */
 export default function OverviewPage() {
+  const { session } = useAuth();
+  if (session && isWaterIntelligenceRole(session.role)) {
+    return <WaterIntelligenceOverview firstName={session.fullName.split(" ")[0]} />;
+  }
+  return <ServiceOneOverview />;
+}
+
+/**
+ * Service 1's post-login workspace home (Product Design v2 §7.1).
+ * Replaces the old one-shot funnel: an officer resumes in-flight work,
+ * opens recent reports, and sees branch activity before ever touching
+ * the wizard. Every number here is a live read of already-persisted
+ * backend state — no rollup table, no client-side estimation. Unchanged
+ * by the role dispatch above — every line below is exactly what this
+ * file already did before Water Intelligence roles got their own branch.
+ */
+function ServiceOneOverview() {
   const { session } = useAuth();
   const {
     data: assessments,

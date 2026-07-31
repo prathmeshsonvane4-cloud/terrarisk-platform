@@ -1,3 +1,4 @@
+import { ordinal } from "../format-water-report";
 import { numberField } from "../raw-inputs";
 import type { WaterReportHistoryItem } from "../use-water-report-history";
 
@@ -40,23 +41,20 @@ function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString("en-IN", { day: "numeric", month: "short" });
 }
 
-/** "1st"/"2nd"/"3rd"/"4th"... — found via a real production run reporting
- * "3th percentile." Only the last two digits matter (11th/12th/13th are
- * the exception to the usual last-digit rule). */
-function ordinal(value: number): string {
-  const rounded = Math.round(value);
-  const lastTwoDigits = rounded % 100;
-  if (lastTwoDigits >= 11 && lastTwoDigits <= 13) return `${rounded}th`;
-  switch (rounded % 10) {
-    case 1:
-      return `${rounded}st`;
-    case 2:
-      return `${rounded}nd`;
-    case 3:
-      return `${rounded}rd`;
-    default:
-      return `${rounded}th`;
-  }
+/** Plain-language labels for the resolution_flags vocabulary
+ * (app/models/catchment.py's own documented, though not yet
+ * backend-populated, set) — a field engineer should never see a raw
+ * code like "et_sub_pixel." Unknown/future flags fall back to the raw
+ * string rather than hiding it, since an unrecognised flag is still
+ * real information, just not yet translated. */
+const RESOLUTION_FLAG_LABELS: Record<string, string> = {
+  rainfall_sub_pixel: "this catchment is small relative to the satellite rainfall data's resolution",
+  et_sub_pixel: "this catchment is small relative to the satellite evapotranspiration data's resolution",
+  high_relief_terrain: "hilly terrain here can make the satellite water-detection reading less reliable",
+};
+
+function describeResolutionFlags(flags: string[]): string {
+  return flags.map((flag) => RESOLUTION_FLAG_LABELS[flag] ?? flag).join("; ");
 }
 
 /** Which of the three recharge-stress sub-factors is driving the score —
@@ -123,18 +121,18 @@ export function deriveRecommendations(history: WaterReportHistoryItem[]): Recomm
   const hasResolutionFlags = latest.water_balance.resolution_flags.length > 0;
   if (lowConfidence || lowCompleteness || hasResolutionFlags) {
     const reasons: string[] = [];
-    if (lowCompleteness) reasons.push(`data completeness was only ${latest.water_balance.data_completeness.toFixed(0)}%`);
-    if (lowConfidence) reasons.push(`recharge-stress confidence was only ${Math.round(confidence ?? 0)}%`);
-    if (hasResolutionFlags) reasons.push(`flagged: ${latest.water_balance.resolution_flags.join(", ")}`);
+    if (lowCompleteness) reasons.push(`only ${latest.water_balance.data_completeness.toFixed(0)}% of the usual satellite images were usable this period (likely cloud cover)`);
+    if (lowConfidence) reasons.push(`confidence in this result is only ${Math.round(confidence ?? 0)}%`);
+    if (hasResolutionFlags) reasons.push(describeResolutionFlags(latest.water_balance.resolution_flags));
     recommendations.push({
       category: "needs_validation",
       severity: lowCompleteness || lowConfidence ? "high" : "medium",
       title: "Needs field validation",
-      why: `The latest run's inputs were thinner than usual — ${reasons.join("; ")}.`,
-      evidence: `Data completeness ${latest.water_balance.data_completeness.toFixed(0)}%, confidence ${confidence !== null ? `${Math.round(confidence)}%` : "unavailable"}${hasResolutionFlags ? `, resolution flags: ${latest.water_balance.resolution_flags.join(", ")}` : ""}.`,
+      why: `This result is less reliable than usual: ${reasons.join("; ")}.`,
+      evidence: `Usable satellite coverage ${latest.water_balance.data_completeness.toFixed(0)}%, confidence ${confidence !== null ? `${Math.round(confidence)}%` : "unavailable"}${hasResolutionFlags ? ` — ${describeResolutionFlags(latest.water_balance.resolution_flags)}` : ""}.`,
       confidence: confidenceLabel(confidence),
       action:
-        "Re-run the water report once more cloud-free imagery is available, and verify this catchment's condition in the field before using this result in a decision.",
+        "Re-run the water report once more cloud-free satellite images are available, and check this catchment's condition on the ground before acting on this result.",
     });
   }
 
@@ -143,13 +141,20 @@ export function deriveRecommendations(history: WaterReportHistoryItem[]): Recomm
   // factor-specific action rather than a generic one.
   if (latest.recharge_stress.stress_band === "high" || latest.recharge_stress.stress_band === "very_high") {
     const dominant = dominantStressFactor(latest.recharge_stress.raw_inputs);
+    // Plain-language names for the demo/field audience — "surface_water"
+    // reads as jargon, "surface water" doesn't.
+    const factorLabel: Record<"rainfall" | "vegetation" | "surface_water", string> = {
+      rainfall: "rainfall shortfall",
+      vegetation: "vegetation stress",
+      surface_water: "surface water decline",
+    };
     const factorEvidence: Record<"rainfall" | "vegetation" | "surface_water", string> = {
-      rainfall: `Rainfall anomaly ratio is ${latest.recharge_stress.rainfall_anomaly_ratio?.toFixed(2) ?? "—"} against the 30-year climatology (below 1.0 means below-normal rainfall).`,
-      vegetation: `Vegetation condition index (VCI) is ${latest.recharge_stress.vci?.toFixed(0) ?? "—"}% — low VCI means vegetation is more stressed than usual for this time of year.`,
-      surface_water: `Surface water presence is at the ${latest.recharge_stress.surface_water_trend !== null ? ordinal(latest.recharge_stress.surface_water_trend) : "—"} percentile of this catchment's own SAR/MNDWI history.`,
+      rainfall: `Rainfall over the recent period was ${latest.recharge_stress.rainfall_anomaly_ratio !== null ? `${Math.round(latest.recharge_stress.rainfall_anomaly_ratio * 100)}%` : "an unknown fraction"} of the normal amount for this time of year, based on 30 years of satellite rainfall records.`,
+      vegetation: `Vegetation greenness, as read from satellite imagery, is at ${latest.recharge_stress.vci?.toFixed(0) ?? "an unknown level"}% of what's normal for this time of year — lower means more crop/vegetation stress.`,
+      surface_water: `The amount of visible surface water (ponds, tanks, canals) is at the ${latest.recharge_stress.surface_water_trend !== null ? ordinal(latest.recharge_stress.surface_water_trend) : "an unknown"} percentile of this catchment's own satellite-monitoring history — i.e. lower than most past readings.`,
     };
     const factorAction: Record<"rainfall" | "vegetation" | "surface_water", string> = {
-      rainfall: "Cross-check against local rain-gauge records — this may reflect a real regional deficit, not a local issue specific to this catchment.",
+      rainfall: "Cross-check against local rain-gauge records — this may reflect a real regional shortfall, not a local issue specific to this catchment.",
       vegetation: "Verify crop condition and irrigation access on the ground.",
       surface_water: "Verify canal, tank, or pond water levels on the ground.",
     };
@@ -157,8 +162,8 @@ export function deriveRecommendations(history: WaterReportHistoryItem[]): Recomm
       category: "needs_field_visit",
       severity: latest.recharge_stress.stress_band === "very_high" ? "high" : "medium",
       title: latest.recharge_stress.stress_band === "very_high" ? "Very high recharge stress" : "High recharge stress",
-      why: `Recharge stress is ${latest.recharge_stress.stress_band === "very_high" ? "very high" : "high"} (${Math.round(latest.recharge_stress.stress_score)}/100)${dominant ? `, driven mainly by the ${dominant.replace("_", " ")} factor` : ""}.`,
-      evidence: dominant ? factorEvidence[dominant] : "No individual stress factor could be isolated for this run.",
+      why: `This catchment's recharge stress is ${latest.recharge_stress.stress_band === "very_high" ? "very high" : "high"} (${Math.round(latest.recharge_stress.stress_score)}/100)${dominant ? `, mainly because of ${factorLabel[dominant]}` : ""}.`,
+      evidence: dominant ? factorEvidence[dominant] : "No single satellite signal could be isolated as the main driver for this run.",
       confidence: confidenceLabel(confidence),
       action: dominant ? factorAction[dominant] : "Schedule a field visit to assess ground conditions.",
     });

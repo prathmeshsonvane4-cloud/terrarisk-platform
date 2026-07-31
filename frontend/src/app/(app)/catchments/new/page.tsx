@@ -160,7 +160,13 @@ export default function NewCatchmentPage() {
       </div>
 
       <aside className="flex w-full flex-col gap-4 border-t p-4 md:w-80 md:border-t-0 md:border-l md:p-6">
-        <h1 className="text-lg font-semibold">New catchment</h1>
+        <div>
+          <h1 className="text-lg font-semibold">New catchment</h1>
+          <p className="text-sm text-muted-foreground">
+            A catchment is the boundary TerraRisk generates water reports for — a village, a farm, or any area you
+            draw.
+          </p>
+        </div>
 
         <div className="flex gap-1 rounded-lg border p-1">
           <button

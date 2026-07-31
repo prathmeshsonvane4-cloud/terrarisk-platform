@@ -34,7 +34,13 @@ export default function CatchmentsPage() {
   return (
     <div className="mx-auto flex w-full max-w-4xl flex-1 flex-col gap-4 p-4 md:p-6">
       <header className="flex flex-wrap items-center justify-between gap-2">
-        <h1 className="text-lg font-semibold">Catchments</h1>
+        <div>
+          <h1 className="text-lg font-semibold">Catchments</h1>
+          <p className="text-sm text-muted-foreground">
+            Every village or field boundary TerraRisk is generating water reports for. Select two or more with the
+            checkboxes to compare them side by side.
+          </p>
+        </div>
         <div className="flex items-center gap-2">
           <Link href="/catchments/priority-queue" className={cn(buttonVariants({ size: "sm", variant: "outline" }), "gap-1.5")}>
             <ClipboardList aria-hidden className="size-4" />
