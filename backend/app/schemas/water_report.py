@@ -74,6 +74,23 @@ class RechargeStressScoreResponse(BaseModel):
     computed_at: datetime
 
 
+class WaterReportHistoryItem(BaseModel):
+    """One past completed run for a catchment — the same
+    `WaterBalanceResult` + `RechargeStressScore` sibling pair
+    `WaterReportDetailResponse` carries for the latest run, without the
+    `job` field (a history list has no use for re-fetching job/progress
+    metadata for runs that finished long ago). Powers both the
+    per-catchment trend view and multi-catchment comparison
+    (docs/WELL_Labs_Raichur_Founder_Review_2026.md Part 4/5) — one shape,
+    two frontend presentations, since both are just "several of these,
+    read together" rather than distinct data needs.
+    """
+
+    generated_at: datetime
+    water_balance: WaterBalanceResultResponse
+    recharge_stress: RechargeStressScoreResponse
+
+
 class WaterReportDetailResponse(BaseModel):
     """`GET /catchments/{id}/water-reports`' full response — the latest
     completed run's `WaterBalanceResult` + `RechargeStressScore`

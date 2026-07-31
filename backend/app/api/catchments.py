@@ -126,7 +126,12 @@ from app.models.water_balance import RechargeStressScore, WaterBalanceResult
 from app.schemas.catchment import CatchmentCreateRequest, CatchmentResponse, CatchmentUploadRequest, GeoJSONMultiPolygon
 from app.schemas.job import JobStatusResponse
 from app.schemas.report import ReportTriggerResponse
-from app.schemas.water_report import RechargeStressScoreResponse, WaterBalanceResultResponse, WaterReportDetailResponse
+from app.schemas.water_report import (
+    RechargeStressScoreResponse,
+    WaterBalanceResultResponse,
+    WaterReportDetailResponse,
+    WaterReportHistoryItem,
+)
 from app.services.boundary_parser import BoundaryParseError, parse_boundary_file
 from app.services.hydrology.engine import WaterBalanceEngine
 from app.services.hydrology.gee_hydrology_provider import GEEHydrologyProvider
@@ -513,6 +518,65 @@ async def get_latest_water_report(
         recharge_stress=RechargeStressScoreResponse.model_validate(recharge_stress_score),
         job=JobStatusResponse.model_validate(job),
     )
+
+
+_MAX_HISTORY_LIMIT = 100
+_DEFAULT_HISTORY_LIMIT = 24
+
+
+@router.get("/{catchment_id}/water-reports/history", response_model=list[WaterReportHistoryItem])
+async def get_water_report_history(
+    catchment_id: UUID,
+    limit: int = Query(default=_DEFAULT_HISTORY_LIMIT, ge=1, le=_MAX_HISTORY_LIMIT),
+    current_user: AppUser = Depends(require_role(UserRole.PROGRAMME_OFFICER, UserRole.PROGRAMME_ADMIN)),
+    db: AsyncSession = Depends(get_db),
+) -> list[WaterReportHistoryItem]:
+    """Every past completed run for a catchment, most recent first — not
+    just the latest one `GET /catchments/{id}/water-reports` returns.
+
+    `WaterBalanceResult` and `RechargeStressScore` are both append-only
+    (see their own model docstrings) — every trigger writes new rows,
+    nothing is ever overwritten. This endpoint is the first thing that
+    reads more than the single latest pair (docs/WELL_Labs_Raichur_Founder_Review_2026.md
+    Part 2/5) — no new data, no schema change, purely additive.
+
+    Paired by an exact `computed_at` match, not by ordering-and-zipping
+    two separately-limited lists: `water_report_generator.py` computes
+    one `computed_at` per run and stamps both sibling rows with it
+    (`WaterReportDetailResponse`'s own docstring), so an equality join on
+    `(catchment_id, computed_at)` is the true correlation key. Zipping by
+    position would silently mispair rows the moment the two tables ever
+    drift out of lockstep (e.g. a future partial-failure path that
+    persists one row without the other) — this join can't.
+    """
+    catchment = await db.get(Catchment, catchment_id)
+    if catchment is None or catchment.created_by != current_user.id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Catchment not found")
+
+    rows = (
+        await db.execute(
+            select(WaterBalanceResult, RechargeStressScore)
+            .join(
+                RechargeStressScore,
+                and_(
+                    RechargeStressScore.catchment_id == WaterBalanceResult.catchment_id,
+                    RechargeStressScore.computed_at == WaterBalanceResult.computed_at,
+                ),
+            )
+            .where(WaterBalanceResult.catchment_id == catchment_id)
+            .order_by(WaterBalanceResult.computed_at.desc())
+            .limit(limit)
+        )
+    ).all()
+
+    return [
+        WaterReportHistoryItem(
+            generated_at=water_balance_result.computed_at,
+            water_balance=WaterBalanceResultResponse.model_validate(water_balance_result),
+            recharge_stress=RechargeStressScoreResponse.model_validate(recharge_stress_score),
+        )
+        for water_balance_result, recharge_stress_score in rows
+    ]
 
 
 async def _persist_catchment(
