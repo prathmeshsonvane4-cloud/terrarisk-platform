@@ -1,8 +1,17 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { TerraDraw, TerraDrawPolygonMode, TerraDrawSelectMode, ValidateNotSelfIntersecting } from "terra-draw";
-import type { TerraDrawAdapter, TerraDrawCallbacks, TerraDrawChanges, TerraDrawStylingFunction } from "terra-draw/dist/common";
 
 import { ringFromGeometry, type Ring } from "@/lib/catchment-geo";
+import { generateFeatureId } from "@/lib/feature-id";
+
+// terra-draw's package.json "exports" map only publishes its root entry
+// (types/require/default) — TerraDrawAdapter itself isn't re-exported
+// from there, only used internally as the "adapter" constructor param
+// type. Deriving it structurally from TerraDraw's own public constructor
+// signature avoids a "terra-draw/dist/common" deep import that Vite's
+// bundler resolution tolerates but `tsc` (moduleResolution: "bundler",
+// which still honours a package's declared exports map) rejects.
+type TerraDrawAdapter = ConstructorParameters<typeof TerraDraw>[0]["adapter"];
 
 /**
  * Exercises the real terra-draw library (not a mock of it) against the
@@ -25,9 +34,9 @@ function fakeAdapter(): TerraDrawAdapter {
     getLngLatFromEvent: () => null,
     setDoubleClickToZoom: () => {},
     getMapEventElement: () => document.createElement("div"),
-    register: (_callbacks: TerraDrawCallbacks) => {},
+    register: () => {},
     unregister: () => {},
-    render: (_changes: TerraDrawChanges, _styling: TerraDrawStylingFunction) => {},
+    render: () => {},
     clear: () => {},
     getCoordinatePrecision: () => 9,
   };
@@ -56,12 +65,14 @@ function buildDraw(): TerraDraw {
   });
 }
 
-// Mirrors catchment-map.tsx's seeding block exactly, including the
-// addFeatures-result guard: selectFeature() throws for a feature id that
-// was never actually added, so a rejected add must short-circuit rather
-// than proceed into select mode.
+// Mirrors catchment-map.tsx's seeding block exactly, including the real
+// generateFeatureId() helper (not crypto.randomUUID() directly — that
+// throws outside a secure context, which production is, see the
+// dedicated test below) and the addFeatures-result guard: selectFeature()
+// throws for a feature id that was never actually added, so a rejected
+// add must short-circuit rather than proceed into select mode.
 function seedAndSelect(draw: TerraDraw, ring: Ring) {
-  const featureId = crypto.randomUUID();
+  const featureId = generateFeatureId();
   const [result] = draw.addFeatures([
     {
       id: featureId,
@@ -121,6 +132,55 @@ function denseRing(vertexCount: number): Ring {
   points.push(points[0]);
   return points;
 }
+
+describe("generateFeatureId — production runs over plain HTTP, not a secure context", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("falls back to crypto.getRandomValues when crypto.randomUUID is unavailable (the exact production condition)", () => {
+    // Root cause of the production bug this regression test locks in:
+    // crypto.randomUUID() throws outside a secure context — HTTPS, or
+    // "localhost" specifically. TerraRisk's production origin is plain
+    // HTTP on a bare IP, confirmed via direct browser check against it
+    // (window.isSecureContext === false, typeof crypto.randomUUID ===
+    // "undefined", calling it throws TypeError). Local dev never caught
+    // this because "localhost" itself is exempt from the secure-context
+    // requirement. Simulating that exact absence here, rather than
+    // stubbing a throw, matches what Chrome actually does on that origin.
+    const original = crypto.randomUUID;
+    // @ts-expect-error - simulating an insecure context, where this
+    // property does not exist on the Crypto prototype at all.
+    delete crypto.randomUUID;
+
+    try {
+      const id = generateFeatureId();
+      expect(id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+    } finally {
+      crypto.randomUUID = original;
+    }
+  });
+
+  it("the fallback ID is actually accepted by terra-draw's addFeatures — not just well-formed", () => {
+    const original = crypto.randomUUID;
+    // @ts-expect-error - see above
+    delete crypto.randomUUID;
+
+    try {
+      const draw = buildDraw();
+      draw.start();
+      draw.setMode("static");
+
+      const seedRing = ringFromGeometry(MASKI_VILLAGE_GEOMETRY) as Ring;
+      const { result, selected } = seedAndSelect(draw, seedRing);
+
+      expect(result?.valid).toBe(true);
+      expect(selected).toBe(true);
+    } finally {
+      crypto.randomUUID = original;
+    }
+  });
+});
 
 describe("editable AOI seeding — real terra-draw library", () => {
   it("accepts the real Maski village geometry, selects it, and reports it back through getSnapshot", () => {

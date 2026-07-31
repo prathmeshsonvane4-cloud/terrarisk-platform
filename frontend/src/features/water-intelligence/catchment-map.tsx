@@ -8,6 +8,7 @@ import { TerraDrawMapLibreGLAdapter } from "terra-draw-maplibre-gl-adapter";
 import { BaseMap } from "@/components/map/base-map";
 import { Button } from "@/components/ui/button";
 import { ringFromGeometry, type Ring } from "@/lib/catchment-geo";
+import { generateFeatureId } from "@/lib/feature-id";
 import { removeGeoJsonOverlay, setGeoJsonOverlay } from "@/lib/map-overlay";
 
 // Latur district center — same pre-selection view farm-map.tsx uses, so
@@ -170,7 +171,7 @@ export const CatchmentMap = memo(function CatchmentMap({
         const seedGeometry = initialAoiGeometryRef.current;
         const seedRing = seedGeometry ? ringFromGeometry(seedGeometry) : null;
         if (seedRing) {
-          const featureId = crypto.randomUUID();
+          const featureId = generateFeatureId();
           const [result] = draw.addFeatures([
             {
               id: featureId,
