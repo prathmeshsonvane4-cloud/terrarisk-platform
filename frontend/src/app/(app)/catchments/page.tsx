@@ -1,6 +1,6 @@
 "use client";
 
-import { Droplets, GitCompare, Plus } from "lucide-react";
+import { ClipboardList, Droplets, GitCompare, Plus } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 
@@ -36,6 +36,10 @@ export default function CatchmentsPage() {
       <header className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-lg font-semibold">Catchments</h1>
         <div className="flex items-center gap-2">
+          <Link href="/catchments/priority-queue" className={cn(buttonVariants({ size: "sm", variant: "outline" }), "gap-1.5")}>
+            <ClipboardList aria-hidden className="size-4" />
+            Priority Queue
+          </Link>
           {selectedIds.length >= MIN_CATCHMENTS_TO_COMPARE && (
             <Link href={compareHref} className={cn(buttonVariants({ size: "sm", variant: "outline" }), "gap-1.5")}>
               <GitCompare aria-hidden className="size-4" />

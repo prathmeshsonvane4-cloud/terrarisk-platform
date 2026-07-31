@@ -22,11 +22,11 @@ export interface CatchmentHistoryQuery {
  * the documented TanStack pattern for exactly this: a dynamic array of
  * independent queries, still one React Query cache, still per-query
  * loading/error state. */
-export function useWaterReportHistories(catchmentIds: string[]): CatchmentHistoryQuery[] {
+export function useWaterReportHistories(catchmentIds: string[], limit?: number): CatchmentHistoryQuery[] {
   const results = useQueries({
     queries: catchmentIds.map((catchmentId) => ({
-      queryKey: waterReportHistoryQueryKey(catchmentId),
-      queryFn: () => fetchWaterReportHistory(catchmentId),
+      queryKey: waterReportHistoryQueryKey(catchmentId, limit),
+      queryFn: () => fetchWaterReportHistory(catchmentId, limit),
     })),
   });
 
