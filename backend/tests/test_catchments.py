@@ -27,6 +27,7 @@ from app.models.enums import JobStatus, JobType, OrganizationType, UserRole
 from app.models.job import Job
 from app.models.organization import Organization
 from app.models.user import AppUser
+from app.models.water_balance import RechargeStressScore, WaterBalanceResult
 
 _VALID_SQUARE = [[76.0, 18.0], [76.01, 18.0], [76.01, 18.01], [76.0, 18.01], [76.0, 18.0]]
 _VALID_SQUARE_CW = [[76.0, 18.0], [76.0, 18.01], [76.01, 18.01], [76.01, 18.0], [76.0, 18.0]]
@@ -90,6 +91,21 @@ async def users_and_org():
         # (ticket M4-006) must be cleared first or the AppUser delete
         # below would fail with an IntegrityError, same reasoning as
         # test_reports.py's own scenario fixture teardown.
+        #
+        # WaterBalanceResult/RechargeStressScore must be cleared before
+        # Catchment for the same reason, one level deeper: a real,
+        # live-GEE water-report trigger test in this file (unlike most
+        # others here) can actually complete and persist both rows —
+        # deleting the Catchment first then violates their FK. Same
+        # ordering test_water_report_detail.py/test_water_report_history.py
+        # already use; this fixture just never needed it before those
+        # two trigger-and-complete tests existed in this file.
+        catchments = (
+            await db.execute(select(Catchment.id).where(Catchment.created_by.in_([officer.id, admin.id, credit_officer.id])))
+        ).scalars().all()
+        if catchments:
+            await db.execute(delete(RechargeStressScore).where(RechargeStressScore.catchment_id.in_(catchments)))
+            await db.execute(delete(WaterBalanceResult).where(WaterBalanceResult.catchment_id.in_(catchments)))
         await db.execute(delete(Job).where(Job.created_by.in_([officer.id, admin.id, credit_officer.id])))
         await db.execute(delete(Catchment).where(Catchment.created_by.in_([officer.id, admin.id, credit_officer.id])))
         await db.execute(delete(AppUser).where(AppUser.id.in_([officer.id, admin.id, credit_officer.id])))
