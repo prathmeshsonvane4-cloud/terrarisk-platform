@@ -392,6 +392,42 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/catchments/{catchment_id}/water-reports/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Water Report History
+         * @description Every past completed run for a catchment, most recent first — not
+         *     just the latest one `GET /catchments/{id}/water-reports` returns.
+         *
+         *     `WaterBalanceResult` and `RechargeStressScore` are both append-only
+         *     (see their own model docstrings) — every trigger writes new rows,
+         *     nothing is ever overwritten. This endpoint is the first thing that
+         *     reads more than the single latest pair (docs/WELL_Labs_Raichur_Founder_Review_2026.md
+         *     Part 2/5) — no new data, no schema change, purely additive.
+         *
+         *     Paired by an exact `computed_at` match, not by ordering-and-zipping
+         *     two separately-limited lists: `water_report_generator.py` computes
+         *     one `computed_at` per run and stamps both sibling rows with it
+         *     (`WaterReportDetailResponse`'s own docstring), so an equality join on
+         *     `(catchment_id, computed_at)` is the true correlation key. Zipping by
+         *     position would silently mispair rows the moment the two tables ever
+         *     drift out of lockstep (e.g. a future partial-failure path that
+         *     persists one row without the other) — this join can't.
+         */
+        get: operations["get_water_report_history_api_v1_catchments__catchment_id__water_reports_history_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin-boundaries": {
         parameters: {
             query?: never;
@@ -1410,6 +1446,27 @@ export interface components {
             recharge_stress: components["schemas"]["RechargeStressScoreResponse"];
             job: components["schemas"]["JobStatusResponse"];
         };
+        /**
+         * WaterReportHistoryItem
+         * @description One past completed run for a catchment — the same
+         *     `WaterBalanceResult` + `RechargeStressScore` sibling pair
+         *     `WaterReportDetailResponse` carries for the latest run, without the
+         *     `job` field (a history list has no use for re-fetching job/progress
+         *     metadata for runs that finished long ago). Powers both the
+         *     per-catchment trend view and multi-catchment comparison
+         *     (docs/WELL_Labs_Raichur_Founder_Review_2026.md Part 4/5) — one shape,
+         *     two frontend presentations, since both are just "several of these,
+         *     read together" rather than distinct data needs.
+         */
+        WaterReportHistoryItem: {
+            /**
+             * Generated At
+             * Format: date-time
+             */
+            generated_at: string;
+            water_balance: components["schemas"]["WaterBalanceResultResponse"];
+            recharge_stress: components["schemas"]["RechargeStressScoreResponse"];
+        };
     };
     responses: never;
     parameters: never;
@@ -1964,6 +2021,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ReportTriggerResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_water_report_history_api_v1_catchments__catchment_id__water_reports_history_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                catchment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WaterReportHistoryItem"][];
                 };
             };
             /** @description Validation Error */

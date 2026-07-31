@@ -16,13 +16,15 @@ import { DownloadWaterReportJsonButton } from "@/features/water-intelligence/dow
 import { formatMm, formatPercent, formatRatio } from "@/features/water-intelligence/format-water-report";
 import { deriveWaterReportInsights } from "@/features/water-intelligence/insights";
 import { DELINEATION_METHOD_LABELS } from "@/features/water-intelligence/labels";
+import { MetricTrendChart, type TrendPoint } from "@/features/water-intelligence/metric-trend-chart";
 import { DownloadWaterReportPdfButton } from "@/features/water-intelligence/pdf/download-water-report-pdf-button";
 import { numberField } from "@/features/water-intelligence/raw-inputs";
 import { bandForFactorScore } from "@/features/water-intelligence/stress-factor-bands";
 import { SurfaceWaterIndicator } from "@/features/water-intelligence/surface-water-indicator";
 import { useCatchments } from "@/features/water-intelligence/use-catchments";
 import { useLatestWaterReport } from "@/features/water-intelligence/use-latest-water-report";
-import { WaterBalanceChart } from "@/features/water-intelligence/water-balance-chart";
+import { useWaterReportHistory } from "@/features/water-intelligence/use-water-report-history";
+import { WATER_BALANCE_BAR_COLORS, WaterBalanceChart } from "@/features/water-intelligence/water-balance-chart";
 import { ApiError } from "@/lib/api/errors";
 import { formatArea } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -54,6 +56,7 @@ export default function WaterReportDashboardPage() {
   const { id } = useParams<{ id: string }>();
   const { data: catchments, isPending: catchmentsPending } = useCatchments();
   const report = useLatestWaterReport(id);
+  const history = useWaterReportHistory(id);
 
   const catchment = catchments?.find((item) => item.id === id);
   const isPending = catchmentsPending || report.isPending;
@@ -115,6 +118,18 @@ export default function WaterReportDashboardPage() {
   const rechargeStress = data.recharge_stress;
   const confidence = numberField(rechargeStress.raw_inputs, "confidence");
   const insights = deriveWaterReportInsights(data);
+
+  // history.data is newest-first (the right order for a list); a chart
+  // reads left-to-right as oldest-to-newest, so reverse for that one use.
+  const historyOldestFirst = [...(history.data ?? [])].reverse();
+  const stressTrendPoints: TrendPoint[] = historyOldestFirst.map((item) => ({
+    generatedAt: item.generated_at,
+    value: item.recharge_stress.stress_score,
+  }));
+  const storageChangeTrendPoints: TrendPoint[] = historyOldestFirst.map((item) => ({
+    generatedAt: item.generated_at,
+    value: item.water_balance.storage_change_mm,
+  }));
 
   const factorCards = [
     {
@@ -281,6 +296,42 @@ export default function WaterReportDashboardPage() {
                 )}
               </div>
             ))}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* 3b. Trend over time */}
+      <Card size="sm" className="print:break-inside-avoid">
+        <CardHeader>
+          <CardTitle>Trend over time</CardTitle>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-4">
+          <p className="text-xs text-muted-foreground">
+            Every past completed run for this catchment — not a projection, only real report-to-report change.
+            {" "}
+            <Link href={`/catchments/compare?ids=${id}`} className="underline">
+              Compare with another catchment
+            </Link>
+          </p>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div>
+              <p className="mb-1.5 text-xs text-muted-foreground">Recharge stress score</p>
+              <MetricTrendChart
+                points={stressTrendPoints}
+                color="#8b5cf6"
+                ariaLabel="Recharge stress score over time"
+                valueFormatter={(value) => `${Math.round(value)} / 100`}
+              />
+            </div>
+            <div>
+              <p className="mb-1.5 text-xs text-muted-foreground">Storage change (recharge)</p>
+              <MetricTrendChart
+                points={storageChangeTrendPoints}
+                color={WATER_BALANCE_BAR_COLORS.storageChange}
+                ariaLabel="Storage change in millimetres over time"
+                valueFormatter={(value) => formatMm(value)}
+              />
+            </div>
           </div>
         </CardContent>
       </Card>
