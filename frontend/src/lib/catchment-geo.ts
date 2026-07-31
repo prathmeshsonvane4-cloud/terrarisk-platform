@@ -1,4 +1,5 @@
 import turfArea from "@turf/area";
+import turfBooleanIntersects from "@turf/boolean-intersects";
 
 import type { components } from "@/lib/api/schema";
 
@@ -63,4 +64,40 @@ export function catchmentAreaBoundsIssue(hectares: number): string | null {
     return "This boundary is far larger than the allowed catchment size — redraw a smaller area.";
   }
   return null;
+}
+
+/**
+ * The single ring to seed an editable AOI with, taken from an admin
+ * boundary's own geometry (Select Area's "Create Editable AOI" — see
+ * docs/TerraRisk_Editable_AOI_2026.md) — the starting shape a user then
+ * reshapes, never the boundary itself. A village's geometry is a
+ * MultiPolygon (ST_AsGeoJSON of a MULTIPOLYGON column); real villages
+ * are simply-connected in practice, so when more than one ring is
+ * present this takes the one with the most vertices as the most
+ * detailed/significant ring — a deterministic heuristic, not a claim
+ * about which ring is "correct."
+ */
+export function ringFromGeometry(geometry: GeoJSON.Geometry): Ring | null {
+  if (geometry.type === "Polygon") {
+    return geometry.coordinates[0] as Ring;
+  }
+  if (geometry.type === "MultiPolygon") {
+    const rings = geometry.coordinates.map((polygon) => polygon[0]);
+    if (rings.length === 0) return null;
+    return rings.reduce((largest, current) => (current.length > largest.length ? current : largest)) as Ring;
+  }
+  return null;
+}
+
+/**
+ * Whether a (possibly user-edited) ring still overlaps a reference
+ * geometry at all — the AOI/village overlap check. A warning-only
+ * signal (Select Area's editable-AOI validation): there is no backend
+ * rule requiring a catchment to overlap its admin_boundary_id at all,
+ * so this is never used to block submission, only to explain what
+ * happened.
+ */
+export function ringOverlapsGeometry(ring: Ring, geometry: GeoJSON.Geometry): boolean {
+  if (ring.length < 3) return false;
+  return turfBooleanIntersects(toCatchmentGeometry(ring), geometry);
 }

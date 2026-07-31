@@ -7,7 +7,7 @@ import { TerraDrawMapLibreGLAdapter } from "terra-draw-maplibre-gl-adapter";
 
 import { BaseMap } from "@/components/map/base-map";
 import { Button } from "@/components/ui/button";
-import type { Ring } from "@/lib/catchment-geo";
+import { ringFromGeometry, type Ring } from "@/lib/catchment-geo";
 import { removeGeoJsonOverlay, setGeoJsonOverlay } from "@/lib/map-overlay";
 
 // Latur district center — same pre-selection view farm-map.tsx uses, so
@@ -25,14 +25,23 @@ interface CatchmentMapProps {
   onPolygonChange: (ring: Ring | null, complete: boolean) => void;
   locked?: boolean;
   className?: string;
-  /** A non-editable boundary shown underneath the draw layer — the
-   * "Draw Inside Village" path of Select Area
-   * (docs/WELL_Labs_Service2_Strategic_Enhancement_2026.md Part 4), so an
-   * officer can see the village they picked while tracing inside it.
-   * Purely visual: nothing here constrains what Terra Draw lets them
-   * draw, since enforcing containment would need a real server-side
-   * check, deferred to Phase 2. */
+  /** A non-editable boundary shown underneath the draw layer — Select
+   * Area's village reference (docs/TerraRisk_Editable_AOI_2026.md), so
+   * an officer can see the village they picked while reshaping the AOI
+   * against it. Purely visual: this component never edits it, and
+   * nothing here constrains what Terra Draw lets the AOI become —
+   * overlap is checked and explained by the caller, never enforced
+   * here. */
   referenceGeometry?: GeoJSON.Geometry | null;
+  /** Seeds the editable polygon with this geometry's own shape the
+   * moment the map is ready, then immediately selects it (Terra Draw's
+   * edit/select mode) — Select Area's "Create Editable AOI" entry
+   * point. Read exactly once per mount (a fresh `key` on this component
+   * is how a caller starts a new seeded session); later prop changes
+   * are ignored so a re-render mid-edit can never silently overwrite a
+   * user's in-progress reshape. `null`/omitted keeps this component's
+   * original empty-start behaviour (the Draw tab). */
+  initialAoiGeometry?: GeoJSON.Polygon | GeoJSON.MultiPolygon | null;
 }
 
 /**
@@ -58,6 +67,7 @@ export const CatchmentMap = memo(function CatchmentMap({
   locked = false,
   className,
   referenceGeometry = null,
+  initialAoiGeometry = null,
 }: CatchmentMapProps) {
   const mapRef = useRef<maplibregl.Map | null>(null);
   const drawRef = useRef<TerraDraw | null>(null);
@@ -66,6 +76,9 @@ export const CatchmentMap = memo(function CatchmentMap({
   const mapLoadedRef = useRef(false);
   const referenceGeometryRef = useRef(referenceGeometry);
   referenceGeometryRef.current = referenceGeometry;
+  // Read once at seed time, deliberately not kept in sync with prop
+  // changes afterward — see initialAoiGeometry's own doc comment.
+  const initialAoiGeometryRef = useRef(initialAoiGeometry);
 
   const onPolygonChangeRef = useRef(onPolygonChange);
   onPolygonChangeRef.current = onPolygonChange;
@@ -145,9 +158,35 @@ export const CatchmentMap = memo(function CatchmentMap({
         });
 
         drawRef.current = draw;
+
+        // Select Area's "Create Editable AOI": seed the draw store with
+        // the village's own shape as a real, already-selected polygon
+        // feature — not an empty canvas the user draws from scratch.
+        // Terra Draw's own documented pattern for this is addFeatures()
+        // (tagged properties.mode: "polygon" so TerraDrawSelectMode will
+        // operate on it) followed by selectFeature(), which immediately
+        // shows drag handles/midpoints exactly as if the user had just
+        // finished drawing and switched to edit mode themselves.
+        const seedGeometry = initialAoiGeometryRef.current;
+        const seedRing = seedGeometry ? ringFromGeometry(seedGeometry) : null;
+        if (seedRing) {
+          const featureId = crypto.randomUUID();
+          draw.addFeatures([
+            {
+              id: featureId,
+              type: "Feature",
+              geometry: { type: "Polygon", coordinates: [seedRing] },
+              properties: { mode: "polygon" },
+            },
+          ]);
+          draw.setMode("select");
+          draw.selectFeature(featureId);
+          setUiMode("select");
+          reportSnapshot(draw);
+        }
       });
     },
-    [scheduleReport],
+    [scheduleReport, reportSnapshot],
   );
 
   useEffect(() => {

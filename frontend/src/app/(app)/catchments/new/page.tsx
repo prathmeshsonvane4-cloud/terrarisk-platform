@@ -17,24 +17,23 @@ import { useUploadCatchment } from "@/features/water-intelligence/use-upload-cat
 import {
   catchmentAreaBoundsIssue,
   ringAreaHectares,
+  ringOverlapsGeometry,
   toCatchmentGeometry,
-  type CatchmentGeometry,
   type Ring,
 } from "@/lib/catchment-geo";
 import { formatArea } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 type SourceMode = "draw" | "upload" | "select-area";
-type SelectAreaChoice = "village" | "draw-inside" | null;
 
 const ACCEPTED_UPLOAD_EXTENSIONS = ".geojson,.json,.kml,.zip";
 
 /**
  * New catchment — combines M4-003's manual-draw path, M4-004's upload
- * path, and Select Area (docs/WELL_Labs_Service2_Strategic_Enhancement_2026.md
- * Part 4) behind one toggle, mirroring assessment-wizard.tsx's two-region
- * layout (persistent map + step-content aside) but as a single step, not
- * a multi-step wizard.
+ * path, and Select Area's editable AOI (docs/TerraRisk_Editable_AOI_2026.md)
+ * behind one toggle, mirroring assessment-wizard.tsx's two-region layout
+ * (persistent map + step-content aside) but as a single step, not a
+ * multi-step wizard.
  */
 export default function NewCatchmentPage() {
   const router = useRouter();
@@ -44,7 +43,13 @@ export default function NewCatchmentPage() {
   const [ringComplete, setRingComplete] = useState(false);
   const [file, setFile] = useState<File | null>(null);
   const [selectedVillage, setSelectedVillage] = useState<AdminBoundarySummary | null>(null);
-  const [selectAreaChoice, setSelectAreaChoice] = useState<SelectAreaChoice>(null);
+  // Select Area's own sub-step: village chosen and previewed (false) vs.
+  // the editable AOI — seeded from the village's own shape — is on
+  // screen and being adjusted (true). There is no third state: the old
+  // "use the whole village, unmodifiable" vs. "draw from scratch inside
+  // it" choice is gone — one editable AOI, seeded from the village,
+  // covers both (submit unedited for the former, reshape for the latter).
+  const [aoiActive, setAoiActive] = useState(false);
 
   const villageDetail = useAdminBoundaryDetail(selectedVillage?.id ?? null);
 
@@ -53,9 +58,18 @@ export default function NewCatchmentPage() {
   const isSubmitting = createCatchment.isPending || uploadCatchment.isPending;
   const submitError = createCatchment.error ?? uploadCatchment.error;
 
-  const isDrawingRing = sourceMode === "draw" || (sourceMode === "select-area" && selectAreaChoice === "draw-inside");
+  const isDrawingRing = sourceMode === "draw" || (sourceMode === "select-area" && aoiActive);
   const previewAreaHa = isDrawingRing && ring && ring.length >= 3 ? ringAreaHectares(ring) : null;
   const areaIssue = previewAreaHa !== null ? catchmentAreaBoundsIssue(previewAreaHa) : null;
+
+  const villageGeometry = (villageDetail.data?.geometry as GeoJSON.Geometry | undefined) ?? null;
+  // Warning-only (mission: "Do NOT automatically reject the edit. Simply
+  // explain what happened") — there is no backend rule requiring a
+  // catchment to overlap its admin_boundary_id at all, so this never
+  // gates canSubmit, unlike areaIssue below (which mirrors a real
+  // server-enforced bound).
+  const aoiOverlapsVillage =
+    aoiActive && ring && ring.length >= 3 && villageGeometry ? ringOverlapsGeometry(ring, villageGeometry) : true;
 
   const canSubmit =
     name.trim().length > 0 &&
@@ -64,11 +78,7 @@ export default function NewCatchmentPage() {
       ? Boolean(ring && ringComplete && !areaIssue)
       : sourceMode === "upload"
         ? Boolean(file)
-        : selectAreaChoice === "village"
-          ? Boolean(villageDetail.data)
-          : selectAreaChoice === "draw-inside"
-            ? Boolean(ring && ringComplete && !areaIssue)
-            : false);
+        : Boolean(aoiActive && ring && ringComplete && !areaIssue));
 
   function handlePolygonChange(nextRing: Ring | null, complete: boolean) {
     setRing(nextRing);
@@ -82,12 +92,12 @@ export default function NewCatchmentPage() {
     setRingComplete(false);
     setFile(null);
     setSelectedVillage(null);
-    setSelectAreaChoice(null);
+    setAoiActive(false);
   }
 
   function handleVillageSelect(village: AdminBoundarySummary | null) {
     setSelectedVillage(village);
-    setSelectAreaChoice(null);
+    setAoiActive(false);
     setRing(null);
     setRingComplete(false);
   }
@@ -110,22 +120,13 @@ export default function NewCatchmentPage() {
       );
       return;
     }
-    if (sourceMode === "select-area" && selectedVillage) {
-      const geometry =
-        selectAreaChoice === "village" && villageDetail.data
-          ? (villageDetail.data.geometry as unknown as CatchmentGeometry)
-          : selectAreaChoice === "draw-inside" && ring
-            ? toCatchmentGeometry(ring)
-            : null;
-      if (!geometry) return;
+    if (sourceMode === "select-area" && selectedVillage && ring) {
       createCatchment.mutate(
-        { name: name.trim(), geometry, adminBoundaryId: selectedVillage.id },
+        { name: name.trim(), geometry: toCatchmentGeometry(ring), adminBoundaryId: selectedVillage.id },
         { onSuccess: (catchment) => router.push(`/catchments/${catchment.id}`) },
       );
     }
   }
-
-  const villageGeometry = (villageDetail.data?.geometry as GeoJSON.Geometry | undefined) ?? null;
 
   return (
     <div className="flex flex-1 flex-col md:flex-row">
@@ -146,12 +147,14 @@ export default function NewCatchmentPage() {
           </div>
         )}
         {sourceMode === "select-area" &&
-          (selectAreaChoice === "draw-inside" ? (
+          (aoiActive ? (
             <CatchmentMap
+              key={selectedVillage?.id}
               hasPolygon={Boolean(ring)}
               onPolygonChange={handlePolygonChange}
               locked={isSubmitting}
               referenceGeometry={villageGeometry}
+              initialAoiGeometry={villageGeometry as GeoJSON.Polygon | GeoJSON.MultiPolygon | null}
               className="absolute inset-0"
             />
           ) : (
@@ -220,11 +223,19 @@ export default function NewCatchmentPage() {
           {isDrawingRing && (
             <div className="flex flex-col gap-1 text-sm">
               {previewAreaHa !== null ? (
-                <p className="text-muted-foreground">Preview area: {formatArea(previewAreaHa)}</p>
+                <p className="text-muted-foreground">
+                  {sourceMode === "select-area" ? "Area of interest" : "Preview area"}: {formatArea(previewAreaHa)}
+                </p>
               ) : (
                 <p className="text-muted-foreground">Draw a boundary on the map to continue.</p>
               )}
               {areaIssue && <p className="text-destructive">{areaIssue}</p>}
+              {sourceMode === "select-area" && !areaIssue && !aoiOverlapsVillage && (
+                <p className="text-amber-700">
+                  This area of interest no longer overlaps the selected village. That&rsquo;s allowed — just make
+                  sure it&rsquo;s still the area you meant to cover.
+                </p>
+              )}
             </div>
           )}
 
@@ -259,45 +270,25 @@ export default function NewCatchmentPage() {
                       .filter(Boolean)
                       .join(", ")}
                   </p>
-                  <p className="text-muted-foreground">Area: {formatArea(villageDetail.data.area_ha)}</p>
+                  <p className="text-muted-foreground">Village area: {formatArea(villageDetail.data.area_ha)}</p>
 
-                  {selectAreaChoice === null && (
-                    <div className="flex gap-2 pt-1">
-                      <Button
-                        type="button"
-                        size="sm"
-                        onClick={() => setSelectAreaChoice("village")}
-                        disabled={isSubmitting}
-                      >
-                        Use entire village
-                      </Button>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        onClick={() => setSelectAreaChoice("draw-inside")}
-                        disabled={isSubmitting}
-                      >
-                        Draw inside village
-                      </Button>
-                    </div>
+                  {!aoiActive && (
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={() => setAoiActive(true)}
+                      disabled={isSubmitting}
+                      className="mt-1 self-start"
+                    >
+                      Create Editable AOI
+                    </Button>
                   )}
 
-                  {selectAreaChoice === "draw-inside" && (
+                  {aoiActive && (
                     <p className="text-xs text-muted-foreground">
-                      Draw your boundary on the map — the green village outline is a reference only and isn&rsquo;t
-                      enforced.{" "}
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setSelectAreaChoice(null);
-                          setRing(null);
-                          setRingComplete(false);
-                        }}
-                        className="underline"
-                      >
-                        Change choice
-                      </button>
+                      The green outline is the village boundary — shown for reference and never edited. Drag its
+                      points, drag a midpoint to add a new one, or delete a point on the blue area of interest to
+                      resize or reshape it.
                     </p>
                   )}
                 </div>
