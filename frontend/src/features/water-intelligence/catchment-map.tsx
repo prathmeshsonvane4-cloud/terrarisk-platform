@@ -171,7 +171,7 @@ export const CatchmentMap = memo(function CatchmentMap({
         const seedRing = seedGeometry ? ringFromGeometry(seedGeometry) : null;
         if (seedRing) {
           const featureId = crypto.randomUUID();
-          draw.addFeatures([
+          const [result] = draw.addFeatures([
             {
               id: featureId,
               type: "Feature",
@@ -179,10 +179,21 @@ export const CatchmentMap = memo(function CatchmentMap({
               properties: { mode: "polygon" },
             },
           ]);
-          draw.setMode("select");
-          draw.selectFeature(featureId);
-          setUiMode("select");
-          reportSnapshot(draw);
+          // addFeatures rejects rather than throwing (e.g. a source with
+          // coordinate precision beyond terra-draw's default 9 decimal
+          // places, which real village geometry never has today — PostGIS's
+          // own ST_AsGeoJSON default matches that same 9-digit limit — but
+          // selectFeature() below throws for a feature id that was never
+          // actually added, so this must be checked rather than assumed.
+          // Falling through leaves the map exactly as it starts empty
+          // (the pre-existing Draw behaviour): the officer draws the AOI
+          // from scratch instead of it being pre-seeded.
+          if (result?.valid) {
+            draw.setMode("select");
+            draw.selectFeature(featureId);
+            setUiMode("select");
+            reportSnapshot(draw);
+          }
         }
       });
     },
