@@ -10,6 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
 
+from app.api.admin_boundaries import router as admin_boundaries_router
 from app.api.auth import router as auth_router
 from app.api.catchments import router as catchments_router
 from app.api.farms import router as farms_router
@@ -76,6 +77,7 @@ app.include_router(farms_router, prefix=API_V1_PREFIX)
 app.include_router(jobs_router, prefix=API_V1_PREFIX)
 app.include_router(reports_router, prefix=API_V1_PREFIX)
 app.include_router(catchments_router, prefix=API_V1_PREFIX)
+app.include_router(admin_boundaries_router, prefix=API_V1_PREFIX)
 
 
 @app.exception_handler(HTTPException)

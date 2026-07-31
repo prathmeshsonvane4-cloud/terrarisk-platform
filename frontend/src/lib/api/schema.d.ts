@@ -392,6 +392,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin-boundaries": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Admin Boundaries */
+        get: operations["list_admin_boundaries_api_v1_admin_boundaries_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin-boundaries/{boundary_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Admin Boundary */
+        get: operations["get_admin_boundary_api_v1_admin_boundaries__boundary_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/": {
         parameters: {
             query?: never;
@@ -475,6 +509,54 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+        };
+        /**
+         * AdminBoundaryDetail
+         * @description Full detail for the Select Area preview/confirm step: the boundary's
+         *     own geometry plus its resolved ancestor names at every level that
+         *     applies (a taluka has no `village`; a village has all four).
+         */
+        AdminBoundaryDetail: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            level: components["schemas"]["BoundaryLevel"];
+            /** Name */
+            name: string;
+            /** Lgd Code */
+            lgd_code: string | null;
+            /** State */
+            state: string | null;
+            /** District */
+            district: string | null;
+            /** Taluka */
+            taluka: string | null;
+            /** Village */
+            village: string | null;
+            /** Geometry */
+            geometry: {
+                [key: string]: unknown;
+            };
+            /** Area Ha */
+            area_ha: number;
+        };
+        /**
+         * AdminBoundarySummary
+         * @description One row in a cascading dropdown — deliberately minimal, no geometry.
+         */
+        AdminBoundarySummary: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            level: components["schemas"]["BoundaryLevel"];
+            /** Name */
+            name: string;
+            /** Lgd Code */
+            lgd_code: string | null;
         };
         /**
          * AssessmentListItem
@@ -568,6 +650,11 @@ export interface components {
             /** Admin Boundary Id */
             admin_boundary_id?: string | null;
         };
+        /**
+         * BoundaryLevel
+         * @enum {string}
+         */
+        BoundaryLevel: "state" | "district" | "taluka" | "village";
         /**
          * CalibrationStatus
          * @description Whether a water_balance_result has ever been checked against real
@@ -1877,6 +1964,71 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ReportTriggerResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_admin_boundaries_api_v1_admin_boundaries_get: {
+        parameters: {
+            query?: {
+                /** @description Omit to list top-level states. */
+                parent_id?: string | null;
+                /** @description Optional extra filter; children are already one level below parent_id. */
+                level?: components["schemas"]["BoundaryLevel"] | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminBoundarySummary"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_admin_boundary_api_v1_admin_boundaries__boundary_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                boundary_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminBoundaryDetail"];
                 };
             };
             /** @description Validation Error */

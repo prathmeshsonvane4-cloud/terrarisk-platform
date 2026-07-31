@@ -8,6 +8,7 @@ import { TerraDrawMapLibreGLAdapter } from "terra-draw-maplibre-gl-adapter";
 import { BaseMap } from "@/components/map/base-map";
 import { Button } from "@/components/ui/button";
 import type { Ring } from "@/lib/catchment-geo";
+import { removeGeoJsonOverlay, setGeoJsonOverlay } from "@/lib/map-overlay";
 
 // Latur district center — same pre-selection view farm-map.tsx uses, so
 // a catchment (there is no village to fly to) still opens on a real,
@@ -17,11 +18,21 @@ const DISTRICT_ZOOM = 9;
 
 type DrawUiMode = "static" | "polygon" | "select";
 
+const REFERENCE_SOURCE_ID = "catchment-map-reference-boundary";
+
 interface CatchmentMapProps {
   hasPolygon: boolean;
   onPolygonChange: (ring: Ring | null, complete: boolean) => void;
   locked?: boolean;
   className?: string;
+  /** A non-editable boundary shown underneath the draw layer — the
+   * "Draw Inside Village" path of Select Area
+   * (docs/WELL_Labs_Service2_Strategic_Enhancement_2026.md Part 4), so an
+   * officer can see the village they picked while tracing inside it.
+   * Purely visual: nothing here constrains what Terra Draw lets them
+   * draw, since enforcing containment would need a real server-side
+   * check, deferred to Phase 2. */
+  referenceGeometry?: GeoJSON.Geometry | null;
 }
 
 /**
@@ -46,11 +57,15 @@ export const CatchmentMap = memo(function CatchmentMap({
   onPolygonChange,
   locked = false,
   className,
+  referenceGeometry = null,
 }: CatchmentMapProps) {
   const mapRef = useRef<maplibregl.Map | null>(null);
   const drawRef = useRef<TerraDraw | null>(null);
   const throttleRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [uiMode, setUiMode] = useState<DrawUiMode>("static");
+  const mapLoadedRef = useRef(false);
+  const referenceGeometryRef = useRef(referenceGeometry);
+  referenceGeometryRef.current = referenceGeometry;
 
   const onPolygonChangeRef = useRef(onPolygonChange);
   onPolygonChangeRef.current = onPolygonChange;
@@ -83,6 +98,11 @@ export const CatchmentMap = memo(function CatchmentMap({
     (map: maplibregl.Map) => {
       mapRef.current = map;
       map.on("load", () => {
+        mapLoadedRef.current = true;
+        if (referenceGeometryRef.current) {
+          setGeoJsonOverlay(map, REFERENCE_SOURCE_ID, referenceGeometryRef.current, { color: "#16a34a" });
+        }
+
         const draw = new TerraDraw({
           adapter: new TerraDrawMapLibreGLAdapter({ map }),
           modes: [
@@ -129,6 +149,16 @@ export const CatchmentMap = memo(function CatchmentMap({
     },
     [scheduleReport],
   );
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapLoadedRef.current) return;
+    if (referenceGeometry) {
+      setGeoJsonOverlay(map, REFERENCE_SOURCE_ID, referenceGeometry, { color: "#16a34a", fitBounds: false });
+    } else {
+      removeGeoJsonOverlay(map, REFERENCE_SOURCE_ID);
+    }
+  }, [referenceGeometry]);
 
   // Entering the locked state (submit in flight) forces the map out of
   // any draw/edit mode so no interaction can mutate geometry the server
