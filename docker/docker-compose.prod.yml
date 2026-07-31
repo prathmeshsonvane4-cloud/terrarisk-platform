@@ -59,6 +59,17 @@ services:
       # host. GEE_SERVICE_ACCOUNT_JSON_HOST_PATH (root .env) controls the
       # host side of that mount.
       GEE_SERVICE_ACCOUNT_JSON_PATH: /run/secrets/gee-service-account.json
+      # Water Intelligence's GEEHydrologyProvider requires its own,
+      # separate pair (Blueprint v2 D9's quota-isolation decision) — not
+      # derived from the two vars above, so a compose file with only
+      # Service 1's credentials passes through leaves every water-report
+      # job failing with "GEE_HYDROLOGY_PROJECT_ID and
+      # GEE_HYDROLOGY_SERVICE_ACCOUNT_JSON_PATH must be set" even when
+      # .env correctly has them (reproduced on the real deployment,
+      # 2026-07-31 — .env had both set, but nothing in this file passed
+      # them into the container, so every trigger failed immediately).
+      GEE_HYDROLOGY_PROJECT_ID: ${GEE_HYDROLOGY_PROJECT_ID:-}
+      GEE_HYDROLOGY_SERVICE_ACCOUNT_JSON_PATH: ${GEE_HYDROLOGY_SERVICE_ACCOUNT_JSON_PATH:-}
       FRONTEND_ORIGIN: ${FRONTEND_ORIGIN}
       REPORT_PDF_CACHE_DIR: var/pdf_cache
     volumes:
