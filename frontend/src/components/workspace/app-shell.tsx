@@ -48,7 +48,7 @@ function isActive(pathname: string, href: string): boolean {
  * and "/catchments/map", and only the latter should read as current.
  * Deliberately length-based rather than per-item "exact" flags, which
  * would break "/catchments/{id}" still highlighting Catchments. */
-function activeHref(pathname: string, hrefs: readonly string[]): string | null {
+export function activeHref(pathname: string, hrefs: readonly string[]): string | null {
   const matches = hrefs.filter((href) => isActive(pathname, href));
   if (matches.length === 0) return null;
   return matches.reduce((longest, href) => (href.length > longest.length ? href : longest));
