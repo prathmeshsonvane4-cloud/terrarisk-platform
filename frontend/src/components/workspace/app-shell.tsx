@@ -1,6 +1,6 @@
 "use client";
 
-import { Droplets, FileText, LayoutDashboard, ListChecks, LogOut, Map, Menu, Plus } from "lucide-react";
+import { Droplets, FileText, LayoutDashboard, ListChecks, LogOut, Map, MapPin, Menu, Plus } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useState, type MouseEvent, type ReactNode } from "react";
@@ -30,11 +30,28 @@ const SERVICE_ONE_NAV_ITEMS = [
   { href: "/reports", label: "Reports", icon: FileText },
 ] as const;
 
-const WATER_INTELLIGENCE_NAV_ITEM = { href: "/catchments", label: "Catchments", icon: Droplets } as const;
+// Map first: the district view is where a programme day now starts
+// (docs/WELL_Labs_Spatial_Redesign_2026.md) — the list is the drill-down
+// from it, not the entry point.
+const WATER_INTELLIGENCE_NAV_ITEMS = [
+  { href: "/catchments/map", label: "Map", icon: MapPin },
+  { href: "/catchments", label: "Catchments", icon: Droplets },
+] as const;
 
 function isActive(pathname: string, href: string): boolean {
   if (href === "/") return pathname === "/";
   return pathname === href || pathname.startsWith(`${href}/`);
+}
+
+/** The most specific matching nav href wins, so nested routes don't light
+ * up their parent as well: "/catchments/map" matches both "/catchments"
+ * and "/catchments/map", and only the latter should read as current.
+ * Deliberately length-based rather than per-item "exact" flags, which
+ * would break "/catchments/{id}" still highlighting Catchments. */
+function activeHref(pathname: string, hrefs: readonly string[]): string | null {
+  const matches = hrefs.filter((href) => isActive(pathname, href));
+  if (matches.length === 0) return null;
+  return matches.reduce((longest, href) => (href.length > longest.length ? href : longest));
 }
 
 function NavLinks({ pathname, onNavigate }: { pathname: string; onNavigate?: () => void }) {
@@ -44,8 +61,12 @@ function NavLinks({ pathname, onNavigate }: { pathname: string; onNavigate?: () 
   const navItems = [
     COMMON_NAV_ITEM,
     ...(isWaterIntelligence ? [] : SERVICE_ONE_NAV_ITEMS),
-    ...(isWaterIntelligence ? [WATER_INTELLIGENCE_NAV_ITEM] : []),
+    ...(isWaterIntelligence ? WATER_INTELLIGENCE_NAV_ITEMS : []),
   ];
+  const currentHref = activeHref(
+    pathname,
+    navItems.map((item) => item.href),
+  );
 
   function handleClick(event: MouseEvent<HTMLAnchorElement>) {
     // P10 navigation protection: a Next.js <Link> transition never fires
@@ -65,10 +86,10 @@ function NavLinks({ pathname, onNavigate }: { pathname: string; onNavigate?: () 
           key={href}
           href={href}
           onClick={handleClick}
-          aria-current={isActive(pathname, href) ? "page" : undefined}
+          aria-current={currentHref === href ? "page" : undefined}
           className={cn(
             "flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm font-medium transition-colors",
-            isActive(pathname, href)
+            currentHref === href
               ? "bg-primary/10 text-primary"
               : "text-muted-foreground hover:bg-muted hover:text-foreground",
           )}

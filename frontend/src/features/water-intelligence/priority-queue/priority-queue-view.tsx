@@ -1,6 +1,6 @@
 "use client";
 
-import { ClipboardList } from "lucide-react";
+import { ClipboardList, MapPin } from "lucide-react";
 import Link from "next/link";
 
 import { buttonVariants } from "@/components/ui/button";
@@ -97,9 +97,15 @@ export function PriorityQueueView({ maxCatchments, embedded = false }: PriorityQ
               water-balance data as each catchment&rsquo;s own report, not a separate model.
             </p>
           </div>
-          <Link href="/catchments" className={buttonVariants({ variant: "outline", size: "sm" })}>
-            Back to Catchments
-          </Link>
+          <div className="flex items-center gap-2">
+            <Link href="/catchments/map" className={cn(buttonVariants({ variant: "outline", size: "sm" }), "gap-1.5")}>
+              <MapPin aria-hidden className="size-4" />
+              View on map
+            </Link>
+            <Link href="/catchments" className={buttonVariants({ variant: "outline", size: "sm" })}>
+              Back to Catchments
+            </Link>
+          </div>
         </header>
       )}
 
@@ -149,17 +155,29 @@ export function PriorityQueueView({ maxCatchments, embedded = false }: PriorityQ
                     {formatArea(catchment.area_ha)} · {DELINEATION_METHOD_LABELS[catchment.delineation_method]}
                   </p>
                 </div>
-                <span
-                  className={cn(
-                    "rounded-full px-2 py-0.5 text-xs font-medium",
-                    highestSeverity(recommendations) === "high" && "bg-red-100 text-red-900",
-                    highestSeverity(recommendations) === "medium" && "bg-amber-100 text-amber-900",
-                    highestSeverity(recommendations) === "low" && "bg-sky-100 text-sky-900",
-                    highestSeverity(recommendations) === "info" && "bg-emerald-100 text-emerald-900",
-                  )}
-                >
-                  {recommendations.length} {recommendations.length === 1 ? "recommendation" : "recommendations"}
-                </span>
+                <div className="flex items-center gap-2">
+                  <span
+                    className={cn(
+                      "rounded-full px-2 py-0.5 text-xs font-medium",
+                      highestSeverity(recommendations) === "high" && "bg-red-100 text-red-900",
+                      highestSeverity(recommendations) === "medium" && "bg-amber-100 text-amber-900",
+                      highestSeverity(recommendations) === "low" && "bg-sky-100 text-sky-900",
+                      highestSeverity(recommendations) === "info" && "bg-emerald-100 text-emerald-900",
+                    )}
+                  >
+                    {recommendations.length} {recommendations.length === 1 ? "recommendation" : "recommendations"}
+                  </span>
+                  {/* A queue row names a village; this puts it back in its
+                      landscape, where whether its neighbours share the
+                      problem is visible. */}
+                  <Link
+                    href={`/catchments/map?focus=${catchment.id}`}
+                    className={cn(buttonVariants({ size: "sm", variant: "outline" }), "gap-1.5")}
+                  >
+                    <MapPin aria-hidden className="size-3.5" />
+                    Locate on Map
+                  </Link>
+                </div>
               </div>
             </CardHeader>
             <CardContent className="flex flex-col gap-2">

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowRight, Plus } from "lucide-react";
+import { ArrowRight, MapPin, Plus } from "lucide-react";
 
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -38,14 +38,20 @@ function WaterIntelligenceOverview({ firstName }: { firstName: string | undefine
         <div>
           <h1 className="text-lg font-semibold">{firstName ? `Good to see you, ${firstName}` : "Overview"}</h1>
           <p className="text-sm text-muted-foreground">
-            TerraRisk Water Intelligence turns satellite rainfall, vegetation, and surface-water readings into a ranked
-            list of which catchments need attention this week, and why.
+            TerraRisk Water Intelligence turns satellite rainfall, vegetation, and surface-water readings into a map of
+            where water stress is building, and a ranked list of which villages need attention this week, and why.
           </p>
         </div>
-        <Link href="/catchments/new" className={cn(buttonVariants({ size: "sm" }), "gap-1.5")}>
-          <Plus aria-hidden className="size-4" />
-          New catchment
-        </Link>
+        <div className="flex items-center gap-2">
+          <Link href="/catchments/map" className={cn(buttonVariants({ size: "sm", variant: "outline" }), "gap-1.5")}>
+            <MapPin aria-hidden className="size-4" />
+            Open map
+          </Link>
+          <Link href="/catchments/new" className={cn(buttonVariants({ size: "sm" }), "gap-1.5")}>
+            <Plus aria-hidden className="size-4" />
+            New catchment
+          </Link>
+        </div>
       </header>
       <PriorityQueueView maxCatchments={LANDING_PRIORITY_QUEUE_PREVIEW_SIZE} embedded />
     </div>

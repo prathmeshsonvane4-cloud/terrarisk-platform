@@ -57,6 +57,39 @@ export const STORAGE_CHANGE_BAND_PDF_COLORS: Record<StorageChangeBand, [number, 
   much_above_normal: [29, 78, 216], // blue-700
 };
 
+function rgbToHex([red, green, blue]: [number, number, number]): string {
+  return `#${[red, green, blue].map((channel) => channel.toString(16).padStart(2, "0")).join("")}`;
+}
+
+/**
+ * Map-layer fill/outline colors, derived at module load from
+ * STRESS_BAND_PDF_COLORS rather than written out again as fresh hexes.
+ * MapLibre paint properties take concrete colors (a Tailwind class means
+ * nothing to a GL layer), so the choropleth needs hex — but deriving
+ * them keeps the existing "one source of truth for which color family
+ * represents this band" rule literally true: the chip, the PDF chip, and
+ * the map polygon cannot drift apart, because there is only one place
+ * the emerald/amber/orange/red families are chosen.
+ */
+export const STRESS_BAND_MAP_COLORS: Record<StressBand, string> = {
+  low: rgbToHex(STRESS_BAND_PDF_COLORS.low),
+  moderate: rgbToHex(STRESS_BAND_PDF_COLORS.moderate),
+  high: rgbToHex(STRESS_BAND_PDF_COLORS.high),
+  very_high: rgbToHex(STRESS_BAND_PDF_COLORS.very_high),
+};
+
+/**
+ * A monitored village with no completed water report yet — a real,
+ * already-modelled state (recommendations.ts's "needs_first_report"),
+ * not an error and not a fifth stress level. Deliberately a neutral grey
+ * outside the emerald→red stress ramp so it reads as "no reading taken"
+ * rather than "a reading that happens to be mild": on a choropleth,
+ * absence of data must not be mistakable for presence of a good result.
+ */
+export const NO_REPORT_MAP_COLOR = "#94a3b8"; // slate-400
+
+export const NO_REPORT_LABEL = "No report yet";
+
 interface StressBandChipProps {
   band: StressBand;
   /** When provided, renders "{label} · {score}" — mirrors RiskBandChip's

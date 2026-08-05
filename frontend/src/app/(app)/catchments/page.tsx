@@ -1,6 +1,6 @@
 "use client";
 
-import { ClipboardList, Droplets, GitCompare, Plus } from "lucide-react";
+import { ClipboardList, Droplets, GitCompare, MapPin, Plus } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 
@@ -42,6 +42,10 @@ export default function CatchmentsPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <Link href="/catchments/map" className={cn(buttonVariants({ size: "sm", variant: "outline" }), "gap-1.5")}>
+            <MapPin aria-hidden className="size-4" />
+            Map
+          </Link>
           <Link href="/catchments/priority-queue" className={cn(buttonVariants({ size: "sm", variant: "outline" }), "gap-1.5")}>
             <ClipboardList aria-hidden className="size-4" />
             Priority Queue
