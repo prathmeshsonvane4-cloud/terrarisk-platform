@@ -123,12 +123,27 @@ async def load(file_path: Path) -> None:
         # Simplified geometry is a PostGIS computation, not a client-side
         # one, so it stays consistent with however else the app simplifies
         # geometry (Blueprint §05).
-        await session.execute(
-            text(
-                "UPDATE admin_boundary SET geometry_simplified = "
-                "ST_SimplifyPreserveTopology(geometry, 0.001) WHERE geometry_simplified IS NULL"
+        #
+        # Tolerance is level-aware. 0.001 degrees is ~111 m, which is
+        # sensible for state/district/taluka polygons (tens of km across)
+        # but destroys a village: real Raichur villages average ~4 km
+        # across, so an 111 m tolerance flattens them back toward the
+        # rectangles this dataset exists to replace — and the API serves
+        # COALESCE(geometry_simplified, geometry), so the map would render
+        # the flattened copy. Villages get ~11 m, two orders of magnitude
+        # finer than the source dataset's own +/- 500 m registration
+        # error, so the simplified copy stays visually and analytically
+        # faithful while still capping payload size.
+        for level, tolerance in ((BoundaryLevel.VILLAGE, 0.0001), (None, 0.001)):
+            await session.execute(
+                text(
+                    "UPDATE admin_boundary SET geometry_simplified = "
+                    "ST_SimplifyPreserveTopology(geometry, :tolerance) "
+                    "WHERE geometry_simplified IS NULL"
+                    + (" AND level = :level" if level is not None else "")
+                ),
+                {"tolerance": tolerance, **({"level": level.value} if level is not None else {})},
             )
-        )
         await session.commit()
 
     print(f"Loaded {created} boundaries, skipped {skipped} already present.")

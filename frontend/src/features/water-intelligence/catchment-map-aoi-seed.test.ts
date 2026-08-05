@@ -90,31 +90,71 @@ function seedAndSelect(draw: TerraDraw, ring: Ring) {
   return { featureId, result, selected };
 }
 
-// The real Maski (Raichur) village geometry as stored today (fetched from
-// the local dev admin-boundaries API) — a simplified 5-point rectangle,
-// not a dense OSM outline. backend/scripts/fetch_raichur_villages_osm.py
-// currently falls back to a bounding-box square for all 542 Raichur
-// villages (confirmed by inspecting fixtures/raichur_villages_osm.geojson
-// directly), so this is representative of every village this feature
-// seeds from today, not a cherry-picked simple case.
+// The real Maski (Raichur) village boundary as served by the
+// admin-boundaries API — a genuine 41-vertex administrative outline
+// covering 4,991 ha, sourced from the DataMeet Census village dataset
+// (backend/scripts/fetch_raichur_villages_datameet.py).
+//
+// This replaced a 5-point, 9.29 ha synthetic square: the previous
+// pipeline had no village polygons at all and wrapped each OSM village
+// *point* in a fixed ~150 m box. Keeping a real outline here matters for
+// this test specifically — the seeding path has to survive an irregular,
+// many-vertex, 6-decimal-place polygon, which is what it now actually
+// receives in production, not a rectangle.
 const MASKI_VILLAGE_GEOMETRY: GeoJSON.MultiPolygon = {
   type: "MultiPolygon",
   coordinates: [
     [
       [
-        [76.6559629, 15.957198],
-        [76.6587629, 15.957198],
-        [76.6587629, 15.959998],
-        [76.6559629, 15.959998],
-        [76.6559629, 15.957198],
+        [76.634561, 15.996653],
+        [76.645321, 15.998615],
+        [76.657898, 16.000067],
+        [76.662167, 16.000147],
+        [76.66715, 15.999477],
+        [76.672549, 15.99783],
+        [76.683959, 15.990179],
+        [76.689195, 15.989287],
+        [76.688548, 15.982218],
+        [76.686725, 15.97314],
+        [76.685391, 15.969986],
+        [76.682747, 15.967452],
+        [76.680521, 15.965935],
+        [76.679749, 15.963693],
+        [76.678043, 15.957353],
+        [76.676665, 15.953273],
+        [76.676254, 15.949158],
+        [76.675171, 15.946671],
+        [76.672158, 15.94431],
+        [76.670352, 15.940715],
+        [76.668653, 15.934587],
+        [76.666847, 15.930995],
+        [76.665474, 15.919131],
+        [76.661553, 15.911806],
+        [76.659772, 15.913579],
+        [76.657673, 15.91495],
+        [76.654667, 15.916046],
+        [76.65171, 15.916627],
+        [76.638503, 15.918171],
+        [76.634437, 15.926211],
+        [76.633052, 15.931142],
+        [76.629999, 15.935018],
+        [76.620828, 15.94157],
+        [76.615484, 15.950613],
+        [76.613842, 15.954914],
+        [76.617925, 15.967601],
+        [76.620479, 15.972588],
+        [76.624429, 15.97308],
+        [76.626381, 15.975249],
+        [76.630314, 15.985073],
+        [76.634561, 15.996653],
       ],
     ],
   ],
 };
 
-// A synthetic denser ring (real village boundaries — once richer OSM data
-// is imported — will look like this, not a 5-point box), to prove the
-// seeding path also survives a many-vertex, non-self-intersecting shape.
+// A synthetic ring far denser than any real Raichur village (the densest
+// in the loaded dataset is 168 vertices), kept as a headroom check that
+// the seeding path survives a many-vertex, non-self-intersecting shape.
 // Rounded to 9 decimal places to match what PostGIS's ST_AsGeoJSON (and
 // terra-draw's own default coordinatePrecision) actually produce — see
 // the companion "excessive precision" test below for the unrounded case.
