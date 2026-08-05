@@ -546,7 +546,13 @@ async def test_get_catchment_detail_success(api_client, users_and_org):
     response = await api_client.get(f"/api/v1/catchments/{created['id']}", headers={"Authorization": f"Bearer {token}"})
 
     assert response.status_code == 200, response.text
-    assert response.json() == created
+    body = response.json()
+    # The detail endpoint returns everything the list endpoint does, plus
+    # the analysed geometry (CatchmentDetailResponse) — the list/compare/
+    # priority-queue screens fetch CatchmentResponse in bulk and must
+    # never carry a polygon per row, so this field only exists here.
+    assert body == {**created, "geometry": body["geometry"]}
+    assert body["geometry"]["type"] == "MultiPolygon"
 
 
 @pytest.mark.asyncio

@@ -41,6 +41,14 @@ _MAX_HOPS = 4
 async def list_admin_boundaries(
     parent_id: UUID | None = Query(default=None, description="Omit to list top-level states."),
     level: BoundaryLevel | None = Query(default=None, description="Optional extra filter; children are already one level below parent_id."),
+    include_geometry: bool = Query(
+        default=False,
+        description=(
+            "Include each row's simplified geometry. Off by default so the cascading-dropdown "
+            "case stays minimal; on, this is the only way to draw a village's neighbours in one "
+            "request instead of one request per neighbour."
+        ),
+    ),
     current_user: AppUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> list[AdminBoundarySummary]:
@@ -48,11 +56,36 @@ async def list_admin_boundaries(
     if level is not None:
         conditions.append(AdminBoundary.level == level)
 
-    stmt = select(AdminBoundary).where(*conditions).order_by(AdminBoundary.name)
-    rows = (await db.execute(stmt)).scalars().all()
+    if not include_geometry:
+        stmt = select(AdminBoundary).where(*conditions).order_by(AdminBoundary.name)
+        rows = (await db.execute(stmt)).scalars().all()
+        return [
+            AdminBoundarySummary(id=row.id, level=row.level, name=row.name, lgd_code=row.lgd_code) for row in rows
+        ]
 
+    # Serves geometry_simplified (falling back to the true geometry for
+    # rows predating it) — the same copy the boundary-preview map already
+    # renders, never the full-resolution geometry analytics run on.
+    stmt = (
+        select(
+            AdminBoundary.id,
+            AdminBoundary.level,
+            AdminBoundary.name,
+            AdminBoundary.lgd_code,
+            ST_AsGeoJSON(func.coalesce(AdminBoundary.geometry_simplified, AdminBoundary.geometry)).label("geometry_json"),
+        )
+        .where(*conditions)
+        .order_by(AdminBoundary.name)
+    )
     return [
-        AdminBoundarySummary(id=row.id, level=row.level, name=row.name, lgd_code=row.lgd_code) for row in rows
+        AdminBoundarySummary(
+            id=row.id,
+            level=row.level,
+            name=row.name,
+            lgd_code=row.lgd_code,
+            geometry=json.loads(row.geometry_json) if row.geometry_json else None,
+        )
+        for row in (await db.execute(stmt)).all()
     ]
 
 
@@ -101,6 +134,7 @@ async def get_admin_boundary(
         level=boundary.level,
         name=boundary.name,
         lgd_code=boundary.lgd_code,
+        parent_id=boundary.parent_id,
         state=names_by_level.get(BoundaryLevel.STATE),
         district=names_by_level.get(BoundaryLevel.DISTRICT),
         taluka=names_by_level.get(BoundaryLevel.TALUKA),

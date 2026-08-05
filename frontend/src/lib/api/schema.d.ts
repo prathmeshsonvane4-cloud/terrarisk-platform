@@ -346,6 +346,11 @@ export interface paths {
          *     IDOR-safe convention: a resource outside the caller's scope must be
          *     indistinguishable from one that was never created at all, never
          *     revealed via a 403 that would confirm the id is real.
+         *
+         *     Returns the analysed geometry alongside the metadata (the list
+         *     endpoint deliberately does not — see `CatchmentDetailResponse`), so a
+         *     report can draw the exact area it was computed over rather than
+         *     approximating it with the village boundary.
          */
         get: operations["get_catchment_api_v1_catchments__catchment_id__get"];
         put?: never;
@@ -551,6 +556,12 @@ export interface components {
          * @description Full detail for the Select Area preview/confirm step: the boundary's
          *     own geometry plus its resolved ancestor names at every level that
          *     applies (a taluka has no `village`; a village has all four).
+         *
+         *     `parent_id` is a direct passthrough of the existing column, added so
+         *     a caller that already has one boundary's detail (a village, say) can
+         *     fetch its immediate parent's own geometry and children — its taluka
+         *     outline, and that taluka's other villages — without a second
+         *     name-based lookup walking the hierarchy from the top.
          */
         AdminBoundaryDetail: {
             /**
@@ -563,6 +574,8 @@ export interface components {
             name: string;
             /** Lgd Code */
             lgd_code: string | null;
+            /** Parent Id */
+            parent_id: string | null;
             /** State */
             state: string | null;
             /** District */
@@ -580,7 +593,15 @@ export interface components {
         };
         /**
          * AdminBoundarySummary
-         * @description One row in a cascading dropdown — deliberately minimal, no geometry.
+         * @description One row in a cascading dropdown — deliberately minimal by default.
+         *
+         *     `geometry` stays `None` unless the caller explicitly asks for it with
+         *     `?include_geometry=true`, so the dropdown case this schema was built
+         *     for is byte-for-byte unchanged. The opt-in exists because drawing a
+         *     village's neighbours is otherwise impossible without one request per
+         *     neighbour: the per-id detail endpoint is the only other source of
+         *     geometry, and a taluka like Devadurga has 185 villages. One request
+         *     returning ~120 kB of simplified geometry replaces 185 round trips.
          */
         AdminBoundarySummary: {
             /**
@@ -593,6 +614,10 @@ export interface components {
             name: string;
             /** Lgd Code */
             lgd_code: string | null;
+            /** Geometry */
+            geometry?: {
+                [key: string]: unknown;
+            } | null;
         };
         /**
          * AssessmentListItem
@@ -725,6 +750,56 @@ export interface components {
              * @description Optional link for village-level aggregation, not required for a catchment to exist on its own.
              */
             admin_boundary_id?: string | null;
+        };
+        /**
+         * CatchmentDetailResponse
+         * @description A single catchment, plus the geometry actually analysed.
+         *
+         *     Deliberately a subclass used only by `GET /catchments/{id}` rather
+         *     than a field added to `CatchmentResponse` itself: the list endpoint
+         *     shares that model and is fetched wholesale by the map, the Priority
+         *     Queue and the compare view, so putting geometry on it would attach a
+         *     polygon to every row of every list for the sake of one detail screen.
+         *
+         *     Exists so a report can draw the area it was actually computed over.
+         *     Where an AOI was reshaped away from its village boundary, that shape
+         *     lives only in `catchment.geometry` — the admin-boundary endpoints
+         *     know nothing about it.
+         */
+        CatchmentDetailResponse: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+            /** Area Ha */
+            area_ha: number;
+            delineation_method: components["schemas"]["DelineationMethod"];
+            /** Organization Id */
+            organization_id: string | null;
+            /** Admin Boundary Id */
+            admin_boundary_id: string | null;
+            /**
+             * Resolution Flags
+             * @description e.g. ["rainfall_sub_pixel", "et_sub_pixel", "high_relief_terrain"] — computed once at creation and reused by every downstream report (Blueprint v2 Part 4/Part 5).
+             */
+            resolution_flags: string[];
+            /**
+             * Created By
+             * Format: uuid
+             */
+            created_by: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Geometry */
+            geometry: {
+                [key: string]: unknown;
+            };
         };
         /**
          * CatchmentResponse
@@ -1958,7 +2033,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["CatchmentResponse"];
+                    "application/json": components["schemas"]["CatchmentDetailResponse"];
                 };
             };
             /** @description Validation Error */
@@ -2074,6 +2149,8 @@ export interface operations {
                 parent_id?: string | null;
                 /** @description Optional extra filter; children are already one level below parent_id. */
                 level?: components["schemas"]["BoundaryLevel"] | null;
+                /** @description Include each row's simplified geometry. Off by default so the cascading-dropdown case stays minimal; on, this is the only way to draw a village's neighbours in one request instead of one request per neighbour. */
+                include_geometry?: boolean;
             };
             header?: never;
             path?: never;

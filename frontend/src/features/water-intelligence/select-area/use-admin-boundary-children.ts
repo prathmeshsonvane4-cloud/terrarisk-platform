@@ -18,14 +18,25 @@ export type AdminBoundarySummary = components["schemas"]["AdminBoundarySummary"]
  * chosen), which the `enabled` flag turns into a no-op query rather than
  * a request for every boundary in the country.
  */
-/** Shared fetcher — used by the hook below and by the PDF's map-context
- * loader, which walks the hierarchy imperatively on click rather than
- * subscribing to four levels it doesn't render. Same "one fetch
- * implementation, two consumers" split use-admin-boundary-detail.ts
- * already uses. */
-export async function fetchAdminBoundaryChildren(parentId: string | null): Promise<AdminBoundarySummary[]> {
+/** Shared fetcher — used by the hook below, by the PDF's map-context
+ * loader (which walks the hierarchy imperatively on click rather than
+ * subscribing to four levels it doesn't render), and by the report
+ * page's spatial context panel (`includeGeometry: true`, the "draw a
+ * village's neighbours" case — one request for every sibling under a
+ * taluka, each carrying its own polygon, rather than one request per
+ * neighbour). Same "one fetch implementation, N consumers" split
+ * use-admin-boundary-detail.ts already uses. */
+export async function fetchAdminBoundaryChildren(
+  parentId: string | null,
+  options?: { includeGeometry?: boolean },
+): Promise<AdminBoundarySummary[]> {
   const { data, error, response } = await apiClient.GET("/api/v1/admin-boundaries", {
-    params: { query: parentId ? { parent_id: parentId } : {} },
+    params: {
+      query: {
+        ...(parentId ? { parent_id: parentId } : {}),
+        ...(options?.includeGeometry ? { include_geometry: true } : {}),
+      },
+    },
   });
   if (error) {
     throw new ApiError(extractApiErrorMessage(error), response.status);

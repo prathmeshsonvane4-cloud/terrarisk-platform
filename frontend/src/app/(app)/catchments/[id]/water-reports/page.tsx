@@ -19,6 +19,7 @@ import { DELINEATION_METHOD_LABELS } from "@/features/water-intelligence/labels"
 import { MetricTrendChart, type TrendPoint } from "@/features/water-intelligence/metric-trend-chart";
 import { DownloadWaterReportPdfButton } from "@/features/water-intelligence/pdf/download-water-report-pdf-button";
 import { numberField } from "@/features/water-intelligence/raw-inputs";
+import { SpatialContextPanel } from "@/features/water-intelligence/spatial-context/spatial-context-panel";
 import { bandForFactorScore } from "@/features/water-intelligence/stress-factor-bands";
 import { SurfaceWaterIndicator } from "@/features/water-intelligence/surface-water-indicator";
 import { useCatchments } from "@/features/water-intelligence/use-catchments";
@@ -215,6 +216,18 @@ export default function WaterReportDashboardPage() {
               </TableRow>
             </TableBody>
           </Table>
+        </CardContent>
+      </Card>
+
+      {/* 1.5. Spatial context — orientation only, not analysis. See
+          SpatialContextPanel's own docstring for why this exists as a
+          secondary panel here rather than making this page map-first. */}
+      <Card size="sm" className="print:break-inside-avoid">
+        <CardHeader>
+          <CardTitle>Where this village is</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <SpatialContextPanel catchmentId={id} />
         </CardContent>
       </Card>
 

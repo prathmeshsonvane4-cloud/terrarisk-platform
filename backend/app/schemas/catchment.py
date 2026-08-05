@@ -36,7 +36,7 @@ from __future__ import annotations
 
 import math
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -203,3 +203,21 @@ class CatchmentResponse(BaseModel):
     )
     created_by: UUID
     created_at: datetime
+
+
+class CatchmentDetailResponse(CatchmentResponse):
+    """A single catchment, plus the geometry actually analysed.
+
+    Deliberately a subclass used only by `GET /catchments/{id}` rather
+    than a field added to `CatchmentResponse` itself: the list endpoint
+    shares that model and is fetched wholesale by the map, the Priority
+    Queue and the compare view, so putting geometry on it would attach a
+    polygon to every row of every list for the sake of one detail screen.
+
+    Exists so a report can draw the area it was actually computed over.
+    Where an AOI was reshaped away from its village boundary, that shape
+    lives only in `catchment.geometry` — the admin-boundary endpoints
+    know nothing about it.
+    """
+
+    geometry: dict[str, Any]

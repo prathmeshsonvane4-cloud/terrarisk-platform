@@ -103,12 +103,13 @@ always name the same run.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from uuid import UUID
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Query, Response, UploadFile, status
 from geoalchemy2 import Geography
-from geoalchemy2.functions import ST_Area
+from geoalchemy2.functions import ST_Area, ST_AsGeoJSON
 from geoalchemy2.shape import from_shape
 from sqlalchemy import and_, cast, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -123,7 +124,13 @@ from app.models.job import Job
 from app.models.organization import Organization
 from app.models.user import AppUser
 from app.models.water_balance import RechargeStressScore, WaterBalanceResult
-from app.schemas.catchment import CatchmentCreateRequest, CatchmentResponse, CatchmentUploadRequest, GeoJSONMultiPolygon
+from app.schemas.catchment import (
+    CatchmentCreateRequest,
+    CatchmentDetailResponse,
+    CatchmentResponse,
+    CatchmentUploadRequest,
+    GeoJSONMultiPolygon,
+)
 from app.schemas.job import JobStatusResponse
 from app.schemas.report import ReportTriggerResponse
 from app.schemas.water_report import (
@@ -266,21 +273,35 @@ async def list_catchments(
     return [CatchmentResponse.model_validate(row) for row in rows]
 
 
-@router.get("/{catchment_id}", response_model=CatchmentResponse)
+@router.get("/{catchment_id}", response_model=CatchmentDetailResponse)
 async def get_catchment(
     catchment_id: UUID,
     current_user: AppUser = Depends(require_role(UserRole.PROGRAMME_OFFICER, UserRole.PROGRAMME_ADMIN)),
     db: AsyncSession = Depends(get_db),
-) -> CatchmentResponse:
+) -> CatchmentDetailResponse:
     """A single catchment by id — 404 for both "doesn't exist" and
     "exists but isn't yours", the same `app/api/farms.py::get_farm`
     IDOR-safe convention: a resource outside the caller's scope must be
     indistinguishable from one that was never created at all, never
-    revealed via a 403 that would confirm the id is real."""
+    revealed via a 403 that would confirm the id is real.
+
+    Returns the analysed geometry alongside the metadata (the list
+    endpoint deliberately does not — see `CatchmentDetailResponse`), so a
+    report can draw the exact area it was computed over rather than
+    approximating it with the village boundary.
+    """
     catchment = await db.get(Catchment, catchment_id)
     if catchment is None or catchment.created_by != current_user.id:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Catchment not found")
-    return CatchmentResponse.model_validate(catchment)
+
+    geometry_json = (
+        await db.execute(select(ST_AsGeoJSON(Catchment.geometry)).where(Catchment.id == catchment_id))
+    ).scalar_one()
+
+    return CatchmentDetailResponse(
+        **CatchmentResponse.model_validate(catchment).model_dump(),
+        geometry=json.loads(geometry_json),
+    )
 
 
 async def _run_water_report_job(job_id: UUID, catchment_id: UUID) -> None:

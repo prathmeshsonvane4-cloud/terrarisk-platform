@@ -98,6 +98,20 @@ async def full_hierarchy():
         db.add(village)
         await db.flush()
 
+        # A sibling village under the same taluka — the "neighbouring
+        # village" case the report page's map needs: fetching a village's
+        # own siblings is just parent_id=taluka.id with include_geometry,
+        # not a new relationship, so this fixture needs more than one
+        # village to actually exercise that.
+        neighbour_village = AdminBoundary(
+            level=BoundaryLevel.VILLAGE,
+            name=f"TestVillage-{suffix}-neighbour",
+            parent_id=taluka.id,
+            geometry=from_shape(_square_around(76.05, 18.0), srid=4326),
+        )
+        db.add(neighbour_village)
+        await db.flush()
+
         # geometry_simplified is populated by load_admin_boundaries.py's
         # own follow-up UPDATE in real usage; the detail endpoint must
         # still work for a row where it's still NULL (fresh test data),
@@ -120,12 +134,15 @@ async def full_hierarchy():
         "district": district,
         "taluka": taluka,
         "village": village,
+        "neighbour_village": neighbour_village,
         "officer": officer,
     }
 
     async with AsyncSessionLocal() as db:
         await db.execute(
-            delete(AdminBoundary).where(AdminBoundary.id.in_([village.id, taluka.id, district.id, state.id]))
+            delete(AdminBoundary).where(
+                AdminBoundary.id.in_([village.id, neighbour_village.id, taluka.id, district.id, state.id])
+            )
         )
         await db.execute(delete(AppUser).where(AppUser.id == officer.id))
         await db.commit()
@@ -190,8 +207,50 @@ async def test_list_children_cascades_down_to_villages(api_client, full_hierarch
         await api_client.get("/api/v1/admin-boundaries", params={"parent_id": talukas[0]["id"]}, headers=headers)
     ).json()
 
-    assert [row["id"] for row in villages] == [str(full_hierarchy["village"].id)]
-    assert villages[0]["level"] == "village"
+    village_ids = {row["id"] for row in villages}
+    assert village_ids == {str(full_hierarchy["village"].id), str(full_hierarchy["neighbour_village"].id)}
+    assert all(row["level"] == "village" for row in villages)
+
+
+@pytest.mark.asyncio
+async def test_list_omits_geometry_by_default(api_client, full_hierarchy):
+    """The cascading-dropdown case this endpoint was originally built for
+    must stay byte-for-byte minimal — include_geometry defaults to off."""
+    token = await _login(api_client, full_hierarchy["officer"].email)
+
+    response = await api_client.get(
+        "/api/v1/admin-boundaries",
+        params={"parent_id": str(full_hierarchy["taluka"].id)},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 200
+    rows = response.json()
+    assert len(rows) == 2
+    assert all(row["geometry"] is None for row in rows)
+
+
+@pytest.mark.asyncio
+async def test_list_with_include_geometry_returns_real_polygons_for_every_sibling(api_client, full_hierarchy):
+    """The report page's "neighbouring villages" panel: one request for
+    every village under a taluka, each carrying real geometry — this is
+    what makes fetching neighbours possible without one request per
+    neighbour (a taluka can have 185 of them)."""
+    token = await _login(api_client, full_hierarchy["officer"].email)
+
+    response = await api_client.get(
+        "/api/v1/admin-boundaries",
+        params={"parent_id": str(full_hierarchy["taluka"].id), "include_geometry": "true"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 200
+    rows = {row["id"]: row for row in response.json()}
+    assert len(rows) == 2
+    for expected_id in (str(full_hierarchy["village"].id), str(full_hierarchy["neighbour_village"].id)):
+        geometry = rows[expected_id]["geometry"]
+        assert geometry is not None
+        assert geometry["type"] in ("Polygon", "MultiPolygon")
 
 
 @pytest.mark.asyncio
@@ -240,6 +299,11 @@ async def test_detail_for_village_resolves_full_ancestor_chain(api_client, full_
     assert body["state"] == full_hierarchy["state"].name
     assert body["geometry"]["type"] in {"Polygon", "MultiPolygon"}
     assert body["area_ha"] > 0
+    # A direct passthrough of the parent_id column — lets a caller with a
+    # village's own detail fetch its taluka's geometry and siblings
+    # (the report page's spatial context panel) without a second,
+    # name-based walk from the top of the hierarchy.
+    assert body["parent_id"] == str(full_hierarchy["taluka"].id)
 
 
 @pytest.mark.asyncio
