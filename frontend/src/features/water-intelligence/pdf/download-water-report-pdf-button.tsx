@@ -8,6 +8,7 @@ import type { components } from "@/lib/api/schema";
 
 import type { WaterReportDetailResponse } from "../use-latest-water-report";
 import { generateWaterReportPdf } from "./generate-water-report-pdf";
+import { loadWaterReportMapContext } from "./load-map-context";
 
 type CatchmentResponse = components["schemas"]["CatchmentResponse"];
 
@@ -34,10 +35,13 @@ export function DownloadWaterReportPdfButton({
 }) {
   const [state, setState] = useState<"idle" | "generating" | "error">("idle");
 
-  function download() {
+  async function download() {
     setState("generating");
     try {
-      const doc = generateWaterReportPdf(report, catchment);
+      // Fetched on click, not on mount: most visits to this page never
+      // download a PDF, and the locator costs four extra requests.
+      const mapContext = await loadWaterReportMapContext(catchment);
+      const doc = generateWaterReportPdf(report, catchment, mapContext);
       doc.save(`TerraRisk-Water-Report-${slugify(catchment.name)}-${report.generated_at.slice(0, 10)}.pdf`);
       setState("idle");
     } catch {

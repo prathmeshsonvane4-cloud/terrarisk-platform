@@ -6,6 +6,7 @@ import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 
 import { useAdminBoundaryChildren, type AdminBoundarySummary } from "./use-admin-boundary-children";
+import { VillageCombobox } from "./village-combobox";
 
 interface CascadingBoundaryPickerProps {
   onVillageSelect: (village: AdminBoundarySummary | null) => void;
@@ -86,14 +87,15 @@ export function CascadingBoundaryPicker({ onVillageSelect, disabled = false }: C
         onChange={handleTalukaChange}
         placeholder={districtId ? "Select a taluka…" : "Select a district first"}
       />
-      <BoundarySelect
-        label="Village"
+      {/* Village is a combobox, not a select — see VillageCombobox for
+          why this one level differs (185 villages in Devadurga alone). */}
+      <VillageCombobox
         value={villageId}
         options={villages.data}
         isLoading={villages.isFetching}
         disabled={disabled || !talukaId}
         onChange={handleVillageChange}
-        placeholder={talukaId ? "Select a village…" : "Select a taluka first"}
+        placeholder={talukaId ? "Search villages…" : "Select a taluka first"}
       />
     </div>
   );

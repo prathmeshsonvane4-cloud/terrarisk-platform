@@ -479,7 +479,196 @@ function drawFooters(doc: jsPDF): void {
   }
 }
 
-export function generateWaterReportPdf(report: WaterReportDetailResponse, catchment: CatchmentResponse): jsPDF {
+/** The reference-boundary green the on-screen map already uses
+ * (`#16a34a`, catchment-map.tsx's `setGeoJsonOverlay` call) — reused so
+ * the printed figure and the screen agree on what green means. */
+const REFERENCE_GREEN: RGB = [22, 163, 74];
+
+const MAP_HEIGHT = 76;
+const METRES_PER_DEGREE_LAT = 110_574;
+
+/** Geometry for the one map in this report. Both layers are optional:
+ * a catchment created by Draw or Upload has no `admin_boundary_id` and
+ * therefore no village polygon in any endpoint, in which case the map is
+ * skipped rather than faked. */
+export interface WaterReportMapContext {
+  village: GeoJSON.Geometry | null;
+  villageName: string | null;
+  villageAreaHa: number | null;
+  /** The parent taluka, drawn as surrounding context. */
+  taluka: GeoJSON.Geometry | null;
+  talukaName: string | null;
+}
+
+function eachRing(geometry: GeoJSON.Geometry, visit: (ring: [number, number][]) => void): void {
+  if (geometry.type === "Polygon") {
+    for (const ring of geometry.coordinates) visit(ring as [number, number][]);
+  } else if (geometry.type === "MultiPolygon") {
+    for (const polygon of geometry.coordinates) for (const ring of polygon) visit(ring as [number, number][]);
+  }
+}
+
+/** Equirectangular projection with a cos(lat) correction — exact enough
+ * at taluka extent (tens of km) and keeps north straight up, which is
+ * what makes a single static north arrow honest. */
+function makeProjector(geometries: GeoJSON.Geometry[], box: { x: number; y: number; w: number; h: number }) {
+  let minLon = Infinity;
+  let minLat = Infinity;
+  let maxLon = -Infinity;
+  let maxLat = -Infinity;
+  for (const geometry of geometries) {
+    eachRing(geometry, (ring) => {
+      for (const [lon, lat] of ring) {
+        minLon = Math.min(minLon, lon);
+        maxLon = Math.max(maxLon, lon);
+        minLat = Math.min(minLat, lat);
+        maxLat = Math.max(maxLat, lat);
+      }
+    });
+  }
+  if (!Number.isFinite(minLon)) return null;
+
+  const midLat = (minLat + maxLat) / 2;
+  const lonScale = Math.cos((midLat * Math.PI) / 180);
+  const spanX = Math.max((maxLon - minLon) * lonScale, 1e-9);
+  const spanY = Math.max(maxLat - minLat, 1e-9);
+  const scale = Math.min(box.w / spanX, box.h / spanY) * 0.9; // 10% breathing room
+  const offsetX = box.x + (box.w - spanX * scale) / 2;
+  const offsetY = box.y + (box.h - spanY * scale) / 2;
+
+  return {
+    project: ([lon, lat]: [number, number]): [number, number] => [
+      offsetX + (lon - minLon) * lonScale * scale,
+      // PDF y grows downward; latitude grows upward.
+      offsetY + (maxLat - lat) * scale,
+    ],
+    /** Ground metres represented by one page millimetre. */
+    metresPerMm: METRES_PER_DEGREE_LAT / scale,
+  };
+}
+
+function drawGeometry(
+  doc: jsPDF,
+  geometry: GeoJSON.Geometry,
+  project: (point: [number, number]) => [number, number],
+  options: { stroke: RGB; fill?: RGB; lineWidth: number },
+): void {
+  doc.setDrawColor(...options.stroke);
+  doc.setLineWidth(options.lineWidth);
+  if (options.fill) doc.setFillColor(...options.fill);
+
+  eachRing(geometry, (ring) => {
+    if (ring.length < 3) return;
+    const points = ring.map(project);
+    const [startX, startY] = points[0];
+    const deltas: [number, number][] = [];
+    for (let i = 1; i < points.length; i += 1) {
+      deltas.push([points[i][0] - points[i - 1][0], points[i][1] - points[i - 1][1]]);
+    }
+    doc.lines(deltas, startX, startY, [1, 1], options.fill ? "FD" : "S", true);
+  });
+}
+
+function drawNorthArrow(doc: jsPDF, x: number, y: number): void {
+  doc.setFillColor(...INK);
+  doc.triangle(x, y, x - 1.8, y + 4.6, x + 1.8, y + 4.6, "F");
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(7);
+  doc.setTextColor(...INK);
+  doc.text("N", x, y + 8.4, { align: "center" });
+}
+
+/** A round-number scale bar, chosen from the map's own ground scale
+ * rather than a fixed length, so the printed figure is measurable. */
+function drawScaleBar(doc: jsPDF, x: number, y: number, metresPerMm: number): void {
+  const targetMm = 26;
+  const rawMetres = targetMm * metresPerMm;
+  const niceSteps = [100, 200, 500, 1000, 2000, 5000, 10_000, 20_000, 50_000];
+  const metres = niceSteps.reduce((best, step) =>
+    Math.abs(step - rawMetres) < Math.abs(best - rawMetres) ? step : best,
+  );
+  const barMm = metres / metresPerMm;
+
+  doc.setDrawColor(...INK);
+  doc.setFillColor(...INK);
+  doc.setLineWidth(0.3);
+  doc.rect(x, y, barMm / 2, 1.4, "F");
+  doc.rect(x + barMm / 2, y, barMm / 2, 1.4, "S");
+
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(7);
+  doc.setTextColor(...MUTED);
+  doc.text("0", x, y - 1);
+  doc.text(metres >= 1000 ? `${metres / 1000} km` : `${metres} m`, x + barMm, y - 1, { align: "right" });
+}
+
+/**
+ * The report's one map: the administrative village this report is linked
+ * to, drawn inside its taluka for locational context, with a north arrow
+ * and a scale bar.
+ *
+ * Deliberately honest about one limit: `CatchmentResponse` carries no
+ * geometry, so an AOI that was reshaped away from the village boundary
+ * cannot be drawn here. Rather than imply the green outline IS the
+ * analysed area, the caption states the analysed area numerically and
+ * flags when it differs materially from the village — which is exactly
+ * the case where the two are not the same shape.
+ */
+function drawLocationMap(
+  doc: jsPDF,
+  y: number,
+  catchment: CatchmentResponse,
+  context: WaterReportMapContext,
+): number {
+  if (!context.village) return y;
+
+  y = sectionHeading(doc, "Location", y);
+
+  const box = { x: MARGIN, y, w: CONTENT_WIDTH, h: MAP_HEIGHT };
+  const layers = [context.taluka, context.village].filter((geometry): geometry is GeoJSON.Geometry => Boolean(geometry));
+  const projector = makeProjector(layers, box);
+  if (!projector) return y;
+
+  doc.setFillColor(250, 250, 249);
+  doc.setDrawColor(...HAIRLINE);
+  doc.setLineWidth(0.3);
+  doc.rect(box.x, box.y, box.w, box.h, "FD");
+
+  if (context.taluka) {
+    drawGeometry(doc, context.taluka, projector.project, { stroke: HAIRLINE, fill: [242, 241, 237], lineWidth: 0.4 });
+  }
+  drawGeometry(doc, context.village, projector.project, { stroke: REFERENCE_GREEN, fill: [214, 240, 223], lineWidth: 0.7 });
+
+  drawNorthArrow(doc, box.x + box.w - 8, box.y + 5);
+  drawScaleBar(doc, box.x + 5, box.y + box.h - 5, projector.metresPerMm);
+
+  y = box.y + box.h + 5;
+
+  const villageLabel = context.villageName ?? "Selected village";
+  const talukaLabel = context.talukaName ? `, shown within ${context.talukaName} taluka` : "";
+  y = bodyText(doc, `${villageLabel} administrative boundary${talukaLabel}. North is up.`, y, { size: 9 });
+
+  // If the AOI was reshaped, the green outline is not the analysed area
+  // — say so rather than let the reader assume otherwise.
+  const villageArea = context.villageAreaHa;
+  const differs = villageArea !== null && Math.abs(catchment.area_ha - villageArea) / villageArea > 0.02;
+  y = bodyText(
+    doc,
+    differs
+      ? `Analysed area ${formatArea(catchment.area_ha)} — the area of interest was adjusted and does not match the village boundary drawn above (${formatArea(villageArea)}).`
+      : `Analysed area ${formatArea(catchment.area_ha)}.`,
+    y,
+    { size: 9, color: MUTED },
+  );
+
+  return y + 3;
+}
+
+export function generateWaterReportPdf(
+  report: WaterReportDetailResponse,
+  catchment: CatchmentResponse,
+  mapContext?: WaterReportMapContext,
+): jsPDF {
   const doc = new jsPDF({ unit: "mm", format: "a4" });
 
   drawCoverPage(doc, report, catchment);
@@ -488,6 +677,13 @@ export function generateWaterReportPdf(report: WaterReportDetailResponse, catchm
   drawSectionMarker(doc, "Catchment Summary");
   let y = CONTENT_TOP_START;
   y = drawCatchmentSummary(doc, y, report, catchment);
+
+  // Where before what: the reader should see the place this report is
+  // about before any of its numbers.
+  if (mapContext?.village) {
+    y = ensureSpace(doc, y, MAP_HEIGHT + 24, "Location");
+    y = drawLocationMap(doc, y, catchment, mapContext);
+  }
 
   y = ensureSpace(doc, y, 80, "Water Balance");
   y = drawWaterBalance(doc, y, report);

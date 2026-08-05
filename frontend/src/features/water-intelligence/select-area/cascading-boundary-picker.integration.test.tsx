@@ -87,22 +87,33 @@ describe("CascadingBoundaryPicker (real backend)", () => {
       await waitFor(() => screen.getByText("Manvi"));
       await user.selectOptions(talukaSelect, "Manvi");
 
-      const villageSelect = screen.getByLabelText("Village") as HTMLSelectElement;
-      await waitFor(() => expect(villageSelect.disabled).toBe(false));
-      await waitFor(() => expect(villageSelect.options.length).toBeGreaterThan(1));
+      // Village is a searchable combobox, not a <select> — Manvi has 73
+      // real villages and Devadurga 185, which is why this one level
+      // filters as you type rather than listing everything at once.
+      const villageInput = screen.getByLabelText("Village") as HTMLInputElement;
+      await waitFor(() => expect(villageInput.disabled).toBe(false));
 
-      const firstRealVillageOption = villageSelect.options[1];
-      await user.selectOptions(villageSelect, firstRealVillageOption.value);
+      // Typing filters the list down to matching villages only.
+      await user.click(villageInput);
+      await user.type(villageInput, "a");
+      const options = await screen.findAllByRole("option");
+      expect(options.length).toBeGreaterThan(0);
+      for (const option of options) {
+        expect(option.textContent?.toLowerCase()).toContain("a");
+      }
+
+      const chosenName = options[0].textContent ?? "";
+      await user.click(options[0]);
 
       expect(onVillageSelect).toHaveBeenCalledWith(
-        expect.objectContaining({ id: firstRealVillageOption.value, level: "village" }),
+        expect.objectContaining({ name: chosenName, level: "village" }),
       );
 
       // Changing the state resets every level below it back to disabled.
       await user.selectOptions(stateSelect, "Maharashtra");
       expect(districtSelect.value).toBe("");
       await waitFor(() => expect(talukaSelect.disabled).toBe(true));
-      expect(villageSelect.disabled).toBe(true);
+      await waitFor(() => expect(villageInput.disabled).toBe(true));
       expect(onVillageSelect).toHaveBeenLastCalledWith(null);
     },
     20_000,

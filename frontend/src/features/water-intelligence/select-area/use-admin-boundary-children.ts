@@ -18,6 +18,21 @@ export type AdminBoundarySummary = components["schemas"]["AdminBoundarySummary"]
  * chosen), which the `enabled` flag turns into a no-op query rather than
  * a request for every boundary in the country.
  */
+/** Shared fetcher — used by the hook below and by the PDF's map-context
+ * loader, which walks the hierarchy imperatively on click rather than
+ * subscribing to four levels it doesn't render. Same "one fetch
+ * implementation, two consumers" split use-admin-boundary-detail.ts
+ * already uses. */
+export async function fetchAdminBoundaryChildren(parentId: string | null): Promise<AdminBoundarySummary[]> {
+  const { data, error, response } = await apiClient.GET("/api/v1/admin-boundaries", {
+    params: { query: parentId ? { parent_id: parentId } : {} },
+  });
+  if (error) {
+    throw new ApiError(extractApiErrorMessage(error), response.status);
+  }
+  return data;
+}
+
 export function useAdminBoundaryChildren(parentId: string | null | undefined) {
   // `null` (root/top-level) and `undefined` (not ready yet, disabled) must
   // map to DIFFERENT cache keys, not both to the same fallback string —
@@ -28,15 +43,7 @@ export function useAdminBoundaryChildren(parentId: string | null | undefined) {
   const queryKeyPart = parentId === null ? "root" : (parentId ?? "pending");
   return useQuery({
     queryKey: ["admin-boundaries", "children", queryKeyPart],
-    queryFn: async () => {
-      const { data, error, response } = await apiClient.GET("/api/v1/admin-boundaries", {
-        params: { query: parentId ? { parent_id: parentId } : {} },
-      });
-      if (error) {
-        throw new ApiError(extractApiErrorMessage(error), response.status);
-      }
-      return data;
-    },
+    queryFn: () => fetchAdminBoundaryChildren(parentId ?? null),
     enabled: parentId !== undefined,
   });
 }
