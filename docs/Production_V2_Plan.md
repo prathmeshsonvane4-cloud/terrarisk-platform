@@ -1,6 +1,8 @@
 # TerraRisk Production V2 — Provisioning Plan
 
-**Status:** PLAN ONLY. Nothing executed. Awaiting founder approval.
+**Status:** APPROVED 6 Aug 2026. Not yet executed.
+**Founder decisions locked in:** (1) production domain will be purchased before deployment · (2) DigitalOcean Spaces for automated PostgreSQL backups · (3) Docker log rotation approved.
+**Companion document:** `DevOps_Workflow.md` — CI/CD, rollback, verification, and scaling.
 **Context:** Production V1 (DigitalOcean droplet at `168.144.68.134`) is confirmed unrecoverable. This is a greenfield rebuild.
 **Purpose of this environment:** WELL Labs demos · DCC Bank demos · FSID evaluation · first pilot customers.
 
@@ -76,11 +78,9 @@ Stated precisely, separating verified fact from inference.
 | Automatic updates | `unattended-upgrades`, **security patches only** | Security fixes without unattended feature upgrades that could break the stack |
 | SSH port | **Leave on 22** | Moving it is security theatre against real scanners, and adds friction to every future deploy. UFW + fail2ban + key-only is the real control |
 
-### 3. Domain & HTTPS — recommendation: **buy a domain now**
+### 3. Domain & HTTPS — **DECIDED: purchase a domain before deployment**
 
-I'm being opinionated here because this is a credibility decision, not a technical one.
-
-**Recommendation: register a domain (~$10–15/year) and run HTTPS via Let's Encrypt.**
+**Founder decision, 6 Aug 2026: approved.** A production domain will be registered before Phase E, with HTTPS via Let's Encrypt. Original reasoning retained below.
 
 Why, in order of importance:
 
@@ -109,7 +109,7 @@ Internet → DO Cloud Firewall → UFW → nginx (:80/:443, only published ports
 
 Deployment follows Deployment Guide §2, with two additions: it runs as the `deploy` user (not root), and the reference-data load (`load_admin_boundaries.py` against the committed Raichur/Latur fixtures) becomes an explicit post-deploy step rather than an afterthought.
 
-**One change I recommend but have NOT made** (needs approval, and it is deployment-required, not a feature): add Docker log rotation to `docker-compose.prod.yml`. Unbounded `json-file` logs filling the disk is one of the most common causes of a small droplet dying quietly.
+**Docker log rotation — DECIDED: approved 6 Aug 2026.** To be added to `docker-compose.prod.yml` on every service during Phase E. Unbounded `json-file` logs filling the disk is one of the most common causes of a small droplet dying quietly.
 
 ```yaml
 logging:
@@ -138,7 +138,7 @@ Two independent layers, because they fail differently:
 
 **Layer 1 — DO Droplet Backups (weekly whole-machine snapshots).** ~20% of droplet cost (≈$4.80/mo). Recovers the entire machine including config. Coarse-grained but zero-effort.
 
-**Layer 2 — Daily `pg_dump`, shipped OFF-HOST.** This is the layer whose absence caused V1's data loss.
+**Layer 2 — Daily `pg_dump`, shipped OFF-HOST to DigitalOcean Spaces.** **DECIDED: approved 6 Aug 2026** — Spaces, not the laptop-pull alternative. This is the layer whose absence caused V1's data loss.
 
 ```
 02:00 daily → pg_dump → gzip → upload to DO Spaces (s3-compatible, ≈$5/mo)
@@ -150,7 +150,7 @@ Two independent layers, because they fail differently:
 
 **Verification schedule — non-negotiable, monthly:** restore the latest dump into a throwaway Postgres container and assert non-zero row counts on those three tables. Log the result in the Founder Dashboard. **An untested backup is a belief, not a backup** — and this is the discipline that would have made V1 a nuisance instead of a loss.
 
-*Budget alternative:* skip Spaces and pull dumps to your laptop on a schedule (saves ~$5/mo) — but it only works when your machine is on. Spaces is the reliable option and I recommend it.
+*(The laptop-pull alternative was considered and rejected: it only works when your machine is on. Spaces is the reliable option.)*
 
 ### 7. Monitoring — deliberately minimal
 
@@ -198,7 +198,7 @@ Nothing below is executed until approved. **[F]** = founder (DO console / regist
 - [ ] A8 **[F]** Share the Reserved IP with Claude
 
 ### Phase B — Domain *(founder, ~20 min — parallel with A)*
-- [ ] B1 **[F]** Decide: domain or IP-only (**recommendation: domain**)
+- [x] B1 **[F]** ~~Decide: domain or IP-only~~ — **DECIDED: domain**
 - [ ] B2 **[F]** Register domain
 - [ ] B3 **[F]** Point an `A` record at the **Reserved IP**
 - [ ] B4 **[F]** Confirm DNS resolves before Phase E
@@ -222,7 +222,7 @@ Nothing below is executed until approved. **[F]** = founder (DO console / regist
 
 ### Phase E — Deploy *(Claude, ~45 min)*
 - [ ] E1 **[C]** Clone repo to `/opt/terrarisk`
-- [ ] E2 **[C]** *(if approved)* add Docker log rotation to prod compose
+- [ ] E2 **[C]** Add Docker log rotation to prod compose *(approved)*
 - [ ] E3 **[C]** `docker compose up -d --build`; confirm all four containers healthy
 - [ ] E4 **[C]** Verify `/health` and `/health/ready`
 - [ ] E5 **[C]** Load reference data (Raichur + Latur fixtures)
@@ -231,7 +231,7 @@ Nothing below is executed until approved. **[F]** = founder (DO console / regist
 - [ ] E8 **[C]** Confirm HTTP→HTTPS redirect and a valid certificate
 
 ### Phase F — Backups *(Claude, ~30 min) — GO-LIVE BLOCKER*
-- [ ] F1 **[F]** Create a DO Space + access keys *(or approve the laptop-pull alternative)*
+- [ ] F1 **[F]** Create a DO Space + access keys *(approved — Spaces)*
 - [ ] F2 **[C]** Install and configure the upload client
 - [ ] F3 **[C]** Install the daily 02:00 backup cron with retention pruning
 - [ ] F4 **[C]** **Run one backup manually and confirm the object exists in Spaces**
@@ -270,4 +270,4 @@ Verify current DO pricing before committing — these are approximate.
 
 ---
 
-*Awaiting approval. No step above has been executed.*
+*Approved 6 Aug 2026. No step above has been executed yet — execution begins on explicit instruction.*
