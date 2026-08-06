@@ -57,13 +57,13 @@ Stated precisely, separating verified fact from inference.
 
 | Item | Recommendation | Justification |
 |---|---|---|
-| **Droplet** | `s-2vcpu-4gb` (2 vCPU, 4 GB RAM, 80 GB SSD) | **4 GB is driven by evidence, not caution:** `frontend/Dockerfile:23` runs `npm run build` *on the droplet*. Next.js production builds routinely need >2 GB; a 2 GB droplet will OOM mid-build and leave the stack half-deployed. 80 GB is ample — our data is satellite-derived scalars, not rasters |
+| **Droplet** | `s-1vcpu-2gb` (1 vCPU, 2 GB RAM, 50 GB SSD) + 2 GB swap | **Revised down from 4 GB on 6 Aug 2026, because GHCR removes the build from the droplet.** The 4 GB figure existed solely to survive `npm run build` on the server; with CI building images, the droplet only pulls and runs. Measured runtime floor: postgres/postgis ~200–350 MB · backend ~300–450 MB (matplotlib + reportlab + shapely + earthengine-api, with report jobs running in-process via `BackgroundTasks`) · Next.js standalone ~80–150 MB · nginx ~20 MB · Docker + OS ~250 MB → **~0.9–1.2 GB peak**, leaving ~0.8 GB headroom. Swap is insurance against a transient PDF-generation spike, not a substitute for RAM |
 | **Region** | `BLR1` (Bangalore) | WELL Labs is Bengaluru-based; FSID (if IISc) is Bengaluru; DCCB Latur is Maharashtra. Lowest latency for every prospect, and Indian data residency is a question institutional buyers *will* ask |
 | **OS** | Ubuntu 24.04 LTS | Matches the Deployment Guide's assumption; LTS support to 2029 |
 | **Reserved IP** | **Yes — attach one** | Directly fixes a failure we just experienced. Free while attached to a droplet. Survives droplet destroy/rebuild, so a rebuilt server keeps the same address and every shared demo link stays alive |
 | **Firewall (DO cloud firewall)** | Inbound: 22, 80, 443 only. Outbound: all | Defence in depth alongside host UFW. Cloud firewall applies even if the host misconfigures |
 
-**Cost note:** roughly **$24/month** for the droplet at current DO pricing — please verify, as pricing changes. A cheaper path exists (build images in GitHub Actions, push to a registry, pull on a 2 GB droplet ≈ $12–18/mo) but it adds pipeline and registry complexity. **At this stage simplicity beats saving $12/month** — revisit if burn matters.
+**Cost note:** roughly **$12/month** for the droplet at current DO pricing — verify before committing, pricing changes. This is the cheaper path referenced in the original draft: GHCR was approved on 6 Aug 2026, so builds moved to CI and the droplet halved in size. **The reliability decision and the cost decision converged** — see `Production_V2_CTO_Review.md`.
 
 ### 2. Security
 
@@ -254,19 +254,25 @@ Nothing below is executed until approved. **[F]** = founder (DO console / regist
 
 ## Estimated cost
 
-| Item | Approx / month |
-|---|---|
-| Droplet `s-2vcpu-4gb` | $24 |
-| DO weekly backups | $4.80 |
-| DO Spaces (off-host dumps) | $5 |
-| Reserved IP (attached) | $0 |
-| UptimeRobot free tier | $0 |
-| Domain | ~$1 (≈$12/yr) |
-| **Total** | **≈$35/month** |
+**Revised 6 Aug 2026 for minimum pre-revenue burn.** See `Production_V2_CTO_Review.md` §6 for the full option comparison and reasoning.
+
+| Item | Approx / month | Verdict |
+|---|---|---|
+| Droplet `s-1vcpu-2gb` | $12 | **Spend** — demo reliability |
+| Domain (≈$12/yr) | ~$1 | **Spend** — credibility + TLS is impossible without it |
+| Reserved IP (attached) | $0 | **Spend** — free, and fixes a V1 failure |
+| Off-host DB backups (free-tier object storage) | $0 | **Spend** — the V1 failure that cost us everything |
+| Monitoring (DO alerts + UptimeRobot free) | $0 | **Spend** — would have caught V1 in 5 min |
+| GHCR image registry | $0 | **Spend** — free for this repo |
+| Swap (2 GB, on disk) | $0 | **Spend** — OOM insurance |
+| ~~DO weekly droplet snapshots~~ | ~~$2.40~~ | **Defer** — rebuild is ~1.5 h and everything irreplaceable is already off-host |
+| ~~Staging droplet~~ | ~~$12~~ | **Defer** — no customer would notice an outage yet |
+| ~~Managed Postgres~~ | ~~$15~~ | **Defer** — until the DB competes for RAM |
+| **Total** | **≈$13/month** | |
 
 Verify current DO pricing before committing — these are approximate.
 
-**Is that justified pre-revenue?** Yes. It is the operating cost of being able to hold three meetings that could produce a pilot, plus never repeating V1's data loss. The alternative — a cheaper box with no backups — is what we just paid for in lost data.
+**Down from ≈$35/month in the original draft**, without giving up a single reliability control that V1's failure actually demanded. The savings came from moving builds to CI (halving the droplet), using free-tier object storage instead of paid Spaces, and deferring whole-machine snapshots that duplicate a fast, documented rebuild path.
 
 ---
 
