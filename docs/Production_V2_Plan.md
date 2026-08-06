@@ -69,7 +69,8 @@ Stated precisely, separating verified fact from inference.
 
 | Control | Setting | Rationale |
 |---|---|---|
-| SSH keypair | **Generate a new ed25519 pair.** Retire `terrarisk_do_deploy` | The old key's state is unknown — it was rejected by an unknown host. Treat as compromised |
+| SSH keypairs | **Three new ed25519 keys.** Retire `terrarisk_do_deploy` | The old key's state is unknown — it was rejected by an unknown host. Treat as compromised. Three separate keys: `admin` (founder), `recovery` (escrow only), `ci` (GitHub Actions) |
+| **Lockout protection** | **A second `recovery` key, installed on the server but stored only in escrow** — plus verify DO console recovery access **before** disabling root login | Root SSH disabled + a single key = one lost laptop from being locked out of our own production server. This is the cheapest possible insurance |
 | Root SSH login | `PermitRootLogin no` | Previous deploy used `root@` directly. Standard hardening |
 | Password auth | `PasswordAuthentication no` | Key-only |
 | Service user | Non-root `deploy` user, in `docker` and `sudo` groups | Least privilege; deploys don't need root |
@@ -138,7 +139,11 @@ Two independent layers, because they fail differently:
 
 **Layer 1 — DO Droplet Backups (weekly whole-machine snapshots).** ~20% of droplet cost (≈$4.80/mo). Recovers the entire machine including config. Coarse-grained but zero-effort.
 
-**Layer 2 — Daily `pg_dump`, shipped OFF-HOST to DigitalOcean Spaces.** **DECIDED: approved 6 Aug 2026** — Spaces, not the laptop-pull alternative. This is the layer whose absence caused V1's data loss.
+**Layer 2 — Daily `pg_dump`, encrypted, shipped OFF-HOST to Backblaze B2.** **FROZEN 6 Aug 2026.**
+
+Chosen over DO Spaces on **reliability**, not cost: V1's root cause remains unknown and an account-level event (billing/suspension) is a live candidate. Backups held on the same DigitalOcean account would be destroyed by the same event that destroys the droplet. A separate provider gives real blast-radius isolation. Both are S3-compatible, so the backup script is identical — the only delta is one account and one extra credential in an escrow that already exists. Cost falls from $5/mo to $0 (14 retained dumps ≪ 10 GB free tier). Cloudflare R2 is an equivalent substitute.
+
+**Dumps are encrypted before upload** (`age` or `gpg`), with the key held in the same escrow as `.env`. Object storage is access-controlled but not encrypted by us, and dumps contain user accounts — and, once a pilot starts, customer data.
 
 ```
 02:00 daily → pg_dump → gzip → upload to DO Spaces (s3-compatible, ≈$5/mo)
@@ -158,7 +163,9 @@ Enterprise observability is the wrong tool at this stage. Three things, ~15 minu
 
 1. **DO Monitoring + alert policies** (free, built in): alert on CPU >80% for 5 min, memory >80%, **disk >80%** (disk is what actually kills small droplets).
 2. **UptimeRobot free tier**: HTTPS check on `/health` every 5 minutes → email alert. *This alone would have told us V1 was down within five minutes instead of days.*
-3. **Existing Docker healthchecks** — already in `docker-compose.prod.yml`, keep them.
+3. **UptimeRobot SSL-expiry monitoring** (free, same account): alerts ~30 days before the certificate expires. **Independent of our own cron deliberately** — the deploy-time TLS check only fires when we deploy, so a 90-day gap between deploys would otherwise surface as a dead site mid-demo.
+4. **Existing Docker healthchecks** — already in `docker-compose.prod.yml`, keep them.
+5. **Disk hygiene**: `docker image prune` in the deploy job (keep last 5 tags). Accumulated images silently fill a 50 GB disk, and the symptoms look like random failures rather than a full disk.
 
 Explicitly NOT doing: Prometheus, Grafana, ELK, Datadog, Sentry. Revisit when there is a paying customer with an SLA.
 
@@ -188,14 +195,15 @@ The Deployment Guide will be updated with this runbook and an explicit statement
 Nothing below is executed until approved. **[F]** = founder (DO console / registrar / GCP), **[C]** = Claude (once SSH works).
 
 ### Phase A — Provision *(founder, ~30 min)*
-- [ ] A1 **[F]** Confirm DO account is in good standing (rules out billing as V1's cause)
-- [ ] A2 **[C]** Generate new ed25519 keypair; give founder the public key
-- [ ] A3 **[F]** Add the new public key to the DO account
-- [ ] A4 **[F]** Create droplet: `s-2vcpu-4gb`, Ubuntu 24.04 LTS, region `BLR1`, new SSH key, name `terrarisk-prod-v2`
+- [ ] A1 **[F]** Confirm DO account is in good standing (rules out billing as V1's cause) — **non-negotiable first step**
+- [x] A2 **[C]** Generate three ed25519 keypairs (`admin`, `recovery`, `ci`); hand founder the public keys — **DONE 6 Aug 2026**
+- [ ] A3 **[F]** Add the `admin` **and** `recovery` public keys to the DO account
+- [ ] A4 **[F]** Create droplet: **`s-1vcpu-2gb`**, Ubuntu 24.04 LTS, region `BLR1`, both keys selected, name `terrarisk-prod-v2`
 - [ ] A5 **[F]** Create and attach a **Reserved IP**
 - [ ] A6 **[F]** Create DO cloud firewall: inbound 22/80/443 only; attach to droplet
-- [ ] A7 **[F]** Enable DO weekly backups on the droplet
+- [ ] A7 **[F]** ~~Enable DO weekly backups~~ — **deferred** per CTO review (duplicates a ~1.5 h documented rebuild; reinstate at first pilot)
 - [ ] A8 **[F]** Share the Reserved IP with Claude
+- [ ] A9 **[F]** Create a Backblaze B2 account + bucket + application key *(frozen decision)*
 
 ### Phase B — Domain *(founder, ~20 min — parallel with A)*
 - [x] B1 **[F]** ~~Decide: domain or IP-only~~ — **DECIDED: domain**
@@ -206,7 +214,8 @@ Nothing below is executed until approved. **[F]** = founder (DO console / regist
 ### Phase C — Harden *(Claude, ~30 min)*
 - [ ] C1 **[C]** SSH in, `apt update && upgrade`
 - [ ] C2 **[C]** Create `deploy` user (sudo + docker groups), install the SSH key
-- [ ] C3 **[C]** `PermitRootLogin no`, `PasswordAuthentication no`, reload sshd — **verify `deploy` login works before closing the root session**
+- [ ] C3 **[C]** Install **both** `admin` and `recovery` public keys for `deploy`; add 2 GB swap
+- [ ] C4 **[C]** `PermitRootLogin no`, `PasswordAuthentication no`, reload sshd — **verify `deploy` login works in a second session before closing the root session**
 - [ ] C4 **[C]** UFW: default deny incoming; allow 22/80/443; enable
 - [ ] C5 **[C]** Install + enable fail2ban (sshd jail)
 - [ ] C6 **[C]** Configure `unattended-upgrades` (security only)
