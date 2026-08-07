@@ -257,12 +257,16 @@ export default function WaterReportDashboardPage() {
               <p className="text-lg font-semibold tabular-nums">{formatMm(waterBalance.runoff_mm)}</p>
             </div>
             <div>
-              {/* "Recharge" and "Storage change" are the same backend
-               * field — WaterBalanceEngine computes no separate recharge
-               * term (P - ET - Q = dS is the whole equation). Labeled to
-               * say so, rather than repeating the identical number under
-               * two different headings. */}
-              <p className="text-xs text-muted-foreground">Recharge (storage change)</p>
+              {/* Deliberately NOT labelled "recharge". This field is the
+               * residual of P - ET - Q, which is the whole equation
+               * WaterBalanceEngine solves — there is no separate
+               * recharge term, and the residual is not the same thing.
+               * It also absorbs every flux the closed-catchment
+               * assumption omits (deep percolation leaving the
+               * catchment, lateral subsurface flow) plus all model error
+               * in the three larger terms, so calling it recharge
+               * overstates what it can support. */}
+              <p className="text-xs text-muted-foreground">Storage change (residual)</p>
               <p className="text-lg font-semibold tabular-nums">{formatMm(waterBalance.storage_change_mm)}</p>
               <StorageChangeBandChip band={waterBalance.storage_change_band} className="mt-1" />
             </div>

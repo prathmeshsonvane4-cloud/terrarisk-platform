@@ -25,12 +25,32 @@ export const STRESS_BANDS: Record<StressBand, BandStyle> = {
   very_high: { label: "Very high stress", chipClass: "bg-red-100 text-red-900" },
 };
 
+/**
+ * Labels describe the SIGN AND MAGNITUDE of the storage-change residual,
+ * deliberately not "normal"/"above normal".
+ *
+ * The API's enum values still read `much_above_normal` etc. — they are
+ * persisted in the database and renaming them is a migration, not a copy
+ * change — but the wording they were given implied a comparison the
+ * model never performs. The band comes from fixed +/-50 and +/-150 mm
+ * thresholds applied to a whole reporting period, with no climatological
+ * baseline anywhere in the computation (see the water balance engine's
+ * `_STORAGE_CHANGE_BAND_THRESHOLDS`, whose own comment records that a
+ * genuine percentile/z-score was intended but no provider fetches the
+ * historical distribution it would need).
+ *
+ * Calling a fixed-threshold result "much above normal" asserts that this
+ * catchment is wetter than its own history, which is exactly the claim
+ * this service cannot yet support — and the first thing a hydrologist
+ * would challenge. "Large net gain" says only what the arithmetic
+ * actually shows: P - ET - Q came out positive and sizeable.
+ */
 export const STORAGE_CHANGE_BANDS: Record<StorageChangeBand, BandStyle> = {
-  much_below_normal: { label: "Much below normal", chipClass: "bg-red-100 text-red-900" },
-  below_normal: { label: "Below normal", chipClass: "bg-orange-100 text-orange-900" },
-  normal: { label: "Normal", chipClass: "bg-emerald-100 text-emerald-900" },
-  above_normal: { label: "Above normal", chipClass: "bg-sky-100 text-sky-900" },
-  much_above_normal: { label: "Much above normal", chipClass: "bg-blue-100 text-blue-900" },
+  much_below_normal: { label: "Large net loss", chipClass: "bg-red-100 text-red-900" },
+  below_normal: { label: "Net loss", chipClass: "bg-orange-100 text-orange-900" },
+  normal: { label: "Near balance", chipClass: "bg-emerald-100 text-emerald-900" },
+  above_normal: { label: "Net gain", chipClass: "bg-sky-100 text-sky-900" },
+  much_above_normal: { label: "Large net gain", chipClass: "bg-blue-100 text-blue-900" },
 };
 
 /**

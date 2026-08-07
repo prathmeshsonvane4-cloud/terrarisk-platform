@@ -241,12 +241,15 @@ function drawWaterBalance(doc: jsPDF, y: number, report: WaterReportDetailRespon
   y = keyValueRow(doc, "Total rainfall", wb.rainfall_mm === null ? "—" : `${wb.rainfall_mm.toFixed(1)} mm`, y);
   y = keyValueRow(doc, "Evapotranspiration (ET)", wb.et_mm === null ? "—" : `${wb.et_mm.toFixed(1)} mm`, y);
   y = keyValueRow(doc, "Runoff", wb.runoff_mm === null ? "—" : `${wb.runoff_mm.toFixed(1)} mm`, y);
-  // "Recharge" and "Storage change" are the same backend field —
-  // WaterBalanceEngine computes no separate recharge term (P - ET - Q =
-  // dS is the whole equation) — labeled to say so, not repeated twice.
+  // Deliberately NOT "recharge" — this is the residual of P - ET - Q,
+  // the whole equation WaterBalanceEngine solves. It absorbs the fluxes
+  // the closed-catchment assumption omits (deep percolation out of the
+  // catchment, lateral subsurface flow) as well as all model error in
+  // the three larger terms, so naming it recharge claims more than it
+  // can support. Mirrors the on-screen label in the report page.
   y = keyValueRow(
     doc,
-    "Recharge (storage change)",
+    "Storage change (residual)",
     wb.storage_change_mm === null ? "—" : `${wb.storage_change_mm.toFixed(1)} mm`,
     y,
   );

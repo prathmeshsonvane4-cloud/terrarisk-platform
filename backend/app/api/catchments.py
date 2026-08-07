@@ -159,6 +159,43 @@ _MAX_PAGE_SIZE = 200
 _MIN_CATCHMENT_AREA_HA = 0.5
 _MAX_CATCHMENT_AREA_HA = 50000.0
 
+# Sub-pixel disclosure thresholds (Blueprint v2 D9/Part 5). Below these
+# areas the corresponding input is not really a measurement OF this
+# catchment — it is a regional value the catchment happens to sit inside,
+# and the report must say so rather than present a falsely precise
+# per-village figure.
+#
+# CHIRPS rainfall: ~0.05 degree grid, one pixel ~= 5.5 km ~= 3,000 ha.
+# A typical Raichur village is ~140 ha — roughly 1/20th of a single
+# rainfall pixel — so this flag is expected to be the common case, not
+# an edge case, for the village-scale catchments this service targets.
+_RAINFALL_PIXEL_AREA_HA = 3000.0
+
+# MODIS MOD16A2 ET: 500 m native pixel = 25 ha. The 5x5-pixel (~25 ha)
+# floor is Blueprint v2 D9's own stated threshold: below it, too few
+# whole pixels fall inside the catchment for the spatial mean to describe
+# it rather than its surroundings.
+_ET_PIXEL_FLOOR_HA = 25.0
+
+
+def _derive_resolution_flags(area_ha: float) -> list[str]:
+    """Which inputs are too coarse to resolve a catchment of this size.
+
+    Pure and area-only by design: these flags are computed once at
+    creation and copied unchanged into every downstream report (the
+    engine explicitly never re-derives them), so they must not depend on
+    anything that can drift between creation and report time.
+
+    Returned in a stable order so a catchment's flags are comparable
+    across reports and diffable in tests.
+    """
+    flags: list[str] = []
+    if area_ha < _RAINFALL_PIXEL_AREA_HA:
+        flags.append("rainfall_sub_pixel")
+    if area_ha < _ET_PIXEL_FLOOR_HA:
+        flags.append("et_sub_pixel")
+    return flags
+
 # Same generic, safe, non-internal message on every water-report failure
 # path below — provider construction, orchestrator/pipeline failure,
 # alike — mirroring app/api/reports.py's _GENERIC_FAILURE_MESSAGE
@@ -677,7 +714,7 @@ async def _persist_catchment(
         area_ha=area_ha,
         delineation_method=delineation_method,
         admin_boundary_id=admin_boundary_id,
-        resolution_flags=[],
+        resolution_flags=_derive_resolution_flags(area_ha),
         created_by=created_by,
     )
     db.add(catchment)

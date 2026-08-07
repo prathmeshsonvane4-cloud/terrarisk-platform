@@ -19,6 +19,11 @@ import shapefile
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import delete, select, text
 
+from app.api.catchments import (
+    _ET_PIXEL_FLOOR_HA,
+    _RAINFALL_PIXEL_AREA_HA,
+    _derive_resolution_flags,
+)
 from app.core.security import hash_password
 from app.database.base import AsyncSessionLocal, engine
 from app.main import app
@@ -155,7 +160,12 @@ async def test_create_catchment_succeeds_for_programme_officer_and_returns_catch
     }
     assert body["delineation_method"] == "manual"
     assert body["created_by"] == str(users_and_org["officer"].id)
-    assert body["resolution_flags"] == []
+    # Previously pinned to [] — which was pinning the fact that the field
+    # was never populated, not a property of this catchment. It is now
+    # derived from area at creation, and this fixture's polygon is well
+    # under one CHIRPS rainfall pixel (~3,000 ha), so the sub-pixel
+    # disclosure is the correct result rather than an empty list.
+    assert body["resolution_flags"] == ["rainfall_sub_pixel"]
 
 
 @pytest.mark.asyncio
@@ -829,3 +839,45 @@ async def test_trigger_water_report_returns_404_for_a_catchment_owned_by_someone
     async with AsyncSessionLocal() as db:
         jobs = (await db.execute(select(Job).where(Job.created_by == users_and_org["admin"].id))).scalars().all()
         assert jobs == []
+
+
+class TestResolutionFlagDerivation:
+    """`_derive_resolution_flags` decides whether a catchment is too small
+    for a given satellite input to describe it, rather than describing the
+    region it sits inside.
+
+    These are pure unit tests against the helper, not the endpoint: the
+    thresholds are the scientific claim worth pinning, and driving them
+    through catchment creation would need geometries of a precise real-
+    world area, which is a projection exercise, not a test of this rule.
+    """
+
+    def test_village_scale_catchment_is_rainfall_sub_pixel_but_not_et_sub_pixel(self):
+        """The common real case this exists for. A typical Raichur village
+        (~143 ha) is ~1/20th of one CHIRPS rainfall pixel (~3,000 ha), so
+        its "rainfall" is a regional value — but it still spans ~5.7 MODIS
+        ET pixels (25 ha each), which genuinely resolve it. Flagging both,
+        or neither, would both be wrong."""
+        assert _derive_resolution_flags(143.0) == ["rainfall_sub_pixel"]
+
+    def test_tiny_catchment_is_sub_pixel_for_both_inputs(self):
+        assert _derive_resolution_flags(10.0) == ["rainfall_sub_pixel", "et_sub_pixel"]
+
+    def test_large_catchment_carries_no_flags(self):
+        """A catchment bigger than one rainfall pixel needs no disclosure —
+        the flags must not fire for everything, or they stop carrying
+        information."""
+        assert _derive_resolution_flags(5000.0) == []
+
+    def test_thresholds_are_exclusive_at_the_boundary(self):
+        """Exactly one pixel is resolved, not sub-pixel — pinned because an
+        off-by-one on a `<` vs `<=` here silently changes which catchments
+        disclose a limitation."""
+        assert _derive_resolution_flags(_RAINFALL_PIXEL_AREA_HA) == []
+        assert _derive_resolution_flags(_ET_PIXEL_FLOOR_HA) == ["rainfall_sub_pixel"]
+
+    def test_flag_order_is_stable(self):
+        """Flags are persisted and compared across reports, so their order
+        must not depend on dict/set iteration."""
+        assert _derive_resolution_flags(1.0) == _derive_resolution_flags(1.0)
+        assert _derive_resolution_flags(1.0)[0] == "rainfall_sub_pixel"

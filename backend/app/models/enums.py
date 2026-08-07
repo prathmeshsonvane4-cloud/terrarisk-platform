@@ -135,12 +135,23 @@ class StressBand(str, enum.Enum):
 
 
 class StorageChangeBand(str, enum.Enum):
-    """The MVP headline figure for a water balance result (Blueprint v2 D5)
-    — a qualitative, climatology-relative descriptor. The underlying mm
-    value and its confidence interval are computed and stored, but shown
-    only in the technical/detailed report view, never as the headline,
-    because the mm figure is an unvalidated residual for every generic
-    customer at MVP (calibration_status defaults to UNCALIBRATED)."""
+    """The MVP headline figure for a water balance result (Blueprint v2 D5).
+    The underlying mm value and its confidence interval are computed and
+    stored, but shown only in the technical/detailed report view, never
+    as the headline, because the mm figure is an unvalidated residual for
+    every generic customer at MVP (calibration_status defaults to
+    UNCALIBRATED).
+
+    NOT climatology-relative, despite the member names. Blueprint v2 D5
+    intended a percentile/z-score against the catchment's own history,
+    but no provider fetches that historical distribution, so the bands
+    are cut at fixed +/-50 and +/-150 mm thresholds
+    (`WaterBalanceEngine._STORAGE_CHANGE_BAND_THRESHOLDS`). The member
+    names are kept because they are persisted values and renaming them is
+    a migration; the presentation layer deliberately labels them by sign
+    and magnitude instead ("Large net gain", not "Much above normal" —
+    see the frontend's STORAGE_CHANGE_BANDS), because a fixed-threshold
+    result cannot support a claim about what is normal HERE."""
 
     MUCH_BELOW_NORMAL = "much_below_normal"
     BELOW_NORMAL = "below_normal"
