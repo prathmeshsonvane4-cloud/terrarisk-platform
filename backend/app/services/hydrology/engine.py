@@ -54,29 +54,59 @@ logger = logging.getLogger(__name__)
 # — the runoff methodology Blueprint v2 Part 4/Part 10 names explicitly,
 # cited there as reasonably valid for semi-arid Western Maharashtra
 # catchments per the region-qualified validation study in Blueprint v2's
-# Sources (the same study ticket M2-005's golden-dataset test will
-# regress against). Applied per calendar month, not per discrete storm
-# event — the method's own documented weakness (storm duration ignored)
-# that Blueprint v2's Sources table already names, not a new one
-# introduced here.
+# Sources (the same study ticket M2-005's golden-dataset test regresses
+# against). Applied PER STORM EVENT (one per rainy day), which is the
+# timestep the method is defined for — see `_event_runoff_mm`.
 #
 # A single, fixed, representative CN stands in for a real
 # catchment-specific soil/land-use-derived value: no provider in this
 # codebase fetches soil/land-use data yet, and WaterBalanceBundle carries
-# no such field, so this is a further named, deliberate MVP
-# simplification (see module docstring, point 3). 75 is a representative
-# mid-range value for row-crop agriculture in fair hydrologic condition
-# on Hydrologic Soil Group C — broadly typical of the Deccan/Marathwada
-# black-cotton-soil catchments this service targets first — NOT locally
-# calibrated per catchment, the same "named literature default, not
-# locally calibrated" discipline gee_hydrology_provider.py already
-# applies to its own SAR/MNDWI thresholds.
-_CURVE_NUMBER = 75.0
+# no such field, so this is a named, deliberate MVP simplification (see
+# module docstring, point 3).
+#
+# 89 is the NRCS TR-55 Table 2-2a value for row crops, straight row,
+# GOOD hydrologic condition, on Hydrologic Soil Group D.
+#
+# HSG D is the correct group for this service's first target geography.
+# Deccan/Marathwada black cotton soils are vertisols: high-clay,
+# shrink-swell soils that seal once wetted and have very low saturated
+# infiltration, which is NRCS's own definition of group D. (Their dry
+# cracks give high INITIAL infiltration, which is why they are sometimes
+# given a dual C/D rating — but D is the standard assignment for the
+# wetted, runoff-producing condition this term models.)
+#
+# This corrects a real defect, not a preference: the previous value of 75
+# was described in this same comment as "Hydrologic Soil Group C," but
+# TR-55 gives 85 for row crops on group C — 75 is closer to a group B
+# (well-drained sandy loam) value. The catchment was therefore modelled
+# as roughly two soil groups more permeable than Deccan vertisols
+# actually are, suppressing runoff and pushing the unexplained residual
+# into storage change.
+#
+# Still NOT locally calibrated per catchment — the same "named
+# literature default, not locally calibrated" discipline
+# gee_hydrology_provider.py applies to its own SAR/MNDWI thresholds.
+_CURVE_NUMBER = 89.0
 
 # Standard SCS initial-abstraction ratio (Ia = lambda * S), lambda = 0.2
 # — the conventional default the method's own literature uses, and the
 # specific assumption Blueprint v2's Sources table names as "often wrong"
 # in practice but not replaced with a locally-derived value at MVP.
+#
+# DELIBERATELY LEFT AT THE STANDARD 0.2. A substantial body of work
+# (notably Hawkins et al., and much of the Indian rainfall-runoff
+# literature) argues lambda ~= 0.05 fits observed events better, and
+# moving to it would raise runoff further. That is a RESEARCH REVISION,
+# not the standard method, and adopting it would silently re-tune the
+# headline water balance to a non-standard parameterisation. It is a
+# calibration decision for a domain reviewer with local event data, not
+# a default to change quietly — the same reason `_CURVE_NUMBER` stays an
+# uncalibrated published table value rather than a fitted one.
+#
+# Note the interaction with CN, which is why this is worth stating: Ia
+# scales with S, so raising CN to 89 already dropped Ia from ~16.9 mm to
+# ~6.3 mm. Many more daily depths now clear the abstraction threshold
+# and generate runoff, without touching lambda at all.
 _INITIAL_ABSTRACTION_RATIO = 0.2
 
 # Fixed, named mm thresholds — an MVP stand-in for a genuine
@@ -129,7 +159,7 @@ def _sum_or_none(series: list[MonthlyValue]) -> float | None:
     return sum(valid) if valid else None
 
 
-def _event_runoff_mm(rainfall_mm: float) -> float:
+def _event_runoff_mm(rainfall_mm: float, curve_number: float = _CURVE_NUMBER) -> float:
     """SCS Curve Number runoff for ONE STORM EVENT's rainfall depth. Q =
     (P - Ia)^2 / (P - Ia + S) for P > Ia, else 0 — the standard SCS-CN
     formula, S and Ia derived from `_CURVE_NUMBER`/
@@ -142,10 +172,19 @@ def _event_runoff_mm(rainfall_mm: float) -> float:
     Passing an accumulated total here (a month, a season) silently models
     the whole period as one giant storm.
 
-    `_total_runoff_mm()` below is the only caller and passes daily
-    depths, one event per day.
+    `_total_runoff_mm()` below is the only production caller and passes
+    daily depths, one event per day.
+
+    `curve_number` is injectable purely so the formula can be validated
+    against a published worked example at THAT example's CN, independent
+    of whatever regional CN this service currently defaults to. Those are
+    two separate questions — "is the formula transcribed correctly?" and
+    "is our soil-group assignment right?" — and coupling them means
+    changing the regional default either breaks the formula check for the
+    wrong reason or, worse, quietly redefines the reference it validates
+    against. Production always uses the default.
     """
-    max_retention_mm = (25400.0 / _CURVE_NUMBER) - 254.0
+    max_retention_mm = (25400.0 / curve_number) - 254.0
     initial_abstraction_mm = _INITIAL_ABSTRACTION_RATIO * max_retention_mm
     if rainfall_mm <= initial_abstraction_mm:
         return 0.0

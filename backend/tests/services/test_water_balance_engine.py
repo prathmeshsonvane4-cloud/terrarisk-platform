@@ -220,28 +220,54 @@ class TestZeroEt:
 
 class TestNegativeBalance:
     def test_high_et_low_rainfall_produces_a_deeply_negative_band(self):
-        """Rainfall (10mm) stays below the initial-abstraction threshold
-        every month, so runoff is exactly 0 — an easy-to-verify-by-hand
-        case with no quadratic term."""
-        bundle = _bundle(rainfall_monthly=_series([10.0, 10.0, 10.0], 3), et_monthly=_series([200.0, 200.0, 200.0], 3))
+        """Rainfall stays below the initial-abstraction threshold every
+        event, so runoff is exactly 0 — an easy-to-verify-by-hand case
+        with no quadratic term.
+
+        The depth must sit under Ia, which moves with CN: Ia was 16.9 mm
+        at CN=75 and is 6.28 mm at CN=89, so the original 10 mm silently
+        crossed into the quadratic branch when the soil group was
+        corrected. The guard below keeps that from happening quietly
+        again — if a future CN raises Ia past this depth, the scenario
+        gets re-chosen deliberately instead of turning into a different
+        test than the one its docstring describes.
+        """
+        s = (25400.0 / _CURVE_NUMBER) - 254.0
+        initial_abstraction_mm = _INITIAL_ABSTRACTION_RATIO * s
+        assert 5.0 < initial_abstraction_mm, (
+            "this scenario requires a sub-Ia rainfall depth to keep runoff exactly 0; "
+            f"Ia is now {initial_abstraction_mm:.2f} mm — pick a smaller depth"
+        )
+
+        bundle = _bundle(rainfall_monthly=_series([5.0, 5.0, 5.0], 3), et_monthly=_series([200.0, 200.0, 200.0], 3))
         result = WaterBalanceEngine().compute(bundle, _config())
 
-        assert result.rainfall_mm == pytest.approx(30.0)
+        assert result.rainfall_mm == pytest.approx(15.0)
         assert result.et_mm == pytest.approx(600.0)
         assert result.runoff_mm == 0.0
-        assert result.storage_change_mm == pytest.approx(-570.0)
+        assert result.storage_change_mm == pytest.approx(-585.0)
         assert result.storage_change_band == StorageChangeBand.MUCH_BELOW_NORMAL
 
 
 class TestPositiveBalance:
     def test_high_rainfall_zero_et_produces_a_strongly_positive_band(self):
-        bundle = _bundle(rainfall_monthly=_series([300.0, 300.0], 2), et_monthly=_series([0.0, 0.0], 2))
+        """Six events rather than two, because SCS-CN bounds how much a
+        single event can contribute to storage: as P grows,
+        Q -> P - Ia - S, so (P - Q) asymptotes to Ia + S = 1.2 * S, about
+        37.7 mm per event at CN=89 no matter how heavy the storm. Two
+        events therefore cannot clear the 150 mm MUCH_ABOVE_NORMAL
+        threshold at all with zero ET — not a band-logic failure, a real
+        property of the runoff method. At CN=75, S was 2.7x larger, so
+        two events sufficed and this scenario passed.
+        """
+        rainfall = [300.0] * 6
+        bundle = _bundle(rainfall_monthly=_series(rainfall, 6), et_monthly=_series([0.0] * 6, 6))
         result = WaterBalanceEngine().compute(bundle, _config())
 
-        expected_runoff = _scs_cn_runoff(300.0) * 2
-        expected_storage_change = 600.0 - 0.0 - expected_runoff
+        expected_runoff = _scs_cn_runoff(300.0) * 6
+        expected_storage_change = 1800.0 - 0.0 - expected_runoff
 
-        assert result.rainfall_mm == pytest.approx(600.0)
+        assert result.rainfall_mm == pytest.approx(1800.0)
         assert result.et_mm == 0.0
         assert result.runoff_mm == pytest.approx(expected_runoff)
         assert result.storage_change_mm == pytest.approx(expected_storage_change)

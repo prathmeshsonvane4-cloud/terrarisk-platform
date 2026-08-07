@@ -107,6 +107,23 @@ def _config() -> WaterBalanceConfig:
     return WaterBalanceConfig(model_version="golden-dataset-caller")
 
 
+def _independent_scs_cn_runoff(rainfall_mm: float, curve_number: float = _CURVE_NUMBER) -> float:
+    """Independent re-derivation of the published SCS-CN formula for one
+    storm event, written out from the method's own definition rather than
+    by calling `_event_runoff_mm` — so it is genuinely capable of
+    disagreeing with the implementation under test.
+
+    S = 25400/CN - 254 (mm), Ia = lambda * S, Q = (P-Ia)^2 / (P-Ia+S)
+    for P > Ia, else 0.
+    """
+    s = (25400.0 / curve_number) - 254.0
+    ia = _INITIAL_ABSTRACTION_RATIO * s
+    if rainfall_mm <= ia:
+        return 0.0
+    excess = rainfall_mm - ia
+    return (excess * excess) / (excess + s)
+
+
 class TestCurveNumberAgainstNrcsReference:
     """USDA NRCS's own canonical worked example for the SCS Curve Number
     method: rainfall P = 5.1 in, CN = 75, direct runoff Q = 2.53 in.
@@ -131,19 +148,29 @@ class TestCurveNumberAgainstNrcsReference:
     citation, is what makes this a real cross-check rather than a
     trusted magic number.
 
-    Conveniently (not engineered — this is simply how the search results
-    landed), CN=75 is this codebase's own `_CURVE_NUMBER` default, making
-    this the single most directly relevant published reference point for
-    validating the current implementation's exact configuration.
+    This class validates the FORMULA TRANSCRIPTION ONLY, at the worked
+    example's own CN=75, passed explicitly. It is deliberately
+    independent of `_CURVE_NUMBER`, this service's regional default.
+
+    Those two things were originally coupled — the default happened to
+    also be 75, and this test asserted that equality to stay honest. That
+    guard did its job: when `_CURVE_NUMBER` moved to 89 (NRCS TR-55's
+    value for row crops on Hydrologic Soil Group D, the correct group for
+    Deccan black cotton vertisols), this test failed loudly instead of
+    silently revalidating a reference it no longer matched. The fix is to
+    separate the questions rather than re-pin the reference: "is
+    Q = (P-Ia)^2/(P-Ia+S) transcribed correctly?" is answered here at
+    CN=75 forever, while "is our soil-group assignment right?" is a
+    calibration question no published worked example can settle.
     """
 
     def test_matches_the_nrcs_worked_example_within_rounding_tolerance(self):
-        assert _CURVE_NUMBER == 75.0, "this golden reference is only valid for CN=75 — if _CURVE_NUMBER changes, this test's reference point no longer applies and must be revisited, not silently left green"
-
         rainfall_mm = 5.1 * _INCHES_TO_MM  # 129.54 mm, an exact unit conversion
         expected_runoff_mm = 2.53 * _INCHES_TO_MM  # 64.262 mm, per the cited NRCS example
 
-        actual_runoff_mm = _event_runoff_mm(rainfall_mm)
+        # CN=75 explicitly: the worked example's own value, NOT whatever
+        # regional default this service currently ships.
+        actual_runoff_mm = _event_runoff_mm(rainfall_mm, curve_number=75.0)
 
         # Tolerance rationale: the cited reference figure (2.53 in) is
         # itself only reported to 2 decimal places — a rounding
@@ -154,17 +181,27 @@ class TestCurveNumberAgainstNrcsReference:
         assert actual_runoff_mm == pytest.approx(expected_runoff_mm, abs=0.5)
 
     def test_full_engine_reproduces_the_same_value_through_compute(self):
-        """The same reference point, exercised through the full public
-        `compute()` path (bundle -> engine -> result), not just the
-        private helper — proves the aggregation step doesn't distort a
-        single-month reference value."""
+        """The same single-event reference point, exercised through the
+        full public `compute()` path (bundle -> engine -> result), not
+        just the private helper — proves the aggregation step doesn't
+        distort a single-event reference value.
+
+        Unlike the pure-formula test above, this one necessarily runs at
+        the SHIPPING `_CURVE_NUMBER`, because `compute()` has no CN
+        injection point (deliberately — production must not be able to
+        pick a CN per call). So the expected value is derived here from
+        `_scs_cn_runoff`, this file's own independent re-derivation of
+        the published formula, rather than from the NRCS example's 2.53
+        in figure, which only holds at CN=75. What this still proves, and
+        what it is here for, is that no aggregation/unit step between
+        bundle and result distorts a single event's runoff.
+        """
         rainfall_mm = 5.1 * _INCHES_TO_MM
         bundle = _bundle_for_months(rainfall_mm=[rainfall_mm], et_mm=[0.0])
 
         result = WaterBalanceEngine().compute(bundle, _config())
 
-        expected_runoff_mm = 2.53 * _INCHES_TO_MM
-        assert result.runoff_mm == pytest.approx(expected_runoff_mm, abs=0.5)
+        assert result.runoff_mm == pytest.approx(_independent_scs_cn_runoff(rainfall_mm))
 
 
 class TestWaterBalanceAgainstIndependentComputation:
@@ -174,11 +211,26 @@ class TestWaterBalanceAgainstIndependentComputation:
     reproducible by anyone reading this test."""
 
     def test_three_month_bundle_matches_independently_computed_residual(self):
-        """rainfall = [120, 45, 200] mm, ET = [35, 20, 60] mm, CN = 75.
-        Independently computed (standalone script, this ticket):
-          per-month runoff = [56.58418560606059, 6.987620737236346, 125.17456839309428]
-          rainfall_mm = 365.0, et_mm = 115.0, runoff_mm = 188.7463747363912
-          storage_change_mm = 365.0 - 115.0 - 188.7463747363912 = 61.2536252636088
+        """rainfall = [120, 45, 200] mm as three storm events, ET = [35,
+        20, 60] mm, CN = 89.
+
+        Independently recomputed (standalone script, run when
+        `_CURVE_NUMBER` moved 75 -> 89 for Hydrologic Soil Group D):
+          S  = 25400/89 - 254 = 31.39325842696627 mm
+          Ia = 0.2 * S        =  6.278651685393254 mm
+          per-event runoff = [89.11952664781016, 21.384172071696067,
+                              166.7060229277371]
+          rainfall_mm = 365.0, et_mm = 115.0, runoff_mm = 277.2097216472433
+          storage_change_mm = 365.0 - 115.0 - 277.2097216472433
+                            = -27.209721647243327
+
+        Note the sign flip against the previous CN=75 pinning (+61.25):
+        modelling this catchment on the correct, far less permeable soil
+        group turns a small apparent storage GAIN into a small storage
+        LOSS on identical rainfall and ET. That sensitivity is the whole
+        reason this value is pinned — the residual dS is the smallest
+        term in the balance and therefore the one most distorted by an
+        error in any of the larger ones.
         """
         bundle = _bundle_for_months(rainfall_mm=[120.0, 45.0, 200.0], et_mm=[35.0, 20.0, 60.0])
 
@@ -186,8 +238,8 @@ class TestWaterBalanceAgainstIndependentComputation:
 
         assert result.rainfall_mm == pytest.approx(365.0)
         assert result.et_mm == pytest.approx(115.0)
-        assert result.runoff_mm == pytest.approx(188.7463747363912)
-        assert result.storage_change_mm == pytest.approx(61.2536252636088)
+        assert result.runoff_mm == pytest.approx(277.2097216472433)
+        assert result.storage_change_mm == pytest.approx(-27.209721647243327)
 
 
 class TestBoundaryConditions:
@@ -285,9 +337,13 @@ class TestPinnedGoldenResult:
 
         assert result.rainfall_mm == pytest.approx(365.0)
         assert result.et_mm == pytest.approx(115.0)
-        assert result.runoff_mm == pytest.approx(188.7463747363912)
-        assert result.storage_change_mm == pytest.approx(61.2536252636088)
-        assert result.storage_change_band == StorageChangeBand.ABOVE_NORMAL
+        assert result.runoff_mm == pytest.approx(277.2097216472433)
+        assert result.storage_change_mm == pytest.approx(-27.209721647243327)
+        # Was ABOVE_NORMAL at CN=75. -27.21 mm falls in the -50..+50 mm
+        # NORMAL band, so correcting the soil group moves this bundle
+        # across a band boundary as well as flipping the sign — the
+        # band, not just the number, is sensitive to CN.
+        assert result.storage_change_band == StorageChangeBand.NORMAL
         assert result.data_completeness == pytest.approx(100.0)
         assert result.calibration_status == CalibrationStatus.UNCALIBRATED
         assert result.closed_catchment_assumed is True
