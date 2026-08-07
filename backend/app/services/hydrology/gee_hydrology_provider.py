@@ -11,6 +11,7 @@ back into `MonthlyValue`, per the architectural contract
 from __future__ import annotations
 
 import logging
+import math
 import threading
 from datetime import date
 
@@ -334,7 +335,30 @@ class GEEHydrologyProvider(HydrologyDataProvider):
                 # and averaging binary masks (either is defensible; this
                 # matches get_et_series()'s own "composite first, reduce
                 # second" shape so every method here reads the same way).
-                composite = month_images.mean()
+                #
+                # The averaging happens in LINEAR POWER, not in dB.
+                # Sentinel-1 GRD's VV band is stored in dB, a logarithmic
+                # scale, so a plain .mean() over the month returns the
+                # GEOMETRIC mean of backscatter power rather than the
+                # arithmetic mean. That is not a stylistic choice: the
+                # geometric mean is always <= the arithmetic mean, and the
+                # gap widens with scene-to-scene variance, so a dB-averaged
+                # composite is biased dark exactly where backscatter varies
+                # most (land/water margins, seasonally flooded ground).
+                # Against a fixed -15 dB threshold a dark bias pushes
+                # borderline pixels into the water class and overestimates
+                # surface-water extent — in the very places the estimate
+                # matters. Converting to power, averaging, and converting
+                # back is the standard SAR compositing order.
+                #
+                # 10^(dB/10) is written as exp(dB/10 * ln 10) rather than
+                # ee.Image(10).pow(...) so the band name survives: a
+                # constant-image base would rename the result and break the
+                # `is_water` selection below.
+                linear_power = month_images.map(
+                    lambda image: ee.Image(image).divide(10.0).multiply(math.log(10.0)).exp()
+                )
+                composite = linear_power.mean().log10().multiply(10.0)
                 is_water = composite.lt(_SAR_VV_WATER_THRESHOLD_DB).rename("is_water")
                 stats = is_water.reduceRegion(
                     reducer=ee.Reducer.mean(),
