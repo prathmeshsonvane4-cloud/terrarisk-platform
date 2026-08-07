@@ -16,8 +16,8 @@ import { DownloadWaterReportJsonButton } from "@/features/water-intelligence/dow
 import { formatMm, formatPercent, formatRatio } from "@/features/water-intelligence/format-water-report";
 import { deriveWaterReportInsights } from "@/features/water-intelligence/insights";
 import { DELINEATION_METHOD_LABELS } from "@/features/water-intelligence/labels";
-import { MetricTrendChart, type TrendPoint } from "@/features/water-intelligence/metric-trend-chart";
 import { DownloadWaterReportPdfButton } from "@/features/water-intelligence/pdf/download-water-report-pdf-button";
+import { AnnualWaterBalanceChart } from "@/features/water-intelligence/annual-water-balance-chart";
 import { numberField } from "@/features/water-intelligence/raw-inputs";
 import { ResolutionFlagNotice } from "@/features/water-intelligence/resolution-flags";
 import { SpatialContextPanel } from "@/features/water-intelligence/spatial-context/spatial-context-panel";
@@ -25,7 +25,6 @@ import { bandForFactorScore } from "@/features/water-intelligence/stress-factor-
 import { SurfaceWaterIndicator } from "@/features/water-intelligence/surface-water-indicator";
 import { useCatchments } from "@/features/water-intelligence/use-catchments";
 import { useLatestWaterReport } from "@/features/water-intelligence/use-latest-water-report";
-import { useWaterReportHistory } from "@/features/water-intelligence/use-water-report-history";
 import { WATER_BALANCE_BAR_COLORS, WaterBalanceChart } from "@/features/water-intelligence/water-balance-chart";
 import { ApiError } from "@/lib/api/errors";
 import { formatArea } from "@/lib/format";
@@ -58,7 +57,6 @@ export default function WaterReportDashboardPage() {
   const { id } = useParams<{ id: string }>();
   const { data: catchments, isPending: catchmentsPending } = useCatchments();
   const report = useLatestWaterReport(id);
-  const history = useWaterReportHistory(id);
 
   const catchment = catchments?.find((item) => item.id === id);
   const isPending = catchmentsPending || report.isPending;
@@ -120,18 +118,6 @@ export default function WaterReportDashboardPage() {
   const rechargeStress = data.recharge_stress;
   const confidence = numberField(rechargeStress.raw_inputs, "confidence");
   const insights = deriveWaterReportInsights(data);
-
-  // history.data is newest-first (the right order for a list); a chart
-  // reads left-to-right as oldest-to-newest, so reverse for that one use.
-  const historyOldestFirst = [...(history.data ?? [])].reverse();
-  const stressTrendPoints: TrendPoint[] = historyOldestFirst.map((item) => ({
-    generatedAt: item.generated_at,
-    value: item.recharge_stress.stress_score,
-  }));
-  const storageChangeTrendPoints: TrendPoint[] = historyOldestFirst.map((item) => ({
-    generatedAt: item.generated_at,
-    value: item.water_balance.storage_change_mm,
-  }));
 
   const factorCards = [
     {
@@ -324,39 +310,46 @@ export default function WaterReportDashboardPage() {
         </CardContent>
       </Card>
 
-      {/* 3b. Trend over time */}
+      {/* 3b. Year on year */}
       <Card size="sm" className="print:break-inside-avoid">
         <CardHeader>
-          <CardTitle>Trend over time</CardTitle>
+          <CardTitle>Year on year</CardTitle>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
-          <p className="text-xs text-muted-foreground">
-            Every past completed run for this catchment — not a projection, only real report-to-report change.
-            {" "}
-            <Link href={`/catchments/compare?ids=${id}`} className="underline">
-              Compare with another catchment
-            </Link>
-          </p>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div>
-              <p className="mb-1.5 text-xs text-muted-foreground">Recharge stress score</p>
-              <MetricTrendChart
-                points={stressTrendPoints}
-                color="#8b5cf6"
-                ariaLabel="Recharge stress score over time"
-                valueFormatter={(value) => `${Math.round(value)} / 100`}
-              />
-            </div>
-            <div>
-              <p className="mb-1.5 text-xs text-muted-foreground">Storage change (residual)</p>
-              <MetricTrendChart
-                points={storageChangeTrendPoints}
-                color={WATER_BALANCE_BAR_COLORS.storageChange}
-                ariaLabel="Storage change in millimetres over time"
-                valueFormatter={(value) => formatMm(value)}
-              />
-            </div>
-          </div>
+          {/* This replaced a chart plotting one point per REPORT RUN,
+            * which meant two reports generated in one afternoon showed as
+            * two points both dated today. That answered "when did we press
+            * the button", not "is this catchment gaining or losing water"
+            * — the only temporal question a watershed programme acts on.
+            *
+            * Report-to-report history still exists and still matters for
+            * comparing catchments, so that entry point is kept below
+            * rather than removed with the chart. */}
+          {waterBalance.annual && waterBalance.annual.length > 0 ? (
+            <>
+              <p className="text-xs text-muted-foreground">
+                Measured water balance for each water year in the observation window — real observations, not a
+                projection.{" "}
+                <Link href={`/catchments/compare?ids=${id}`} className="underline">
+                  Compare with another catchment
+                </Link>
+              </p>
+              <AnnualWaterBalanceChart annual={waterBalance.annual} />
+            </>
+          ) : (
+            /* Null, not empty: reports generated before the year-wise
+             * breakdown existed cannot be backfilled, because the monthly
+             * series they were derived from was never stored. Saying so is
+             * better than rendering an empty chart that reads as "no
+             * water moved". */
+            <p className="text-xs text-muted-foreground">
+              This report predates the year-wise breakdown, and the monthly data it was built from was not stored, so
+              it cannot be filled in retrospectively. Re-run the report to see it.{" "}
+              <Link href={`/catchments/compare?ids=${id}`} className="underline">
+                Compare with another catchment
+              </Link>
+            </p>
+          )}
         </CardContent>
       </Card>
 

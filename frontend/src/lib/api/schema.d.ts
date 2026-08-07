@@ -1456,6 +1456,27 @@ export interface components {
          *     (see that model for the full column-by-column rationale) — no
          *     catchment_id (redundant with the parent response's own field).
          */
+        /**
+         * One water year's water balance (June-May, not calendar year).
+         * `months_covered` distinguishes a complete year from a partial
+         * stub at the edge of the observation window.
+         */
+        AnnualWaterBalanceResponse: {
+            /** Label */
+            label: string;
+            /** Start Year */
+            start_year: number;
+            /** Months Covered */
+            months_covered: number;
+            /** Rainfall Mm */
+            rainfall_mm: number | null;
+            /** Et Mm */
+            et_mm: number | null;
+            /** Runoff Mm */
+            runoff_mm: number | null;
+            /** Storage Change Mm */
+            storage_change_mm: number | null;
+        };
         WaterBalanceResultResponse: {
             /**
              * Id
@@ -1480,6 +1501,13 @@ export interface components {
             runoff_mm: number | null;
             /** Storage Change Mm */
             storage_change_mm: number | null;
+            /**
+             * Annual
+             * @description Per water year, oldest first. Null on reports
+             *     generated before this field existed — treat as "not
+             *     computed", never as "no change".
+             */
+            annual?: components["schemas"]["AnnualWaterBalanceResponse"][] | null;
             storage_change_band: components["schemas"]["StorageChangeBand"];
             /** Data Completeness */
             data_completeness: number;
