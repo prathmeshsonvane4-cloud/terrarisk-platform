@@ -164,7 +164,7 @@ def _same_month_across_years(values: list[float | None], month: int = 7) -> list
     so a valid fixture has to vary the year and hold the month fixed.
     These tests previously used three CONSECUTIVE months, which only
     passed because the implementation was comparing across the seasonal
-    cycle — the exact defect app/services/risk/vci.py now documents.
+    cycle — the exact defect app/services/risk/seasonal.py now documents.
     """
     return [MonthlyValue(period_start=date(2023 + i, month, 1), value=v) for i, v in enumerate(values)]
 
@@ -172,17 +172,20 @@ def _same_month_across_years(values: list[float | None], month: int = 7) -> list
 class TestVegetationConditionScoring:
     def test_current_at_historical_maximum_is_zero_stress(self):
         """VCI=100 (this July is the greenest July on record) -> stress 0."""
-        stress, vci = recharge_stress_module._score_vegetation_condition(_same_month_across_years([0.2, 0.5, 0.8]))
+        julys = _same_month_across_years([0.2, 0.3, 0.5, 0.6, 0.8])
+        stress, vci = recharge_stress_module._score_vegetation_condition(julys, julys)
         assert vci == pytest.approx(100.0)
         assert stress == pytest.approx(0.0)
 
     def test_current_at_historical_minimum_is_maximum_stress(self):
-        stress, vci = recharge_stress_module._score_vegetation_condition(_same_month_across_years([0.8, 0.5, 0.2]))
+        julys = _same_month_across_years([0.8, 0.6, 0.5, 0.3, 0.2])
+        stress, vci = recharge_stress_module._score_vegetation_condition(julys, julys)
         assert vci == pytest.approx(0.0)
         assert stress == pytest.approx(100.0)
 
     def test_current_at_the_midpoint_is_neutral_stress(self):
-        stress, vci = recharge_stress_module._score_vegetation_condition(_same_month_across_years([0.2, 0.8, 0.5]))
+        julys = _same_month_across_years([0.2, 0.8, 0.3, 0.6, 0.5])
+        stress, vci = recharge_stress_module._score_vegetation_condition(julys, julys)
         assert vci == pytest.approx(50.0)
         assert stress == pytest.approx(50.0)
 
@@ -202,53 +205,77 @@ class TestVegetationConditionScoring:
             MonthlyValue(period_start=date(2024, 8, 1), value=0.8),
             MonthlyValue(period_start=date(2025, 4, 1), value=0.2),
         ]
-        stress, vci = recharge_stress_module._score_vegetation_condition(seasonal)
+        stress, vci = recharge_stress_module._score_vegetation_condition(seasonal, seasonal)
         assert vci is None
         assert stress == 50.0
 
     def test_no_valid_observations_falls_back_to_neutral(self):
-        stress, vci = recharge_stress_module._score_vegetation_condition(_series([None, None, None]))
+        empty = _series([None, None, None])
+        stress, vci = recharge_stress_module._score_vegetation_condition(empty, empty)
         assert vci is None
         assert stress == 50.0
 
     def test_degenerate_flat_history_falls_back_to_neutral(self):
         """max == min: VCI's denominator would be zero — must not raise
         ZeroDivisionError, falls back to neutral instead."""
-        stress, vci = recharge_stress_module._score_vegetation_condition(_series([0.5, 0.5, 0.5]))
+        flat = _same_month_across_years([0.5, 0.5, 0.5, 0.5, 0.5])
+        stress, vci = recharge_stress_module._score_vegetation_condition(flat, flat)
         assert vci is None
         assert stress == 50.0
 
 
 class TestSurfaceWaterTrendScoring:
-    def test_current_at_historical_maximum_is_zero_stress(self):
-        """Self-inclusive percentile rank: current IS the max of its own
-        history, so all 5 values are <= current -> percentile=100 ->
-        stress=0 (maximum persistence, no stress)."""
-        stress, trend = recharge_stress_module._score_surface_water_trend(_series([10.0, 20.0, 30.0, 40.0, 50.0]))
-        assert trend == pytest.approx(100.0)
-        assert stress == pytest.approx(0.0)
+    """Percentile rank now uses the MIDPOINT convention for ties (values
+    strictly below, plus half the values exactly equal) and ranks against
+    the same calendar month across years.
+
+    The previous at-or-below convention counted the current reading
+    against itself, so a value could never rank below 1/n and the maximum
+    always scored exactly 100. Midpoint ranks are symmetric — the lowest
+    of five Julys scores 10, the median 50, the highest 90 — and, more
+    importantly, a saturated index that reports the same extent for
+    several months lands at its own centre instead of at an extreme.
+    """
+
+    def test_current_at_historical_maximum_is_lowest_stress(self):
+        julys = _same_month_across_years([10.0, 20.0, 30.0, 40.0, 50.0])
+        stress, trend = recharge_stress_module._score_surface_water_trend(julys, julys)
+        assert trend == pytest.approx(90.0)
+        assert stress == pytest.approx(10.0)
 
     def test_current_at_historical_minimum_is_high_stress(self):
-        """Self-inclusive rank: only 1 of 5 values (current itself) is <=
-        current -> percentile=20.0 -> stress=80.0."""
-        stress, trend = recharge_stress_module._score_surface_water_trend(_series([50.0, 40.0, 30.0, 20.0, 10.0]))
-        assert trend == pytest.approx(20.0)
-        assert stress == pytest.approx(80.0)
+        julys = _same_month_across_years([50.0, 40.0, 30.0, 20.0, 10.0])
+        stress, trend = recharge_stress_module._score_surface_water_trend(julys, julys)
+        assert trend == pytest.approx(10.0)
+        assert stress == pytest.approx(90.0)
 
     def test_current_at_the_median_produces_the_correct_percentile(self):
-        """current=30, history=[10,20,50,40,30]: 3 of 5 values <= 30 ->
-        percentile=60.0 -> stress=40.0."""
-        stress, trend = recharge_stress_module._score_surface_water_trend(_series([10.0, 20.0, 50.0, 40.0, 30.0]))
-        assert trend == pytest.approx(60.0)
-        assert stress == pytest.approx(40.0)
+        julys = _same_month_across_years([10.0, 20.0, 50.0, 40.0, 30.0])
+        stress, trend = recharge_stress_module._score_surface_water_trend(julys, julys)
+        assert trend == pytest.approx(50.0)
+        assert stress == pytest.approx(50.0)
+
+    def test_a_saturated_index_ranks_at_its_centre_not_at_an_extreme(self):
+        """A catchment with no surface water reports 0% every July. Neither
+        "lowest on record" nor "highest on record" describes that fairly;
+        the midpoint convention puts it at 50."""
+        julys = _same_month_across_years([0.0, 0.0, 0.0, 0.0, 0.0])
+        stress, trend = recharge_stress_module._score_surface_water_trend(julys, julys)
+        assert trend == pytest.approx(50.0)
+        assert stress == pytest.approx(50.0)
 
     def test_no_valid_observations_falls_back_to_neutral(self):
-        stress, trend = recharge_stress_module._score_surface_water_trend(_series([None, None, None]))
+        empty = _series([None, None, None])
+        stress, trend = recharge_stress_module._score_surface_water_trend(empty, empty)
         assert trend is None
         assert stress == 50.0
 
-    def test_fewer_than_two_valid_months_falls_back_to_neutral(self):
-        stress, trend = recharge_stress_module._score_surface_water_trend(_series([10.0, None, None]))
+    def test_too_few_baseline_samples_falls_back_to_neutral(self):
+        """Below MIN_BASELINE_SAMPLES the rank carries no information, so
+        the factor reports not-computable rather than a number derived
+        from a handful of points."""
+        julys = _same_month_across_years([10.0, 20.0])
+        stress, trend = recharge_stress_module._score_surface_water_trend(julys, julys)
         assert trend is None
         assert stress == 50.0
 

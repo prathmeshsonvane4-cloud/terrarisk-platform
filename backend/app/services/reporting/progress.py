@@ -51,6 +51,7 @@ STAGE_DEFINITIONS: list[StageDefinition] = [
     StageDefinition("rainfall_observations", "Retrieving rainfall observations (CHIRPS)"),
     StageDefinition("rainfall_climatology", "Retrieving 30-year rainfall normal"),
     StageDefinition("water_history", "Retrieving surface-water history (JRC)"),
+    StageDefinition("seasonal_baselines", "Retrieving multi-year seasonal baselines"),
     StageDefinition("scoring", "Calculating climate risk factors and composite score"),
     StageDefinition("saving", "Saving report"),
     StageDefinition("completed", "Completed"),

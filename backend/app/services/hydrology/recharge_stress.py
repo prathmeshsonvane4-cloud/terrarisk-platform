@@ -70,7 +70,7 @@ from enum import Enum
 
 from app.models.enums import BaselineWindow, StressBand
 from app.services.risk.models import MonthlyValue
-from app.services.risk.vci import compute_seasonal_vci
+from app.services.risk.seasonal import seasonal_percentile_rank, seasonal_vci
 
 __all__ = [
     "RechargeStressBundle",
@@ -119,6 +119,18 @@ class RechargeStressBundle:
     rainfall_normal_by_month: dict[int, float]
     ndvi_monthly: list[MonthlyValue]
     surface_water_monthly: list[MonthlyValue]
+    # Multi-year climatological baselines for the two seasonal factors —
+    # see app/services/risk/seasonal.py. Rainfall already had its
+    # equivalent above (`rainfall_normal_by_month`); NDVI and surface
+    # water previously had none and were ranked against their own recent
+    # history with the calendar month left free, which measures seasonal
+    # position rather than anomaly.
+    #
+    # Empty by default so an existing caller still builds a valid bundle;
+    # the scorers then report those factors as not computable rather than
+    # quietly reverting to the mixed-month comparison.
+    ndvi_baseline: list[MonthlyValue] = field(default_factory=list)
+    surface_water_baseline: list[MonthlyValue] = field(default_factory=list)
     # Recorded, not computed: which window rainfall_normal_by_month (and,
     # by the same D6 v2 fix, the historical framing generally) represents
     # — this zero-I/O engine cannot itself decide or fetch a different
@@ -278,7 +290,9 @@ def _score_rainfall_anomaly(
     return _ratio_to_stress(ratio), ratio
 
 
-def _score_vegetation_condition(ndvi_monthly: list[MonthlyValue]) -> tuple[float, float | None]:
+def _score_vegetation_condition(
+    ndvi_monthly: list[MonthlyValue], ndvi_baseline: list[MonthlyValue]
+) -> tuple[float, float | None]:
     """Returns (stress_score, vci). VCI (Kogan, 1995): current NDVI
     positioned within the range observed for the SAME CALENDAR MONTH in
     other years.
@@ -288,15 +302,17 @@ def _score_vegetation_condition(ndvi_monthly: list[MonthlyValue]) -> tuple[float
     previously held independent copies that were identically wrong,
     ranking each reading against every month mixed together and so
     measuring seasonal position instead of vegetation stress. See
-    `app/services/risk/vci.py`.
+    `app/services/risk/seasonal.py`.
     """
-    vci = compute_seasonal_vci(ndvi_monthly)
+    vci = seasonal_vci(ndvi_monthly, ndvi_baseline)
     if vci is None:
         return _NEUTRAL_SCORE, None
     return _clamp(100.0 - vci, 0.0, 100.0), vci
 
 
-def _score_surface_water_trend(surface_water_monthly: list[MonthlyValue]) -> tuple[float, float | None]:
+def _score_surface_water_trend(
+    surface_water_monthly: list[MonthlyValue], surface_water_baseline: list[MonthlyValue]
+) -> tuple[float, float | None]:
     """Returns (stress_score, surface_water_trend). "Trend" here is the
     current surface-water-extent reading's percentile position within
     its own historical series (`_percentile_rank`, the same shape
@@ -311,11 +327,9 @@ def _score_surface_water_trend(surface_water_monthly: list[MonthlyValue]) -> tup
     baseline. Persistently high recent water presence relative to
     history -> low stress; a low percentile (currently near or below its
     own historical low) -> high stress."""
-    history = _valid_values(surface_water_monthly)
-    current = _latest_valid(surface_water_monthly)
-    if current is None or len(history) < 2:
+    trend = seasonal_percentile_rank(surface_water_monthly, surface_water_baseline)
+    if trend is None:
         return _NEUTRAL_SCORE, None
-    trend = _percentile_rank(current, history)
     return _clamp(100.0 - trend, 0.0, 100.0), trend
 
 
@@ -338,8 +352,10 @@ class RechargeStressEngine:
         rainfall_stress, rainfall_anomaly_ratio = _score_rainfall_anomaly(
             bundle.rainfall_monthly, bundle.rainfall_normal_by_month
         )
-        vegetation_stress, vci = _score_vegetation_condition(bundle.ndvi_monthly)
-        surface_water_stress, surface_water_trend = _score_surface_water_trend(bundle.surface_water_monthly)
+        vegetation_stress, vci = _score_vegetation_condition(bundle.ndvi_monthly, bundle.ndvi_baseline)
+        surface_water_stress, surface_water_trend = _score_surface_water_trend(
+            bundle.surface_water_monthly, bundle.surface_water_baseline
+        )
 
         factor_scores: dict[RechargeStressFactor, float] = {
             RechargeStressFactor.RAINFALL_ANOMALY: rainfall_stress,

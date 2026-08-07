@@ -52,6 +52,7 @@ from app.models.satellite import SatelliteObservation
 from app.services.reporting.progress import ProgressTracker
 from app.services.risk.engine import RiskEngine
 from app.services.risk.models import MonthlyValue, ObservationBundle, RiskEngineConfig
+from app.services.risk.seasonal import BASELINE_YEARS
 from app.services.satellite.gee_provider import _monthly_periods
 from app.services.satellite.provider import IndexObservation, SatelliteDataProvider, SatelliteIndex
 
@@ -135,6 +136,34 @@ async def _run_pipeline(
     water_history = await asyncio.to_thread(satellite_provider.get_water_history, geometry_geojson)
     await tracker.complete("water_history")
 
+    # Multi-year climatological baselines for the three seasonal index
+    # factors (VCI, vegetation stability, water availability). Fetched as
+    # their own longer window rather than by widening the series above:
+    # the report's displayed 3-year history, its charts and its
+    # completeness figure all describe that window, and stretching them
+    # to serve a comparison would change what the report claims to show.
+    #
+    # These go through the same cache-or-fetch path as the report-window
+    # series, so a second report for the same farm reuses the baseline
+    # rather than re-billing Earth Engine for eight years of imagery.
+    # All three report under ONE stage id of their own. Reusing the
+    # report-window stage ids here would have each baseline fetch rewrite
+    # that stage's metadata — and since the baseline window is a superset
+    # of the report window, the rows it needs are partly already cached,
+    # so a genuine first-ever run would report its vegetation fetch as
+    # "cache". The progress feed would be describing the wrong fetch.
+    baseline_start = start.replace(year=start.year - BASELINE_YEARS)
+    baseline_periods = _monthly_periods(baseline_start, end)
+    ndvi_baseline = await _get_or_fetch_index_series(
+        db, farm_id, SatelliteIndex.NDVI, "seasonal_baselines", geometry_geojson, baseline_start, end, satellite_provider, tracker
+    )
+    mndwi_baseline = await _get_or_fetch_index_series(
+        db, farm_id, SatelliteIndex.MNDWI, "seasonal_baselines", geometry_geojson, baseline_start, end, satellite_provider, tracker
+    )
+    ndmi_baseline = await _get_or_fetch_index_series(
+        db, farm_id, SatelliteIndex.NDMI, "seasonal_baselines", geometry_geojson, baseline_start, end, satellite_provider, tracker
+    )
+
     bundle = ObservationBundle(
         ndvi_monthly=_to_monthly_values(ndvi, periods),
         mndwi_monthly=_to_monthly_values(mndwi, periods),
@@ -142,6 +171,9 @@ async def _run_pipeline(
         rainfall_monthly=_to_monthly_values(rainfall, periods),
         rainfall_normal_by_month=rainfall_normal_by_month,
         jrc_water_occurrence_percent=water_history.occurrence_percent,
+        ndvi_baseline=_to_monthly_values(ndvi_baseline, baseline_periods),
+        mndwi_baseline=_to_monthly_values(mndwi_baseline, baseline_periods),
+        ndmi_baseline=_to_monthly_values(ndmi_baseline, baseline_periods),
     )
 
     await tracker.start("scoring")

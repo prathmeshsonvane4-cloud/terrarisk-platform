@@ -48,6 +48,26 @@ class ObservationBundle:
     rainfall_monthly: list[MonthlyValue]
     rainfall_normal_by_month: dict[int, float]
     jrc_water_occurrence_percent: float
+    # Multi-year climatological baselines (app/services/risk/seasonal.py's
+    # BASELINE_YEARS), used ONLY to answer "is this month's reading
+    # unusual FOR THIS MONTH?" — never for the report's own displayed
+    # window, which stays the 36-month series above.
+    #
+    # These exist because VCI and every percentile-rank factor previously
+    # ranked a reading against its own recent history with the calendar
+    # month left free, which measures seasonal position rather than
+    # anomaly (see seasonal.py). Rainfall already had its equivalent in
+    # `rainfall_normal_by_month`; these are the same idea for the optical
+    # indices, kept as full series rather than pre-reduced means because
+    # a percentile needs the distribution, not just its centre.
+    #
+    # Default to empty so an existing caller still constructs a valid
+    # bundle; the scorers then report those factors as not computable
+    # rather than silently falling back to the mixed-month comparison
+    # this field exists to replace.
+    ndvi_baseline: list[MonthlyValue] = field(default_factory=list)
+    mndwi_baseline: list[MonthlyValue] = field(default_factory=list)
+    ndmi_baseline: list[MonthlyValue] = field(default_factory=list)
 
 
 @dataclass(frozen=True)

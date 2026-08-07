@@ -24,7 +24,12 @@ from app.services.risk.models import (
     RiskEngineConfig,
     RiskResult,
 )
-from app.services.risk.vci import compute_seasonal_vci
+from app.services.risk.seasonal import (
+    latest_valid_observation,
+    same_calendar_month_values,
+    seasonal_percentile_rank,
+    seasonal_vci,
+)
 
 # v1 default score->band cutoffs (equal quartiles). Kept as a documented
 # constant rather than a config field: the approved config surface for M1
@@ -110,24 +115,42 @@ def _rainfall_ratio(
 
 
 def _score_vegetation_stability(bundle: ObservationBundle) -> FactorResult:
-    """Risk rises as current NDVI falls toward the low end of the farm's
-    own 3-year range — a healthy, near-historical-peak NDVI is low risk."""
-    history = _valid_values(bundle.ndvi_monthly)
-    current = _latest_valid(bundle.ndvi_monthly)
+    """Risk rises as current NDVI falls toward the low end of what THIS
+    CALENDAR MONTH has looked like across the baseline years.
 
-    if current is None or len(history) < 2:
-        score = _NEUTRAL_SCORE
-        percentile = None
-    else:
-        percentile = _percentile_rank(current, history)
-        score = 100.0 - percentile
+    Previously ranked against the farm's own 3-year history with the
+    month left free, which in a monsoon climate ranks a reading by where
+    it sits in the seasonal cycle: every pre-monsoon assessment scored as
+    high vegetation risk, every monsoon one as low, regardless of whether
+    the year was actually poor. See app/services/risk/seasonal.py.
+    """
+    current = _latest_valid(bundle.ndvi_monthly)
+    percentile = seasonal_percentile_rank(bundle.ndvi_monthly, bundle.ndvi_baseline)
+    score = 100.0 - percentile if percentile is not None else _NEUTRAL_SCORE
 
     return FactorResult(
         factor=RiskFactor.VEGETATION_STABILITY,
         score=score,
         band=_band_for_score(score),
-        raw_inputs={"current_ndvi": current, "ndvi_percentile": percentile, "history_months": len(history)},
+        raw_inputs={
+            "current_ndvi": current,
+            "ndvi_percentile": percentile,
+            # Samples for the compared calendar month, not total months
+            # in the series — the number that actually determines whether
+            # the percentile means anything.
+            "baseline_samples": _baseline_sample_count(bundle.ndvi_monthly, bundle.ndvi_baseline),
+        },
     )
+
+
+def _baseline_sample_count(current: list[MonthlyValue], baseline: list[MonthlyValue]) -> int:
+    """How many baseline observations share the latest reading's calendar
+    month — surfaced in raw_inputs so a reviewer can see the evidence a
+    percentile rests on rather than inferring it."""
+    latest = latest_valid_observation(current)
+    if latest is None:
+        return 0
+    return len(same_calendar_month_values(baseline, latest.period_start.month))
 
 
 def _score_water_availability(bundle: ObservationBundle) -> FactorResult:
@@ -138,13 +161,18 @@ def _score_water_availability(bundle: ObservationBundle) -> FactorResult:
     implementation detail, not a scientific claim about relative
     importance; adjustable in code without a schema change if recalibrated.
     """
-    mndwi_history = _valid_values(bundle.mndwi_monthly)
+    # Both ranked against the same calendar month across the baseline
+    # years. MNDWI and NDMI are, if anything, MORE seasonal than NDVI —
+    # surface water and canopy moisture track the monsoon directly — so
+    # the mixed-month comparison these replace was reporting the dry
+    # season as a water-availability risk every single year.
     mndwi_current = _latest_valid(bundle.mndwi_monthly)
-    mndwi_risk = 100.0 - _percentile_rank(mndwi_current, mndwi_history) if mndwi_current is not None and mndwi_history else None
+    mndwi_percentile = seasonal_percentile_rank(bundle.mndwi_monthly, bundle.mndwi_baseline)
+    mndwi_risk = 100.0 - mndwi_percentile if mndwi_percentile is not None else None
 
-    ndmi_history = _valid_values(bundle.ndmi_monthly)
     ndmi_current = _latest_valid(bundle.ndmi_monthly)
-    ndmi_risk = 100.0 - _percentile_rank(ndmi_current, ndmi_history) if ndmi_current is not None and ndmi_history else None
+    ndmi_percentile = seasonal_percentile_rank(bundle.ndmi_monthly, bundle.ndmi_baseline)
+    ndmi_risk = 100.0 - ndmi_percentile if ndmi_percentile is not None else None
 
     rainfall_ratio = _rainfall_ratio(bundle.rainfall_monthly, bundle.rainfall_normal_by_month, _RECENT_MONTHS_FOR_RAINFALL)
     rainfall_risk = _clamp(100.0 - (rainfall_ratio * 50.0), 0.0, 100.0) if rainfall_ratio is not None else None
@@ -173,12 +201,12 @@ def _score_drought_risk(bundle: ObservationBundle) -> FactorResult:
     VCI needs no scientific judgment call: it is the farm's current NDVI
     positioned within its own historical min-max range."""
     # Ranked against the SAME CALENDAR MONTH in other years, not against
-    # every month mixed together — see app/services/risk/vci.py for why
+    # every month mixed together — see app/services/risk/seasonal.py for why
     # the previous form measured seasonal position rather than vegetation
     # stress, and returned "severe stress" for any dry-season report in a
     # perfectly normal year.
-    vci = compute_seasonal_vci(bundle.ndvi_monthly)
-    vci_risk = 100.0 - vci if vci is not None else None
+    vci = seasonal_vci(bundle.ndvi_monthly, bundle.ndvi_baseline)
+    vci_risk = _clamp(100.0 - vci, 0.0, 100.0) if vci is not None else None
 
     rainfall_ratio = _rainfall_ratio(bundle.rainfall_monthly, bundle.rainfall_normal_by_month, _RECENT_MONTHS_FOR_RAINFALL)
     # Below-normal rainfall drives drought risk up; above-normal drives it

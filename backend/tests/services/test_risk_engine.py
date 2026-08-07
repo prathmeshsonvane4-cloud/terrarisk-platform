@@ -22,6 +22,21 @@ def _months(n: int = 36) -> list[date]:
     return [date(2023 + (m // 12), (m % 12) + 1, 1) for m in range(n)]
 
 
+# Seasonal scorers rank a reading against the SAME CALENDAR MONTH across
+# the baseline years, so a bundle needs enough years for each month to
+# clear seasonal.MIN_BASELINE_SAMPLES. 96 months is 8 samples per
+# calendar month, matching seasonal.BASELINE_YEARS.
+BASELINE_MONTHS = 96
+
+
+def _baseline(value: float) -> list[MonthlyValue]:
+    """A flat baseline. Flat is deliberate for bundles under test that
+    are not exercising the seasonal factors: every month shares one
+    value, so a percentile lands at the midpoint and the factor stays
+    neutral instead of injecting an unrelated signal."""
+    return [MonthlyValue(m, value) for m in _months(BASELINE_MONTHS)]
+
+
 def _config(floor_threshold: float = 80.0) -> RiskEngineConfig:
     return RiskEngineConfig(
         weights=EQUAL_WEIGHTS,
@@ -40,16 +55,26 @@ def _uniform_bundle(ndvi=0.6, mndwi=0.1, ndmi=0.2, rainfall=80.0, jrc=10.0) -> O
         rainfall_monthly=[MonthlyValue(m, rainfall) for m in months],
         rainfall_normal_by_month={i: 80.0 for i in range(1, 13)},
         jrc_water_occurrence_percent=jrc,
+        ndvi_baseline=_baseline(ndvi),
+        mndwi_baseline=_baseline(mndwi),
+        ndmi_baseline=_baseline(ndmi),
     )
 
 
 class TestVegetationStability:
     def test_current_value_at_historical_peak_is_lowest_risk(self):
-        """NDVI trending upward to a new high => current value is the max
-        of its own history => 100th percentile => risk should be 0."""
-        months = _months()
+        """NDVI trending upward to a new high => this month is the
+        greenest that calendar month has been across the 8 baseline years.
+
+        Under the midpoint tie convention that is the 93.75th percentile
+        ((7 strictly below + half of the 1 equal) / 8), so risk is 6.25 —
+        not 0. A self-inclusive rank can never place a value above
+        (n-1+0.5)/n, and pretending otherwise would claim the reading beat
+        a history it is itself part of."""
+        months = _months(BASELINE_MONTHS)
         rising = [MonthlyValue(m, 0.2 + (i * 0.01)) for i, m in enumerate(months)]
         bundle = ObservationBundle(
+            ndvi_baseline=rising,
             ndvi_monthly=rising,
             mndwi_monthly=[MonthlyValue(m, 0.1) for m in months],
             ndmi_monthly=[MonthlyValue(m, 0.1) for m in months],
@@ -59,19 +84,21 @@ class TestVegetationStability:
         )
         result = RiskEngine().compute(bundle, _config())
         veg = next(f for f in result.factors if f.factor == RiskFactor.VEGETATION_STABILITY)
-        assert veg.score == 0.0
+        assert veg.score == pytest.approx(6.25)
         assert veg.band == RiskBand.LOW
 
     def test_current_value_at_historical_low_is_highest_risk(self):
-        """NDVI trending downward to a new low => current value is the min
-        of its own 36-month history. The percentile-rank formula counts a
-        value against its own history inclusively (standard convention),
-        so a strict minimum among 36 points lands at the 1/36th percentile
-        (~2.78%), i.e. risk ~97.22 — not exactly 100, but still the
-        highest possible risk band."""
-        months = _months()
+        """NDVI trending downward to a new low => this month is the
+        poorest that calendar month has been across the 8 baseline years.
+
+        Mirror of the peak case: the 6.25th percentile ((0 strictly below
+        + half of the 1 equal) / 8), so risk 93.75 — the highest a
+        self-inclusive rank can produce, and symmetric with the peak,
+        which the previous at-or-below convention was not."""
+        months = _months(BASELINE_MONTHS)
         falling = [MonthlyValue(m, 0.8 - (i * 0.01)) for i, m in enumerate(months)]
         bundle = ObservationBundle(
+            ndvi_baseline=falling,
             ndvi_monthly=falling,
             mndwi_monthly=[MonthlyValue(m, 0.1) for m in months],
             ndmi_monthly=[MonthlyValue(m, 0.1) for m in months],
@@ -81,7 +108,7 @@ class TestVegetationStability:
         )
         result = RiskEngine().compute(bundle, _config())
         veg = next(f for f in result.factors if f.factor == RiskFactor.VEGETATION_STABILITY)
-        assert veg.score == pytest.approx(100.0 - (1 / 36 * 100))
+        assert veg.score == pytest.approx(93.75)
         assert veg.band == RiskBand.VERY_HIGH
 
     def test_insufficient_history_falls_back_to_neutral_score(self):
@@ -169,10 +196,14 @@ class TestFloorRule:
         """A farm with catastrophic vegetation collapse (near-zero NDVI
         after a healthy history) should never be diluted to a low overall
         score just because its other three factors look fine."""
-        months = _months()
-        # NDVI craters at the very end after 35 months of healthy, stable values.
+        months = _months(BASELINE_MONTHS)
+        # NDVI craters in the final month after years of healthy, stable
+        # values — including every previous instance of that same calendar
+        # month, so the collapse is a genuine seasonal anomaly rather than
+        # an artefact of comparing across the seasonal cycle.
         collapsing = [MonthlyValue(m, 0.7) for m in months[:-1]] + [MonthlyValue(months[-1], 0.05)]
         bundle = ObservationBundle(
+            ndvi_baseline=collapsing,
             ndvi_monthly=collapsing,
             mndwi_monthly=[MonthlyValue(m, 0.1) for m in months],
             ndmi_monthly=[MonthlyValue(m, 0.2) for m in months],
@@ -197,9 +228,10 @@ class TestFloorRule:
         pre-floor average, distinct from overall_score exactly when (and
         only when) the floor rule actually fired — the UI's sole signal
         for whether to explain the floor rule to the officer."""
-        months = _months()
+        months = _months(BASELINE_MONTHS)
         collapsing = [MonthlyValue(m, 0.7) for m in months[:-1]] + [MonthlyValue(months[-1], 0.05)]
         bundle = ObservationBundle(
+            ndvi_baseline=collapsing,
             ndvi_monthly=collapsing,
             mndwi_monthly=[MonthlyValue(m, 0.1) for m in months],
             ndmi_monthly=[MonthlyValue(m, 0.2) for m in months],

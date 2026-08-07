@@ -99,6 +99,7 @@ from app.services.hydrology.recharge_stress import (
     RechargeStressFactor,
 )
 from app.services.risk.models import MonthlyValue
+from app.services.risk.seasonal import BASELINE_YEARS
 from app.services.satellite._gee_common import monthly_periods
 from app.services.satellite.provider import IndexObservation, SatelliteDataProvider, SatelliteIndex
 
@@ -233,6 +234,25 @@ async def _assemble_bundles(
         SurfaceWaterMethod.COMBINED,
     )
 
+    # Multi-year climatological baselines for the two seasonal factors.
+    # Fetched as their own longer window rather than by widening the
+    # series above: the report's displayed period, its data-completeness
+    # figure and the water balance all describe the 3-year window, and
+    # stretching those to 8 years to serve a comparison would silently
+    # change what the report claims to be about.
+    baseline_start = start.replace(year=start.year - BASELINE_YEARS)
+    ndvi_baseline_observations = await asyncio.to_thread(
+        satellite_provider.get_index_time_series, geometry_geojson, SatelliteIndex.NDVI, baseline_start, end
+    )
+    surface_water_baseline = await asyncio.to_thread(
+        hydrology_provider.get_surface_water_extent_series,
+        geometry_geojson,
+        baseline_start,
+        end,
+        SurfaceWaterMethod.COMBINED,
+    )
+    baseline_periods = monthly_periods(baseline_start, end)
+
     rainfall_monthly = _index_observations_to_monthly_values(rainfall_observations, periods)
 
     water_balance_bundle = WaterBalanceBundle(
@@ -248,6 +268,8 @@ async def _assemble_bundles(
         rainfall_normal_by_month=rainfall_normal_by_month,
         ndvi_monthly=_index_observations_to_monthly_values(ndvi_observations, periods),
         surface_water_monthly=surface_water_monthly,
+        ndvi_baseline=_index_observations_to_monthly_values(ndvi_baseline_observations, baseline_periods),
+        surface_water_baseline=surface_water_baseline,
         baseline_window=BaselineWindow.CLIMATOLOGY_30YR,
     )
     return water_balance_bundle, recharge_stress_bundle
