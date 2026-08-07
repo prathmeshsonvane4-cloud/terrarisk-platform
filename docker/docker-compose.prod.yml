@@ -10,8 +10,28 @@
 
 name: terrarisk-prod
 
+# Log rotation for every service (Production V2 Plan, decision E2 —
+# approved 6 Aug 2026 and specified there, but never actually added to
+# this file until now).
+#
+# Docker's default json-file driver does NOT rotate. On a 50 GB droplet
+# an unbounded backend log is a slow, silent outage: nothing alerts, the
+# disk simply fills and Postgres stops being able to write. 10 MB x 3
+# files caps total log usage at ~120 MB across the four services while
+# still leaving enough history to diagnose a recent failure.
+#
+# Defined as a YAML anchor rather than repeated four times so a future
+# change cannot land on some services and miss others — which is the
+# shape of the defect this replaces.
+x-logging: &default-logging
+  driver: "json-file"
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   postgres:
+    logging: *default-logging
     image: postgis/postgis:16-3.4
     restart: unless-stopped
     environment:
@@ -34,6 +54,7 @@ services:
       - terrarisk_net
 
   backend:
+    logging: *default-logging
     build:
       context: ../backend
       dockerfile: Dockerfile
@@ -87,6 +108,7 @@ services:
       - terrarisk_net
 
   frontend:
+    logging: *default-logging
     build:
       context: ../frontend
       dockerfile: Dockerfile
@@ -104,6 +126,7 @@ services:
       - terrarisk_net
 
   nginx:
+    logging: *default-logging
     image: nginx:1.27-alpine
     restart: unless-stopped
     depends_on:
