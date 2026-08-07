@@ -70,6 +70,7 @@ from enum import Enum
 
 from app.models.enums import BaselineWindow, StressBand
 from app.services.risk.models import MonthlyValue
+from app.services.risk.vci import compute_seasonal_vci
 
 __all__ = [
     "RechargeStressBundle",
@@ -278,18 +279,20 @@ def _score_rainfall_anomaly(
 
 
 def _score_vegetation_condition(ndvi_monthly: list[MonthlyValue]) -> tuple[float, float | None]:
-    """Returns (stress_score, vci). VCI (Kogan, 1995) needs no scientific
-    judgment call: current NDVI positioned within its own historical
-    min-max range — identical formula to
-    `RiskEngine._score_drought_risk()`'s `vci`/`vci_risk`."""
-    history = _valid_values(ndvi_monthly)
-    current = _latest_valid(ndvi_monthly)
-    if current is None or not history:
+    """Returns (stress_score, vci). VCI (Kogan, 1995): current NDVI
+    positioned within the range observed for the SAME CALENDAR MONTH in
+    other years.
+
+    Shares one implementation with `RiskEngine._score_drought_risk()`
+    rather than restating the formula — this function and that one
+    previously held independent copies that were identically wrong,
+    ranking each reading against every month mixed together and so
+    measuring seasonal position instead of vegetation stress. See
+    `app/services/risk/vci.py`.
+    """
+    vci = compute_seasonal_vci(ndvi_monthly)
+    if vci is None:
         return _NEUTRAL_SCORE, None
-    ndvi_min, ndvi_max = min(history), max(history)
-    if ndvi_max <= ndvi_min:
-        return _NEUTRAL_SCORE, None
-    vci = ((current - ndvi_min) / (ndvi_max - ndvi_min)) * 100.0
     return _clamp(100.0 - vci, 0.0, 100.0), vci
 
 

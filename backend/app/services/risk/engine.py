@@ -24,6 +24,7 @@ from app.services.risk.models import (
     RiskEngineConfig,
     RiskResult,
 )
+from app.services.risk.vci import compute_seasonal_vci
 
 # v1 default score->band cutoffs (equal quartiles). Kept as a documented
 # constant rather than a config field: the approved config surface for M1
@@ -171,16 +172,13 @@ def _score_drought_risk(bundle: ObservationBundle) -> FactorResult:
     standard published formula) with a seasonally-aware rainfall anomaly.
     VCI needs no scientific judgment call: it is the farm's current NDVI
     positioned within its own historical min-max range."""
-    ndvi_history = _valid_values(bundle.ndvi_monthly)
-    ndvi_current = _latest_valid(bundle.ndvi_monthly)
-
-    vci_risk = None
-    vci = None
-    if ndvi_current is not None and ndvi_history:
-        ndvi_min, ndvi_max = min(ndvi_history), max(ndvi_history)
-        if ndvi_max > ndvi_min:
-            vci = ((ndvi_current - ndvi_min) / (ndvi_max - ndvi_min)) * 100.0
-            vci_risk = 100.0 - vci
+    # Ranked against the SAME CALENDAR MONTH in other years, not against
+    # every month mixed together — see app/services/risk/vci.py for why
+    # the previous form measured seasonal position rather than vegetation
+    # stress, and returned "severe stress" for any dry-season report in a
+    # perfectly normal year.
+    vci = compute_seasonal_vci(bundle.ndvi_monthly)
+    vci_risk = 100.0 - vci if vci is not None else None
 
     rainfall_ratio = _rainfall_ratio(bundle.rainfall_monthly, bundle.rainfall_normal_by_month, _RECENT_MONTHS_FOR_RAINFALL)
     # Below-normal rainfall drives drought risk up; above-normal drives it

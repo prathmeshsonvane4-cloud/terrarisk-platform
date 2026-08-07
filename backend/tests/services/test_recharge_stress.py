@@ -157,22 +157,54 @@ class TestRainfallAnomalyScoring:
         assert stress == 50.0
 
 
+def _same_month_across_years(values: list[float | None], month: int = 7) -> list[MonthlyValue]:
+    """One observation per YEAR for a single calendar month, oldest first.
+
+    VCI ranks a reading against the same calendar month in other years,
+    so a valid fixture has to vary the year and hold the month fixed.
+    These tests previously used three CONSECUTIVE months, which only
+    passed because the implementation was comparing across the seasonal
+    cycle — the exact defect app/services/risk/vci.py now documents.
+    """
+    return [MonthlyValue(period_start=date(2023 + i, month, 1), value=v) for i, v in enumerate(values)]
+
+
 class TestVegetationConditionScoring:
     def test_current_at_historical_maximum_is_zero_stress(self):
-        """VCI=100 (current == max) -> stress = 0 (healthiest possible)."""
-        stress, vci = recharge_stress_module._score_vegetation_condition(_series([0.2, 0.5, 0.8]))
+        """VCI=100 (this July is the greenest July on record) -> stress 0."""
+        stress, vci = recharge_stress_module._score_vegetation_condition(_same_month_across_years([0.2, 0.5, 0.8]))
         assert vci == pytest.approx(100.0)
         assert stress == pytest.approx(0.0)
 
     def test_current_at_historical_minimum_is_maximum_stress(self):
-        stress, vci = recharge_stress_module._score_vegetation_condition(_series([0.8, 0.5, 0.2]))
+        stress, vci = recharge_stress_module._score_vegetation_condition(_same_month_across_years([0.8, 0.5, 0.2]))
         assert vci == pytest.approx(0.0)
         assert stress == pytest.approx(100.0)
 
     def test_current_at_the_midpoint_is_neutral_stress(self):
-        stress, vci = recharge_stress_module._score_vegetation_condition(_series([0.2, 0.8, 0.5]))
+        stress, vci = recharge_stress_module._score_vegetation_condition(_same_month_across_years([0.2, 0.8, 0.5]))
         assert vci == pytest.approx(50.0)
         assert stress == pytest.approx(50.0)
+
+    def test_seasonal_cycle_alone_does_not_register_as_stress(self):
+        """The regression that motivated the shared implementation.
+
+        A dry pre-monsoon month (NDVI 0.2) following green monsoon months
+        (0.8) is an ordinary seasonal trough, not vegetation stress. The
+        old all-months-mixed comparison scored it VCI=0 / stress=100 —
+        "severe stress" for a perfectly normal year, purely because of
+        WHEN the report was run. With no other April on record it is now
+        correctly reported as not computable, falling back to neutral
+        rather than inventing an alarming number.
+        """
+        seasonal = [
+            MonthlyValue(period_start=date(2024, 7, 1), value=0.8),
+            MonthlyValue(period_start=date(2024, 8, 1), value=0.8),
+            MonthlyValue(period_start=date(2025, 4, 1), value=0.2),
+        ]
+        stress, vci = recharge_stress_module._score_vegetation_condition(seasonal)
+        assert vci is None
+        assert stress == 50.0
 
     def test_no_valid_observations_falls_back_to_neutral(self):
         stress, vci = recharge_stress_module._score_vegetation_condition(_series([None, None, None]))
