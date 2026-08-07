@@ -130,7 +130,7 @@ export default function ComparecatchmentsPage() {
                     }
                   />
                   <ComparisonRow
-                    label="Storage change (recharge)"
+                    label="Storage change (residual)"
                     histories={histories}
                     catchments={catchments}
                     render={(latest) =>

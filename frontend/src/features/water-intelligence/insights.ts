@@ -26,13 +26,19 @@ export function deriveWaterReportInsights(report: WaterReportDetailResponse): st
   // = dS). A negative value means this period drew down more than
   // rainfall replenished — the literal "recharge below rainfall" case.
   if (waterBalance.storage_change_mm !== null && waterBalance.rainfall_mm !== null) {
+    // Phrased as a residual, not as recharge. storage_change_mm is what
+    // is left after P - ET - Q, so it also carries every flux the
+    // closed-catchment assumption omits (deep percolation out of the
+    // catchment, lateral subsurface flow) and all model error in the
+    // three larger terms. "Recharge exceeds losses" asserted a
+    // groundwater outcome the balance cannot isolate.
     if (waterBalance.storage_change_mm < 0) {
       insights.push(
-        `Recharge is below rainfall this period — the water balance shows a net storage deficit of ${Math.abs(waterBalance.storage_change_mm).toFixed(0)} mm.`,
+        `Losses exceeded rainfall this period — the water balance closes with a net storage deficit of ${Math.abs(waterBalance.storage_change_mm).toFixed(0)} mm.`,
       );
     } else if (waterBalance.storage_change_mm > 0) {
       insights.push(
-        `Recharge exceeds losses this period — storage increased by an estimated ${waterBalance.storage_change_mm.toFixed(0)} mm.`,
+        `Rainfall exceeded modelled losses this period — the water balance closes with a net storage gain of ${waterBalance.storage_change_mm.toFixed(0)} mm, part of which will drain beyond this catchment rather than remain as local storage.`,
       );
     }
   }

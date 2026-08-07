@@ -1,5 +1,6 @@
 import { ordinal } from "../format-water-report";
 import { numberField } from "../raw-inputs";
+import { describeResolutionFlags } from "../resolution-flags";
 import type { WaterReportHistoryItem } from "../use-water-report-history";
 
 export type RecommendationSeverity = "high" | "medium" | "low" | "info";
@@ -39,22 +40,6 @@ const DECLINING_TREND_RUN_COUNT = 3;
 
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString("en-IN", { day: "numeric", month: "short" });
-}
-
-/** Plain-language labels for the resolution_flags vocabulary
- * (app/models/catchment.py's own documented, though not yet
- * backend-populated, set) — a field engineer should never see a raw
- * code like "et_sub_pixel." Unknown/future flags fall back to the raw
- * string rather than hiding it, since an unrecognised flag is still
- * real information, just not yet translated. */
-const RESOLUTION_FLAG_LABELS: Record<string, string> = {
-  rainfall_sub_pixel: "this catchment is small relative to the satellite rainfall data's resolution",
-  et_sub_pixel: "this catchment is small relative to the satellite evapotranspiration data's resolution",
-  high_relief_terrain: "hilly terrain here can make the satellite water-detection reading less reliable",
-};
-
-function describeResolutionFlags(flags: string[]): string {
-  return flags.map((flag) => RESOLUTION_FLAG_LABELS[flag] ?? flag).join("; ");
 }
 
 /** Which of the three recharge-stress sub-factors is driving the score —

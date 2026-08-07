@@ -19,6 +19,7 @@ import { DELINEATION_METHOD_LABELS } from "@/features/water-intelligence/labels"
 import { MetricTrendChart, type TrendPoint } from "@/features/water-intelligence/metric-trend-chart";
 import { DownloadWaterReportPdfButton } from "@/features/water-intelligence/pdf/download-water-report-pdf-button";
 import { numberField } from "@/features/water-intelligence/raw-inputs";
+import { ResolutionFlagNotice } from "@/features/water-intelligence/resolution-flags";
 import { SpatialContextPanel } from "@/features/water-intelligence/spatial-context/spatial-context-panel";
 import { bandForFactorScore } from "@/features/water-intelligence/stress-factor-bands";
 import { SurfaceWaterIndicator } from "@/features/water-intelligence/surface-water-indicator";
@@ -243,6 +244,12 @@ export default function WaterReportDashboardPage() {
             completeness {waterBalance.data_completeness.toFixed(0)}% · {waterBalance.calibration_status.replace(/_/g, " ")}
           </p>
 
+          {/* Placed above the figures, not in a footnote: for a
+            * village-scale catchment the rainfall input is a regional
+            * value, and a reader who takes in the mm numbers before
+            * learning that has already formed the wrong impression. */}
+          <ResolutionFlagNotice flags={waterBalance.resolution_flags} />
+
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
             <div>
               <p className="text-xs text-muted-foreground">Total rainfall</p>
@@ -341,7 +348,7 @@ export default function WaterReportDashboardPage() {
               />
             </div>
             <div>
-              <p className="mb-1.5 text-xs text-muted-foreground">Storage change (recharge)</p>
+              <p className="mb-1.5 text-xs text-muted-foreground">Storage change (residual)</p>
               <MetricTrendChart
                 points={storageChangeTrendPoints}
                 color={WATER_BALANCE_BAR_COLORS.storageChange}
@@ -380,7 +387,7 @@ export default function WaterReportDashboardPage() {
         <CardContent className="flex flex-col gap-4">
           <div className="grid gap-3 sm:grid-cols-2">
             <div>
-              <p className="text-xs text-muted-foreground">Recharge trend (from water balance)</p>
+              <p className="text-xs text-muted-foreground">Storage-change trend (from water balance)</p>
               <StorageChangeBandChip band={waterBalance.storage_change_band} className="mt-1" />
             </div>
             <div>

@@ -12,6 +12,7 @@ import {
 import { deriveWaterReportInsights } from "../insights";
 import { DELINEATION_METHOD_LABELS } from "../labels";
 import { numberField } from "../raw-inputs";
+import { describeResolutionFlags } from "../resolution-flags";
 import { bandForFactorScore } from "../stress-factor-bands";
 import type { WaterReportDetailResponse } from "../use-latest-water-report";
 import { WATER_BALANCE_BAR_COLORS } from "../water-balance-chart";
@@ -256,6 +257,22 @@ function drawWaterBalance(doc: jsPDF, y: number, report: WaterReportDetailRespon
   bandDot(doc, MARGIN, y, STORAGE_CHANGE_BANDS[wb.storage_change_band].label, STORAGE_CHANGE_BAND_PDF_COLORS[wb.storage_change_band]);
   y += 9;
 
+  // The same resolution disclosure the dashboard shows. A PDF is the
+  // artefact that gets forwarded, printed and cited without the app
+  // around it, so it is the LAST place this caveat can afford to be
+  // dropped — a reader holding only this document has no other way to
+  // learn that a village-scale catchment's rainfall is a regional value.
+  if (wb.resolution_flags.length > 0) {
+    y = ensureSpace(doc, y, 16, "Water Balance");
+    y = bodyText(
+      doc,
+      `Resolution limits: ${describeResolutionFlags(wb.resolution_flags)}.`,
+      y,
+      { size: 8.5, color: MUTED },
+    );
+    y += 2;
+  }
+
   const terms = [
     { label: "Rainfall", value: wb.rainfall_mm, color: hexToRgb(WATER_BALANCE_BAR_COLORS.rainfall) },
     { label: "ET", value: wb.et_mm, color: hexToRgb(WATER_BALANCE_BAR_COLORS.et) },
@@ -387,7 +404,7 @@ function drawGroundwater(doc: jsPDF, y: number, report: WaterReportDetailRespons
   doc.setFont("helvetica", "normal");
   doc.setFontSize(9.5);
   doc.setTextColor(...MUTED);
-  doc.text("Recharge trend (from water balance)", MARGIN, y);
+  doc.text("Storage-change trend (from water balance)", MARGIN, y);
   bandDot(doc, MARGIN, y + 7, STORAGE_CHANGE_BANDS[wb.storage_change_band].label, STORAGE_CHANGE_BAND_PDF_COLORS[wb.storage_change_band]);
 
   doc.text("Stress indicator", MARGIN + 85, y);
