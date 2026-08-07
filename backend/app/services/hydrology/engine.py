@@ -30,6 +30,11 @@ requirement):
    provider in this codebase fetches one yet), so a real,
    catchment-specific CN cannot be computed; this is a further named
    simplification layered on top of 1-2, not a hidden one.
+3b. **No antecedent moisture condition (AMC) adjustment.** SCS-CN is
+   applied per day at a fixed CN, so a catchment's CN does not rise
+   through a wet spell or fall through a dry one. This underestimates
+   late-monsoon runoff. Fixing it needs soil data and a domain-reviewed
+   AMC threshold table, not a guessed constant — see `_total_runoff_mm`.
 4. **Storage-change banding uses fixed mm thresholds**, not a genuine
    climatology-relative percentile/z-score (Blueprint v2 D5's stated
    intent) — see `_STORAGE_CHANGE_BAND_THRESHOLDS` below for why.
@@ -124,11 +129,22 @@ def _sum_or_none(series: list[MonthlyValue]) -> float | None:
     return sum(valid) if valid else None
 
 
-def _monthly_runoff_mm(rainfall_mm: float) -> float:
-    """SCS Curve Number runoff for one month's rainfall total. Q = (P -
-    Ia)^2 / (P - Ia + S) for P > Ia, else 0 — the standard SCS-CN formula,
-    S and Ia derived from `_CURVE_NUMBER`/`_INITIAL_ABSTRACTION_RATIO`
-    above."""
+def _event_runoff_mm(rainfall_mm: float) -> float:
+    """SCS Curve Number runoff for ONE STORM EVENT's rainfall depth. Q =
+    (P - Ia)^2 / (P - Ia + S) for P > Ia, else 0 — the standard SCS-CN
+    formula, S and Ia derived from `_CURVE_NUMBER`/
+    `_INITIAL_ABSTRACTION_RATIO` above.
+
+    The name matters. This formula is defined for a single storm's depth
+    and is NOT additive over time: Q(200 mm) is not the sum of the Q of
+    the ten 20 mm days that produced it — it is roughly 100x larger,
+    because Ia is subtracted once per event rather than once per day.
+    Passing an accumulated total here (a month, a season) silently models
+    the whole period as one giant storm.
+
+    `_total_runoff_mm()` below is the only caller and passes daily
+    depths, one event per day.
+    """
     max_retention_mm = (25400.0 / _CURVE_NUMBER) - 254.0
     initial_abstraction_mm = _INITIAL_ABSTRACTION_RATIO * max_retention_mm
     if rainfall_mm <= initial_abstraction_mm:
@@ -137,16 +153,31 @@ def _monthly_runoff_mm(rainfall_mm: float) -> float:
     return (excess * excess) / (excess + max_retention_mm)
 
 
-def _total_runoff_mm(rainfall_monthly: list[MonthlyValue]) -> float | None:
-    """Total runoff over the bundle's period: SCS-CN runoff computed
-    independently for each month with a valid rainfall reading, then
-    summed — `None` when no month has a valid rainfall reading, mirroring
-    `_sum_or_none()`'s convention (runoff cannot be derived from a
-    rainfall value that doesn't exist)."""
-    valid_rainfall = _valid_values(rainfall_monthly)
-    if not valid_rainfall:
+def _total_runoff_mm(rainfall_daily: list[float]) -> float | None:
+    """Total runoff over the bundle's period: SCS-CN applied per DAY
+    (one storm event per rainy day), then summed.
+
+    `None` when no daily rainfall is available at all, mirroring
+    `_sum_or_none()`'s convention — runoff cannot be derived from
+    rainfall that doesn't exist. Critically, this returns None rather
+    than falling back to `rainfall_monthly`: that fallback is precisely
+    the defect this signature change exists to make unrepresentable (see
+    `WaterBalanceBundle.rainfall_daily`). A missing-runoff month is
+    visible to the caller via `data_completeness`; a silently
+    100x-overestimated one is not.
+
+    NAMED LIMITATION (not fixed here): a fixed CN with no antecedent
+    moisture condition (AMC I/II/III) adjustment. Real CN rises in a wet
+    spell and falls in a dry one, so consecutive monsoon days are
+    modelled as drier than they are. This underestimates late-monsoon
+    runoff, in the opposite direction to the monthly-aggregation defect
+    it replaces, and is a far smaller error — but it is an error, and it
+    needs soil data plus a domain-reviewed AMC threshold table to fix
+    properly rather than a guessed constant.
+    """
+    if not rainfall_daily:
         return None
-    return sum(_monthly_runoff_mm(p) for p in valid_rainfall)
+    return sum(_event_runoff_mm(depth) for depth in rainfall_daily)
 
 
 def _band_for_storage_change(storage_change_mm: float) -> StorageChangeBand:
@@ -202,7 +233,7 @@ class WaterBalanceEngine:
 
         rainfall_mm = _sum_or_none(bundle.rainfall_monthly)
         et_mm = _sum_or_none(bundle.et_monthly)
-        runoff_mm = _total_runoff_mm(bundle.rainfall_monthly)
+        runoff_mm = _total_runoff_mm(bundle.rainfall_daily)
 
         storage_change_mm = None
         if rainfall_mm is not None and et_mm is not None and runoff_mm is not None:

@@ -68,6 +68,28 @@ class SatelliteDataProvider(ABC):
         in drought/flood/water scoring (Blueprint §07)."""
 
     @abstractmethod
+    def get_daily_rainfall_series(self, geometry_geojson: dict, start: date, end: date) -> list[float]:
+        """Daily rainfall depths (mm) for a polygon over a date range —
+        one entry per day that the rainfall product actually published,
+        in no guaranteed order.
+
+        Exists specifically because SCS-CN runoff is a single-storm-event
+        method and cannot be applied to the accumulated totals
+        `get_rainfall_series()` returns without overestimating runoff by
+        roughly two orders of magnitude (see
+        `app/services/hydrology/engine.py`'s `_event_runoff_mm`). The
+        underlying product (CHIRPS) is natively daily; the monthly method
+        above is the one doing extra work, not this one.
+
+        Unlike the monthly series, days with no published value are
+        OMITTED rather than returned as None: the only consumer sums
+        per-day runoff, so a missing day contributes nothing either way,
+        and a None-carrying list would just push that filtering onto
+        every caller. Callers needing completeness accounting should use
+        the monthly series, which preserves it.
+        """
+
+    @abstractmethod
     def get_rainfall_climatology(self, geometry_geojson: dict) -> dict[int, float]:
         """Long-term average rainfall for each calendar month (1-12),
         computed from the rainfall product's own historical record — the

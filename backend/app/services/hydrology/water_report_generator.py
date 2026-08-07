@@ -213,6 +213,13 @@ async def _assemble_bundles(
     propagate unmodified; nothing here catches them (see this ticket's
     "Provider failure" test)."""
     rainfall_observations = await asyncio.to_thread(satellite_provider.get_rainfall_series, geometry_geojson, start, end)
+    # Daily depths for the SCS-CN runoff term only; the P and dS terms
+    # still use the monthly series above. Both read the same CHIRPS
+    # product at the same scale — see WaterBalanceBundle.rainfall_daily
+    # for why the runoff term cannot use the monthly totals.
+    rainfall_daily = await asyncio.to_thread(
+        satellite_provider.get_daily_rainfall_series, geometry_geojson, start, end
+    )
     rainfall_normal_by_month = await asyncio.to_thread(satellite_provider.get_rainfall_climatology, geometry_geojson)
     ndvi_observations = await asyncio.to_thread(
         satellite_provider.get_index_time_series, geometry_geojson, SatelliteIndex.NDVI, start, end
@@ -233,6 +240,7 @@ async def _assemble_bundles(
         period_end=end,
         rainfall_monthly=rainfall_monthly,
         et_monthly=et_monthly,
+        rainfall_daily=rainfall_daily,
         resolution_flags=list(catchment.resolution_flags),
     )
     recharge_stress_bundle = RechargeStressBundle(

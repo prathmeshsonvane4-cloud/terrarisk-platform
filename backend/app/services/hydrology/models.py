@@ -47,6 +47,27 @@ class WaterBalanceBundle:
     period_end: date
     rainfall_monthly: list[MonthlyValue]
     et_monthly: list[MonthlyValue]
+    # Daily rainfall depths (mm), used ONLY for the SCS-CN runoff term —
+    # the P and dS terms still come from `rainfall_monthly` above.
+    #
+    # This field exists because SCS-CN is a SINGLE-STORM-EVENT method:
+    # Q = (P - Ia)^2 / (P - Ia + S) is defined for one storm's depth, not
+    # for an accumulated total. Feeding it a month's rainfall treats ~30
+    # days of separate storms as one giant storm and overestimates runoff
+    # enormously — with CN=75, 200 mm as one event yields ~125 mm runoff
+    # (63%) versus ~1 mm (0.5%) for the same 200 mm as ten 20 mm days.
+    # A real production Raichur report showed a 48% runoff coefficient
+    # against a 10-20% literature expectation for semi-arid Deccan
+    # because of exactly this.
+    #
+    # CHIRPS is natively daily and was ALREADY the source — the daily
+    # depths were simply being pre-summed to monthly before the runoff
+    # formula ever saw them, discarding the rainfall-intensity
+    # distribution that is the dominant control on runoff in a monsoon
+    # climate. Empty list means "no daily data available": the engine
+    # then reports runoff as None rather than silently falling back to
+    # the monthly misapplication (see `_total_runoff_mm`).
+    rainfall_daily: list[float]
     # Copied from catchment.resolution_flags at compute time (Blueprint v2
     # Part 5) — e.g. ["rainfall_sub_pixel", "et_sub_pixel",
     # "high_relief_terrain"]. Plain strings, not an enum: these are

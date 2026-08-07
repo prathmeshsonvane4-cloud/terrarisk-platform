@@ -36,6 +36,23 @@ _ET_BAND = "ET"
 # every reading exactly 10x too small, not just imprecise.
 _ET_SCALE_FACTOR = 0.1
 
+# MOD16A2's compositing period. Each image is a CUMULATIVE total for its
+# 8-day window (mm/8 days), NOT a rate per day and NOT a monthly total —
+# so the mean of a month's composites is "average mm per 8-day window,"
+# which is roughly a quarter of the month's actual ET.
+#
+# This was a real production defect, not a hypothetical: get_et_series()
+# returned that bare mean while its own interface contract
+# (HydrologyDataProvider.get_et_series, "mm per period") promises a
+# monthly total. Raichur reports came back at ~123 mm/yr actual ET
+# against a physically expected ~450-500 mm/yr for a semi-arid Deccan
+# agricultural catchment. Because the engine closes P - ET - Q = dS, the
+# ~330 mm/yr of missing ET did not disappear — it was silently
+# reattributed to storage change, inflating the headline recharge number
+# and pushing catchments into "above normal" recharge bands they had no
+# physical claim to.
+_ET_COMPOSITE_DAYS = 8.0
+
 # MOD16A2's own documented fill-value convention: valid ET is 0-32700;
 # 32761 (and the reserved codes above it — water/urban/snow/gap-filled/
 # etc.) mark a pixel with no valid retrieval for that 8-day composite.
@@ -160,7 +177,31 @@ class GEEHydrologyProvider(HydrologyDataProvider):
         modis_et = ee.ImageCollection(_MODIS_ET_COLLECTION).filterBounds(region).select(_ET_BAND)
 
         period_dicts = ee.List(
-            [{"start": p_start.isoformat(), "end": p_end.isoformat()} for p_start, p_end in periods]
+            [
+                {
+                    "start": p_start.isoformat(),
+                    "end": p_end.isoformat(),
+                    # How many 8-day MOD16A2 windows this calendar month
+                    # spans (~3.9 for a 31-day month). Multiplying the
+                    # month's AVERAGE 8-day composite by this converts
+                    # "mm per 8-day window" into the monthly total the
+                    # interface contract actually promises.
+                    #
+                    # Scaling the mean, rather than .sum()-ing the
+                    # composites, is deliberate: _mask_fill_values() masks
+                    # no-retrieval pixels, so a straight sum silently
+                    # undercounts any month where some composites are
+                    # masked (exactly the cloudy monsoon months that
+                    # matter most here). Scaling the mean of whatever
+                    # composites DID retrieve treats a partially-observed
+                    # month as representative rather than as partially
+                    # zero — the same "missing is missing, never a
+                    # fabricated zero" convention this module already
+                    # applies elsewhere.
+                    "windows": (p_end - p_start).days / _ET_COMPOSITE_DAYS,
+                }
+                for p_start, p_end in periods
+            ]
         )
 
         def _mask_fill_values(image: ee.Image) -> ee.Image:
@@ -170,6 +211,7 @@ class GEEHydrologyProvider(HydrologyDataProvider):
             period = ee.Dictionary(period)
             period_start = ee.Date(period.get("start"))
             period_end = ee.Date(period.get("end"))
+            windows = ee.Number(period.get("windows"))
             month_images = modis_et.filterDate(period_start, period_end).map(_mask_fill_values)
 
             def _compute_et_value():
@@ -188,7 +230,16 @@ class GEEHydrologyProvider(HydrologyDataProvider):
                 # .get() throws server-side. The If(contains) guard yields
                 # null instead, which _parse_monthly_features() below treats
                 # as a genuinely missing month, never a fabricated zero.
-                return ee.Algorithms.If(stats.contains(_ET_BAND), stats.get(_ET_BAND), None)
+                #
+                # `.multiply(windows)` is the 8-day -> monthly conversion
+                # (see `_ET_COMPOSITE_DAYS` and the "windows" key above);
+                # it must stay INSIDE the contains() guard so a month with
+                # no valid retrieval still yields null rather than 0.
+                return ee.Algorithms.If(
+                    stats.contains(_ET_BAND),
+                    ee.Number(stats.get(_ET_BAND)).multiply(windows),
+                    None,
+                )
 
             return ee.Feature(
                 None,

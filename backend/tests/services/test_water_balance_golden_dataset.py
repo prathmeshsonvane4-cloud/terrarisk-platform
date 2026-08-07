@@ -74,7 +74,7 @@ from app.models.enums import CalibrationStatus, StorageChangeBand
 from app.services.hydrology.engine import (
     _CURVE_NUMBER,
     _INITIAL_ABSTRACTION_RATIO,
-    _monthly_runoff_mm,
+    _event_runoff_mm,
     WaterBalanceEngine,
 )
 from app.services.hydrology.models import WaterBalanceBundle, WaterBalanceConfig
@@ -90,6 +90,15 @@ def _bundle_for_months(rainfall_mm: list[float], et_mm: list[float], resolution_
         period_end=months[-1],
         rainfall_monthly=[MonthlyValue(period_start=d, value=v) for d, v in zip(months, rainfall_mm, strict=True)],
         et_monthly=[MonthlyValue(period_start=d, value=v) for d, v in zip(months, et_mm, strict=True)],
+        # One storm event per month, at the month's full depth. This
+        # deliberately reproduces the OLD monthly-aggregation behaviour
+        # for the mass-balance tests below, whose expected P/ET/Q/dS
+        # figures were derived against it — keeping them a check on the
+        # engine's arithmetic (does P - ET - Q = dS close?) rather than
+        # silently turning them into a check on the runoff timestep,
+        # which `TestCurveNumberAgainstNrcsReference` covers directly and
+        # per-event, as the NRCS method intends.
+        rainfall_daily=list(rainfall_mm),
         resolution_flags=resolution_flags or [],
     )
 
@@ -134,7 +143,7 @@ class TestCurveNumberAgainstNrcsReference:
         rainfall_mm = 5.1 * _INCHES_TO_MM  # 129.54 mm, an exact unit conversion
         expected_runoff_mm = 2.53 * _INCHES_TO_MM  # 64.262 mm, per the cited NRCS example
 
-        actual_runoff_mm = _monthly_runoff_mm(rainfall_mm)
+        actual_runoff_mm = _event_runoff_mm(rainfall_mm)
 
         # Tolerance rationale: the cited reference figure (2.53 in) is
         # itself only reported to 2 decimal places — a rounding
@@ -187,7 +196,7 @@ class TestBoundaryConditions:
         definition of the piecewise formula, an exact algebraic result,
         not a floating-point coincidence, so this asserts exact equality
         rather than pytest.approx."""
-        assert _monthly_runoff_mm(0.0) == 0.0
+        assert _event_runoff_mm(0.0) == 0.0
 
     def test_rainfall_exactly_at_initial_abstraction_produces_zero_runoff(self):
         """The formula's own boundary: P == Ia is defined as the
@@ -198,11 +207,11 @@ class TestBoundaryConditions:
         s = (25400.0 / _CURVE_NUMBER) - 254.0
         ia = _INITIAL_ABSTRACTION_RATIO * s
 
-        assert _monthly_runoff_mm(ia) == 0.0
+        assert _event_runoff_mm(ia) == 0.0
         # Just above the boundary must be strictly positive, proving the
         # boundary is a genuine threshold, not an off-by-something that
         # makes the whole function return 0 everywhere.
-        assert _monthly_runoff_mm(ia + 0.01) > 0.0
+        assert _event_runoff_mm(ia + 0.01) > 0.0
 
     def test_extreme_rainfall_approaches_but_never_reaches_total_runoff(self):
         """Documented mathematical property of the SCS-CN formula (not a
@@ -213,7 +222,7 @@ class TestBoundaryConditions:
         Q/P should exceed 0.95, and Q must remain strictly less than P
         (runoff can never exceed rainfall)."""
         extreme_rainfall_mm = 5000.0
-        runoff_mm = _monthly_runoff_mm(extreme_rainfall_mm)
+        runoff_mm = _event_runoff_mm(extreme_rainfall_mm)
 
         assert runoff_mm < extreme_rainfall_mm
         assert (runoff_mm / extreme_rainfall_mm) > 0.95
@@ -247,7 +256,7 @@ class TestNumericalStability:
 
     def test_nrcs_reference_point_is_deterministic(self):
         rainfall_mm = 5.1 * _INCHES_TO_MM
-        assert _monthly_runoff_mm(rainfall_mm) == _monthly_runoff_mm(rainfall_mm)
+        assert _event_runoff_mm(rainfall_mm) == _event_runoff_mm(rainfall_mm)
 
 
 class TestPinnedGoldenResult:

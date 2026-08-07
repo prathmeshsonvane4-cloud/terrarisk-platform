@@ -8,7 +8,7 @@ independently computed (via a standalone script, not by calling any
 engine helper) using the engine's own `_CURVE_NUMBER`/
 `_INITIAL_ABSTRACTION_RATIO` constants and the published formula — this
 is a real cross-check against a transcription error in engine.py, not a
-tautology, since none of these tests call `_monthly_runoff_mm()` itself.
+tautology, since none of these tests call `_event_runoff_mm()` itself.
 """
 
 from __future__ import annotations
@@ -23,7 +23,7 @@ from app.services.hydrology.engine import (
     _INITIAL_ABSTRACTION_RATIO,
     _NEUTRAL_STORAGE_CHANGE_BAND,
     _band_for_storage_change,
-    _monthly_runoff_mm,
+    _event_runoff_mm,
     _series_completeness,
     _sum_or_none,
     _total_runoff_mm,
@@ -46,18 +46,39 @@ def _bundle(
     period_end: date = date(2025, 12, 1),
     rainfall_monthly: list[MonthlyValue] | None = None,
     et_monthly: list[MonthlyValue] | None = None,
+    rainfall_daily: list[float] | None = None,
     resolution_flags: list[str] | None = None,
     closed_catchment_assumed: bool = True,
 ) -> WaterBalanceBundle:
     months = _months(36)
+    resolved_rainfall = (
+        rainfall_monthly if rainfall_monthly is not None else [MonthlyValue(m, 80.0) for m in months]
+    )
     return WaterBalanceBundle(
         period_start=period_start,
         period_end=period_end,
-        rainfall_monthly=rainfall_monthly if rainfall_monthly is not None else [MonthlyValue(m, 80.0) for m in months],
+        rainfall_monthly=resolved_rainfall,
         et_monthly=et_monthly if et_monthly is not None else [MonthlyValue(m, 60.0) for m in months],
+        # Default: one storm event per month, at the month's full depth.
+        # This is an ARITHMETIC fixture, not a physical scenario — it
+        # deliberately mirrors the pre-daily-runoff behaviour so the
+        # mass-balance tests below keep checking what they were written
+        # to check (does P - ET - Q = dS close exactly, are missing
+        # months excluded rather than zeroed) instead of silently
+        # becoming assertions about the runoff timestep. The realism of
+        # the timestep is covered directly, per storm event, by
+        # test_water_balance_golden_dataset.py's NRCS reference class.
+        rainfall_daily=rainfall_daily if rainfall_daily is not None else _month_depths(resolved_rainfall),
         resolution_flags=resolution_flags if resolution_flags is not None else [],
         closed_catchment_assumed=closed_catchment_assumed,
     )
+
+
+def _month_depths(rainfall_monthly: list[MonthlyValue]) -> list[float]:
+    """Each month's total as one event depth, dropping missing months —
+    the same "missing is missing, never a fabricated zero" rule the
+    engine's own `_valid_values()` applies."""
+    return [m.value for m in rainfall_monthly if m.value is not None]
 
 
 def _scs_cn_runoff(rainfall_mm: float) -> float:
@@ -389,30 +410,47 @@ class TestMonthlyRunoffHelper:
     def test_rainfall_at_or_below_initial_abstraction_produces_zero_runoff(self):
         s = (25400.0 / _CURVE_NUMBER) - 254.0
         ia = _INITIAL_ABSTRACTION_RATIO * s
-        assert _monthly_runoff_mm(ia) == 0.0
-        assert _monthly_runoff_mm(0.0) == 0.0
+        assert _event_runoff_mm(ia) == 0.0
+        assert _event_runoff_mm(0.0) == 0.0
 
     def test_rainfall_above_initial_abstraction_produces_positive_runoff(self):
-        assert _monthly_runoff_mm(100.0) == pytest.approx(_scs_cn_runoff(100.0))
+        assert _event_runoff_mm(100.0) == pytest.approx(_scs_cn_runoff(100.0))
 
     def test_runoff_never_exceeds_rainfall(self):
         """A physical sanity bound the SCS-CN formula itself guarantees —
         worth asserting explicitly since a transcription bug could
         silently violate it."""
         for p in [10.0, 50.0, 100.0, 500.0, 2000.0]:
-            assert _monthly_runoff_mm(p) <= p
+            assert _event_runoff_mm(p) <= p
 
 
 class TestTotalRunoffHelper:
     def test_empty_series_returns_none(self):
         assert _total_runoff_mm([]) is None
 
-    def test_all_missing_series_returns_none(self):
-        assert _total_runoff_mm(_series([None, None], 2)) is None
+    def test_no_daily_rainfall_returns_none_rather_than_zero(self):
+        # A catchment with no daily rainfall available must report runoff
+        # as unknown, never as a confident 0.0 — a fabricated zero would
+        # flow straight into P - ET - Q = dS and inflate storage change.
+        assert _total_runoff_mm([]) is None
 
-    def test_sums_only_valid_months(self):
-        result = _total_runoff_mm(_series([100.0, None, 100.0], 3))
-        assert result == pytest.approx(_scs_cn_runoff(100.0) * 2)
+    def test_sums_per_event_not_per_total(self):
+        # The whole point of the daily timestep: ten 20 mm days are not
+        # one 200 mm storm. Summing per event must give far less runoff
+        # than applying the formula once to the accumulated depth.
+        ten_days = [20.0] * 10
+        per_event = _total_runoff_mm(ten_days)
+
+        assert per_event == pytest.approx(_scs_cn_runoff(20.0) * 10)
+        assert per_event < _scs_cn_runoff(sum(ten_days))
+
+    def test_days_below_initial_abstraction_contribute_no_runoff(self):
+        # Drizzle days are absorbed entirely by initial abstraction, so
+        # they add nothing — the behaviour that monthly aggregation
+        # destroyed by rolling them into one large depth.
+        s = (25400.0 / _CURVE_NUMBER) - 254.0
+        ia = _INITIAL_ABSTRACTION_RATIO * s
+        assert _total_runoff_mm([ia * 0.5] * 20) == pytest.approx(0.0)
 
 
 class TestSumOrNoneHelper:

@@ -16,6 +16,7 @@ contract.
 
 from __future__ import annotations
 
+import logging
 import threading
 from datetime import date, datetime, timezone
 
@@ -33,8 +34,21 @@ from app.services.satellite.provider import (
     WaterHistorySummary,
 )
 
+logger = logging.getLogger(__name__)
+
 _CHIRPS_COLLECTION = "UCSB-CHG/CHIRPS/DAILY"
 _JRC_SURFACE_WATER = "JRC/GSW1_4/GlobalSurfaceWater"
+
+# CHIRPS's own ~0.05 degree (~5.5 km) native grid. Named rather than
+# repeated inline so the daily and monthly rainfall paths cannot drift
+# apart — they must sample the same product at the same scale for the
+# daily runoff term and the monthly P term to describe one rainfall
+# field. NOTE for report/UX honesty: one CHIRPS pixel is ~3,000 ha, so
+# any catchment materially smaller than that is sub-pixel and its
+# "rainfall" is really a regional value — that is what the
+# `rainfall_sub_pixel` resolution flag exists to disclose.
+_CHIRPS_SCALE_METERS = 5000
+_CHIRPS_MAX_PIXELS = 1e9
 
 # 30-year climate-normal window (WMO-standard normal period length),
 # computed relative to the last fully-completed calendar year rather than
@@ -164,6 +178,51 @@ class GeeProvider(SatelliteDataProvider):
 
         features = ee.FeatureCollection(period_dicts.map(_compute_period)).getInfo()["features"]
         return self._parse_monthly_features(features, periods)
+
+    def get_daily_rainfall_series(self, geometry_geojson: dict, start: date, end: date) -> list[float]:
+        region = ee.Geometry(geometry_geojson)
+        chirps = ee.ImageCollection(_CHIRPS_COLLECTION).filterBounds(region).filterDate(
+            start.isoformat(), end.isoformat()
+        )
+
+        # One server-side reduction per day, returned in a single round
+        # trip. Mapping reduceRegion over ~1,100 daily images (a 3-year
+        # window) the way get_rainfall_series() does per-month would issue
+        # the same number of reductions but is expressed here as a single
+        # FeatureCollection getInfo() so it stays one request, not one per
+        # day.
+        def _daily_value(image: ee.Image) -> ee.Feature:
+            stats = image.reduceRegion(
+                reducer=ee.Reducer.mean(),
+                geometry=region,
+                scale=_CHIRPS_SCALE_METERS,
+                maxPixels=_CHIRPS_MAX_PIXELS,
+            )
+            # Same guarded lookup get_rainfall_series() documents at
+            # length: a band-less/unpublished image yields an empty
+            # dictionary and a bare .get() throws server-side.
+            return ee.Feature(
+                None,
+                {"value": ee.Algorithms.If(stats.contains("precipitation"), stats.get("precipitation"), None)},
+            )
+
+        features = ee.FeatureCollection(chirps.map(_daily_value)).getInfo()["features"]
+
+        # Days the product never published are dropped, not zero-filled —
+        # a zero would be a fabricated dry day, which for a runoff sum is
+        # not a harmless default (it silently lowers total runoff).
+        # Negative values are CHIRPS's own no-data convention.
+        depths = [
+            value
+            for feature in features
+            if (value := feature["properties"].get("value")) is not None and value >= 0
+        ]
+        if not depths:
+            logger.warning(
+                "daily_rainfall_series_empty",
+                extra={"period_start": start.isoformat(), "period_end": end.isoformat()},
+            )
+        return depths
 
     def get_rainfall_series(self, geometry_geojson: dict, start: date, end: date) -> list[IndexObservation]:
         region = ee.Geometry(geometry_geojson)

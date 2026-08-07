@@ -72,6 +72,22 @@ class FakeSatelliteDataProvider(SatelliteDataProvider):
             if i not in self._missing_months
         ]
 
+    def get_daily_rainfall_series(self, geometry_geojson: dict, start: date, end: date) -> list[float]:
+        # Spreads each month's total across 30 nominal rainy days rather
+        # than returning the month total as one value. A fake that
+        # returned one big depth per month would reintroduce, in the test
+        # doubles, exactly the single-giant-storm error that moving
+        # runoff to a daily timestep exists to eliminate — tests would
+        # then pass against runoff numbers production can never produce.
+        periods = _monthly_periods(start, end)
+        daily_depth = self._rainfall_value / 30.0
+        return [
+            daily_depth
+            for i in range(len(periods))
+            if i not in self._missing_months
+            for _ in range(30)
+        ]
+
     def get_rainfall_climatology(self, geometry_geojson: dict) -> dict[int, float]:
         return dict(self._rainfall_climatology)
 
