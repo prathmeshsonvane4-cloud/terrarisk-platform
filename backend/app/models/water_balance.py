@@ -47,6 +47,15 @@ class WaterBalanceResult(Base, UUIDPrimaryKeyMixin):
     # The residual. Technical-view only, never the report headline — see
     # storage_change_band below (Blueprint v2 D5's v2 fix).
     storage_change_mm: Mapped[float | None] = mapped_column(Numeric(10, 2), nullable=True)
+    # Per-water-year P/ET/Q/dS for the year-wise view (migration 0011).
+    # JSONB rather than a child table: a short, fixed-shape list always
+    # read whole with its parent report and never queried on its own.
+    #
+    # Nullable because reports written before 0011 genuinely do not have
+    # it — the monthly series they were derived from was not persisted,
+    # so there is nothing to backfill from and any value would be
+    # invented. Null means "not computed", never "no change".
+    annual: Mapped[list | None] = mapped_column(JSONB, nullable=True)
 
     # The actual MVP headline figure — a qualitative, climatology-relative
     # descriptor, not the mm residual above: an unvalidated residual should

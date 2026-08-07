@@ -8,8 +8,9 @@ against real Earth Engine in production, unmodified.
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 
+from app.services.risk.models import MonthlyValue
 from app.services.satellite.gee_provider import _monthly_periods
 from app.services.satellite.provider import (
     IndexObservation,
@@ -17,6 +18,13 @@ from app.services.satellite.provider import (
     SatelliteIndex,
     WaterHistorySummary,
 )
+
+
+# Nominal rainy days per month used to spread a monthly total into
+# daily depths. Must be > 1: collapsing a month into one depth would
+# reintroduce, in the test doubles, the single-giant-storm runoff error
+# that moving to a daily timestep exists to eliminate.
+_NOMINAL_RAINY_DAYS = 28
 
 
 class FakeSatelliteDataProvider(SatelliteDataProvider):
@@ -72,7 +80,7 @@ class FakeSatelliteDataProvider(SatelliteDataProvider):
             if i not in self._missing_months
         ]
 
-    def get_daily_rainfall_series(self, geometry_geojson: dict, start: date, end: date) -> list[float]:
+    def get_daily_rainfall_series(self, geometry_geojson: dict, start: date, end: date) -> list[MonthlyValue]:
         # Spreads each month's total across 30 nominal rainy days rather
         # than returning the month total as one value. A fake that
         # returned one big depth per month would reintroduce, in the test
@@ -80,12 +88,12 @@ class FakeSatelliteDataProvider(SatelliteDataProvider):
         # runoff to a daily timestep exists to eliminate — tests would
         # then pass against runoff numbers production can never produce.
         periods = _monthly_periods(start, end)
-        daily_depth = self._rainfall_value / 30.0
+        daily_depth = self._rainfall_value / _NOMINAL_RAINY_DAYS
         return [
-            daily_depth
-            for i in range(len(periods))
+            MonthlyValue(period_start=p_start + timedelta(days=day), value=daily_depth)
+            for i, (p_start, _p_end) in enumerate(periods)
             if i not in self._missing_months
-            for _ in range(30)
+            for day in range(_NOMINAL_RAINY_DAYS)
         ]
 
     def get_rainfall_climatology(self, geometry_geojson: dict) -> dict[int, float]:

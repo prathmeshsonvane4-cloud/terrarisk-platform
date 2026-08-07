@@ -27,6 +27,7 @@ from app.services.satellite._gee_common import CLOUD_PROBABILITY_COLLECTION as _
 from app.services.satellite._gee_common import CLOUD_PROBABILITY_THRESHOLD as _CLOUD_PROBABILITY_THRESHOLD
 from app.services.satellite._gee_common import SENTINEL2_COLLECTION as _SENTINEL2_COLLECTION
 from app.services.satellite._gee_common import monthly_periods as _monthly_periods
+from app.services.risk.models import MonthlyValue
 from app.services.satellite.provider import (
     IndexObservation,
     SatelliteDataProvider,
@@ -179,7 +180,7 @@ class GeeProvider(SatelliteDataProvider):
         features = ee.FeatureCollection(period_dicts.map(_compute_period)).getInfo()["features"]
         return self._parse_monthly_features(features, periods)
 
-    def get_daily_rainfall_series(self, geometry_geojson: dict, start: date, end: date) -> list[float]:
+    def get_daily_rainfall_series(self, geometry_geojson: dict, start: date, end: date) -> list[MonthlyValue]:
         region = ee.Geometry(geometry_geojson)
         chirps = ee.ImageCollection(_CHIRPS_COLLECTION).filterBounds(region).filterDate(
             start.isoformat(), end.isoformat()
@@ -192,6 +193,7 @@ class GeeProvider(SatelliteDataProvider):
         # FeatureCollection getInfo() so it stays one request, not one per
         # day.
         def _daily_value(image: ee.Image) -> ee.Feature:
+            image = ee.Image(image)
             stats = image.reduceRegion(
                 reducer=ee.Reducer.mean(),
                 geometry=region,
@@ -203,7 +205,14 @@ class GeeProvider(SatelliteDataProvider):
             # dictionary and a bare .get() throws server-side.
             return ee.Feature(
                 None,
-                {"value": ee.Algorithms.If(stats.contains("precipitation"), stats.get("precipitation"), None)},
+                {
+                    # The image's own acquisition date, formatted
+                    # server-side so the whole series still returns in one
+                    # getInfo(). Needed to attribute each storm's runoff to
+                    # a water year.
+                    "day": image.date().format("YYYY-MM-dd"),
+                    "value": ee.Algorithms.If(stats.contains("precipitation"), stats.get("precipitation"), None),
+                },
             )
 
         features = ee.FeatureCollection(chirps.map(_daily_value)).getInfo()["features"]
@@ -213,9 +222,11 @@ class GeeProvider(SatelliteDataProvider):
         # not a harmless default (it silently lowers total runoff).
         # Negative values are CHIRPS's own no-data convention.
         depths = [
-            value
+            MonthlyValue(period_start=date.fromisoformat(props["day"]), value=value)
             for feature in features
-            if (value := feature["properties"].get("value")) is not None and value >= 0
+            if (props := feature["properties"]) is not None
+            and (value := props.get("value")) is not None
+            and value >= 0
         ]
         if not depths:
             logger.warning(

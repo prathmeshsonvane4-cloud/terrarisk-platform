@@ -77,7 +77,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from datetime import date, datetime, timezone
 from uuid import UUID
 
@@ -320,6 +320,9 @@ async def _persist_results(
         et_mm=water_balance_result.et_mm,
         runoff_mm=water_balance_result.runoff_mm,
         storage_change_mm=water_balance_result.storage_change_mm,
+        # asdict() rather than hand-listing fields, so adding a field to
+        # AnnualWaterBalance cannot silently stop being persisted.
+        annual=[asdict(year) for year in water_balance_result.annual],
         storage_change_band=water_balance_result.storage_change_band,
         data_completeness=water_balance_result.data_completeness,
         calibration_status=water_balance_result.calibration_status,

@@ -98,7 +98,7 @@ def _bundle_for_months(rainfall_mm: list[float], et_mm: list[float], resolution_
         # silently turning them into a check on the runoff timestep,
         # which `TestCurveNumberAgainstNrcsReference` covers directly and
         # per-event, as the NRCS method intends.
-        rainfall_daily=list(rainfall_mm),
+        rainfall_daily=[MonthlyValue(period_start=d, value=v) for d, v in zip(months, rainfall_mm, strict=True)],
         resolution_flags=resolution_flags or [],
     )
 

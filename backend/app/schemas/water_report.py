@@ -28,6 +28,30 @@ from app.models.enums import BaselineWindow, CalibrationStatus, StorageChangeBan
 from app.schemas.job import JobStatusResponse
 
 
+class AnnualWaterBalanceResponse(BaseModel):
+    """One water year's water balance.
+
+    June-May, not calendar year: a calendar split cuts each monsoon in
+    half and makes consecutive years look alternately wet and dry for no
+    physical reason.
+
+    `months_covered` is exposed so a partial year at the edge of the
+    observation window is visibly partial. Without it a 5-month stub and
+    a full year sit side by side as comparable annual totals, which is
+    the most likely way this view could mislead a reader.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    label: str
+    start_year: int
+    months_covered: int
+    rainfall_mm: float | None
+    et_mm: float | None
+    runoff_mm: float | None
+    storage_change_mm: float | None
+
+
 class WaterBalanceResultResponse(BaseModel):
     """Field-for-field mirror of `app.models.water_balance.WaterBalanceResult`
     (see that model for the full column-by-column rationale) — no
@@ -42,6 +66,12 @@ class WaterBalanceResultResponse(BaseModel):
     et_mm: float | None
     runoff_mm: float | None
     storage_change_mm: float | None
+    # One entry per WATER YEAR (June-May), oldest first. None on reports
+    # generated before this field existed — the monthly series they came
+    # from was never persisted, so there is nothing to backfill and any
+    # value would be invented. Clients must treat None as "not computed",
+    # never as "no change".
+    annual: list[AnnualWaterBalanceResponse] | None = None
     storage_change_band: StorageChangeBand
     data_completeness: float
     calibration_status: CalibrationStatus

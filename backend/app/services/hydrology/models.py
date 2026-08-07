@@ -15,13 +15,13 @@ generic time-series concept, not risk-specific.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date
 
 from app.models.enums import CalibrationStatus, StorageChangeBand
 from app.services.risk.models import MonthlyValue
 
-__all__ = ["WaterBalanceBundle", "WaterBalanceConfig", "WaterBalanceEngineResult"]
+__all__ = ["AnnualWaterBalance", "WaterBalanceBundle", "WaterBalanceConfig", "WaterBalanceEngineResult"]
 
 
 @dataclass(frozen=True)
@@ -67,7 +67,7 @@ class WaterBalanceBundle:
     # climate. Empty list means "no daily data available": the engine
     # then reports runoff as None rather than silently falling back to
     # the monthly misapplication (see `_total_runoff_mm`).
-    rainfall_daily: list[float]
+    rainfall_daily: list[MonthlyValue]
     # Copied from catchment.resolution_flags at compute time (Blueprint v2
     # Part 5) — e.g. ["rainfall_sub_pixel", "et_sub_pixel",
     # "high_relief_terrain"]. Plain strings, not an enum: these are
@@ -101,6 +101,32 @@ class WaterBalanceConfig:
 
 
 @dataclass(frozen=True)
+class AnnualWaterBalance:
+    """One WATER YEAR's water balance, for the year-wise view.
+
+    Water year, not calendar year: the monsoon and the dry season it
+    feeds are one hydrological unit, and a calendar-year total splits a
+    single monsoon across two rows — which for a Deccan catchment makes
+    consecutive years look alternately wet and dry for no physical
+    reason. `label` is the June-to-May span ("2024-25").
+
+    `months_covered` is carried so a partial year at either end of the
+    observation window is visible as partial rather than being read as a
+    genuinely dry year. A 4-month stub and a full 12-month year would
+    otherwise appear side by side as comparable annual totals, which is
+    the most likely way this view could mislead.
+    """
+
+    label: str
+    start_year: int
+    months_covered: int
+    rainfall_mm: float | None
+    et_mm: float | None
+    runoff_mm: float | None
+    storage_change_mm: float | None
+
+
+@dataclass(frozen=True)
 class WaterBalanceEngineResult:
     """The Water Balance Engine's only output shape (Blueprint v2 Part 5/
     D5). Field-for-field, this maps directly onto
@@ -124,3 +150,7 @@ class WaterBalanceEngineResult:
     closed_catchment_assumed: bool
     resolution_flags: list[str]
     model_version: str
+    # Oldest water year first; empty when the window yields none.
+    # Placed last because it carries a default, and a dataclass cannot
+    # have a defaulted field before non-defaulted ones.
+    annual: list[AnnualWaterBalance] = field(default_factory=list)

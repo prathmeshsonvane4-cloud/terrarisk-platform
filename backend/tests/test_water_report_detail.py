@@ -159,6 +159,7 @@ async def test_get_latest_water_report_success(api_client, users_and_catchment):
         "et_mm",
         "runoff_mm",
         "storage_change_mm",
+        "annual",
         "storage_change_band",
         "data_completeness",
         "calibration_status",

@@ -43,9 +43,15 @@ requirement):
 from __future__ import annotations
 
 import logging
+from datetime import date
 
 from app.models.enums import CalibrationStatus, StorageChangeBand
-from app.services.hydrology.models import WaterBalanceBundle, WaterBalanceConfig, WaterBalanceEngineResult
+from app.services.hydrology.models import (
+    AnnualWaterBalance,
+    WaterBalanceBundle,
+    WaterBalanceConfig,
+    WaterBalanceEngineResult,
+)
 from app.services.risk.models import MonthlyValue
 
 logger = logging.getLogger(__name__)
@@ -192,7 +198,7 @@ def _event_runoff_mm(rainfall_mm: float, curve_number: float = _CURVE_NUMBER) ->
     return (excess * excess) / (excess + max_retention_mm)
 
 
-def _total_runoff_mm(rainfall_daily: list[float]) -> float | None:
+def _total_runoff_mm(rainfall_daily: list[MonthlyValue]) -> float | None:
     """Total runoff over the bundle's period: SCS-CN applied per DAY
     (one storm event per rainy day), then summed.
 
@@ -214,9 +220,77 @@ def _total_runoff_mm(rainfall_daily: list[float]) -> float | None:
     needs soil data plus a domain-reviewed AMC threshold table to fix
     properly rather than a guessed constant.
     """
-    if not rainfall_daily:
+    depths = [d.value for d in rainfall_daily if d.value is not None]
+    if not depths:
         return None
-    return sum(_event_runoff_mm(depth) for depth in rainfall_daily)
+    return sum(_event_runoff_mm(depth) for depth in depths)
+
+
+# The Indian water year runs June to May: a monsoon and the dry season it
+# feeds belong to the same hydrological year. Splitting on 1 January would
+# cut every monsoon in half and make consecutive years look alternately
+# wet and dry for no physical reason.
+_WATER_YEAR_START_MONTH = 6
+
+
+def _water_year_start(period: date) -> int:
+    """The calendar year in which this period's water year began."""
+    return period.year if period.month >= _WATER_YEAR_START_MONTH else period.year - 1
+
+
+def _annual_breakdown(
+    rainfall_monthly: list[MonthlyValue],
+    et_monthly: list[MonthlyValue],
+    rainfall_daily: list[MonthlyValue],
+) -> list[AnnualWaterBalance]:
+    """Per-water-year P, ET, Q and dS, oldest first.
+
+    Runoff is recomputed per year from that year's DAILY depths rather
+    than apportioned from the period total. Apportioning by rainfall share
+    would be wrong in a way that matters here: SCS-CN is non-linear, so a
+    wet year generates disproportionately more runoff than its share of
+    rainfall, and a proportional split would flatten exactly the
+    year-to-year contrast this view exists to show.
+
+    A year is emitted whenever it has any rainfall or ET data at all,
+    carrying `months_covered` so the caller can distinguish a genuine dry
+    year from a partial one at the edge of the window.
+    """
+    years: set[int] = set()
+    for observation in (*rainfall_monthly, *et_monthly):
+        if observation.value is not None:
+            years.add(_water_year_start(observation.period_start))
+
+    breakdown: list[AnnualWaterBalance] = []
+    for year in sorted(years):
+        rain = [o for o in rainfall_monthly if o.value is not None and _water_year_start(o.period_start) == year]
+        et = [o for o in et_monthly if o.value is not None and _water_year_start(o.period_start) == year]
+        daily = [d.value for d in rainfall_daily if d.value is not None and _water_year_start(d.period_start) == year]
+
+        rainfall_mm = sum(o.value for o in rain) if rain else None
+        et_mm = sum(o.value for o in et) if et else None
+        runoff_mm = sum(_event_runoff_mm(depth) for depth in daily) if daily else None
+        storage_change_mm = (
+            rainfall_mm - et_mm - runoff_mm
+            if rainfall_mm is not None and et_mm is not None and runoff_mm is not None
+            else None
+        )
+
+        breakdown.append(
+            AnnualWaterBalance(
+                label=f"{year}-{str(year + 1)[-2:]}",
+                start_year=year,
+                # Distinct months observed, not row count: rainfall and ET
+                # can cover different months, and a year is only as
+                # complete as the union of what was actually seen.
+                months_covered=len({o.period_start.month for o in (*rain, *et)}),
+                rainfall_mm=rainfall_mm,
+                et_mm=et_mm,
+                runoff_mm=runoff_mm,
+                storage_change_mm=storage_change_mm,
+            )
+        )
+    return breakdown
 
 
 def _band_for_storage_change(storage_change_mm: float) -> StorageChangeBand:
@@ -298,6 +372,11 @@ class WaterBalanceEngine:
             rainfall_mm=rainfall_mm,
             et_mm=et_mm,
             runoff_mm=runoff_mm,
+            # Same inputs, resolved per water year — the period totals
+            # above answer "what happened over the window", this answers
+            # "is it getting better or worse", which is the question a
+            # watershed programme actually acts on.
+            annual=_annual_breakdown(bundle.rainfall_monthly, bundle.et_monthly, bundle.rainfall_daily),
             data_completeness=data_completeness,
             # Always UNCALIBRATED for MVP (Blueprint v2 D5): there is no
             # ground-truth field data source wired into any provider yet

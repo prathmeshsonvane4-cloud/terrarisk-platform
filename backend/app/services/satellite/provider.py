@@ -17,6 +17,10 @@ from dataclasses import dataclass, field
 from datetime import date
 from enum import Enum
 
+# Reused rather than defining a parallel (date, value) pair here — the
+# hydrology provider already imports it for the same reason.
+from app.services.risk.models import MonthlyValue
+
 
 class SatelliteIndex(str, Enum):
     NDVI = "ndvi"
@@ -68,10 +72,17 @@ class SatelliteDataProvider(ABC):
         in drought/flood/water scoring (Blueprint §07)."""
 
     @abstractmethod
-    def get_daily_rainfall_series(self, geometry_geojson: dict, start: date, end: date) -> list[float]:
+    def get_daily_rainfall_series(self, geometry_geojson: dict, start: date, end: date) -> list[MonthlyValue]:
         """Daily rainfall depths (mm) for a polygon over a date range —
         one entry per day that the rainfall product actually published,
-        in no guaranteed order.
+        in no guaranteed order. `period_start` carries the DAY, not a
+        month: MonthlyValue is reused rather than introducing a parallel
+        (date, value) type, since that is all either one is.
+
+        Dated rather than a bare list of depths because runoff has to be
+        attributable to a period — the year-wise water balance applies
+        SCS-CN per storm within each water year, which is impossible from
+        undated depths.
 
         Exists specifically because SCS-CN runoff is a single-storm-event
         method and cannot be applied to the accumulated totals

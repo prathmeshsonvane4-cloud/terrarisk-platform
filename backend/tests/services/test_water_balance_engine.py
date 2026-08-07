@@ -74,11 +74,15 @@ def _bundle(
     )
 
 
-def _month_depths(rainfall_monthly: list[MonthlyValue]) -> list[float]:
-    """Each month's total as one event depth, dropping missing months —
+def _month_depths(rainfall_monthly: list[MonthlyValue]) -> list[MonthlyValue]:
+    """Each month's total as one dated event, dropping missing months —
     the same "missing is missing, never a fabricated zero" rule the
-    engine's own `_valid_values()` applies."""
-    return [m.value for m in rainfall_monthly if m.value is not None]
+    engine's own `_valid_values()` applies.
+
+    Returns the monthly observations unchanged: one event per month at
+    that month's depth IS the monthly series, and reusing it keeps the
+    dates the water-year breakdown needs."""
+    return [m for m in rainfall_monthly if m.value is not None]
 
 
 def _scs_cn_runoff(rainfall_mm: float) -> float:
@@ -464,11 +468,11 @@ class TestTotalRunoffHelper:
         # The whole point of the daily timestep: ten 20 mm days are not
         # one 200 mm storm. Summing per event must give far less runoff
         # than applying the formula once to the accumulated depth.
-        ten_days = [20.0] * 10
+        ten_days = [MonthlyValue(date(2024, 7, d), 20.0) for d in range(1, 11)]
         per_event = _total_runoff_mm(ten_days)
 
         assert per_event == pytest.approx(_scs_cn_runoff(20.0) * 10)
-        assert per_event < _scs_cn_runoff(sum(ten_days))
+        assert per_event < _scs_cn_runoff(sum(d.value for d in ten_days))
 
     def test_days_below_initial_abstraction_contribute_no_runoff(self):
         # Drizzle days are absorbed entirely by initial abstraction, so
@@ -476,7 +480,8 @@ class TestTotalRunoffHelper:
         # destroyed by rolling them into one large depth.
         s = (25400.0 / _CURVE_NUMBER) - 254.0
         ia = _INITIAL_ABSTRACTION_RATIO * s
-        assert _total_runoff_mm([ia * 0.5] * 20) == pytest.approx(0.0)
+        drizzle = [MonthlyValue(date(2024, 7, d), ia * 0.5) for d in range(1, 21)]
+        assert _total_runoff_mm(drizzle) == pytest.approx(0.0)
 
 
 class TestSumOrNoneHelper:
