@@ -26,6 +26,7 @@ from app.services.satellite._gee_common import (
     SENTINEL2_COLLECTION,
     monthly_periods,
 )
+from app.services.satellite.ee_retry import with_ee_retry
 
 logger = logging.getLogger(__name__)
 
@@ -258,7 +259,10 @@ class GEEHydrologyProvider(HydrologyDataProvider):
                 },
             )
 
-        features = ee.FeatureCollection(period_dicts.map(_compute_period)).getInfo()["features"]
+        features = with_ee_retry(
+            lambda: ee.FeatureCollection(period_dicts.map(_compute_period)).getInfo(),
+            description="get_et_series",
+        )["features"]
         observations = self._parse_monthly_features(features, periods)
         self._warn_if_months_missing(observations, source="et")
         return observations
@@ -394,7 +398,10 @@ class GEEHydrologyProvider(HydrologyDataProvider):
                 },
             )
 
-        features = ee.FeatureCollection(period_dicts.map(_compute_period)).getInfo()["features"]
+        features = with_ee_retry(
+            lambda: ee.FeatureCollection(period_dicts.map(_compute_period)).getInfo(),
+            description="_get_sar_surface_water_extent_series",
+        )["features"]
         observations = self._parse_monthly_features(features, periods, scale_factor=1.0)
         self._warn_if_months_missing(observations, source="surface_water_sar")
         return observations
@@ -484,7 +491,10 @@ class GEEHydrologyProvider(HydrologyDataProvider):
                 },
             )
 
-        features = ee.FeatureCollection(period_dicts.map(_compute_period)).getInfo()["features"]
+        features = with_ee_retry(
+            lambda: ee.FeatureCollection(period_dicts.map(_compute_period)).getInfo(),
+            description="_get_mndwi_surface_water_extent_series",
+        )["features"]
         observations = self._parse_monthly_features(features, periods, scale_factor=1.0)
         self._warn_if_months_missing(observations, source="surface_water_mndwi")
         return observations

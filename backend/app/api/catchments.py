@@ -204,6 +204,24 @@ def _derive_resolution_flags(area_ha: float) -> list[str]:
 # more than this.
 _GENERIC_FAILURE_MESSAGE = "Water report generation failed. Please retry; contact support if this persists."
 
+# Only one water report may talk to Earth Engine at a time in this
+# process.
+#
+# The `pg_advisory_xact_lock` check in the POST handler already prevents
+# two jobs for the SAME catchment, but says nothing about two different
+# catchments — and it is the Earth Engine project's concurrency ceiling,
+# not the catchment, that gets exceeded. One report is already a large
+# burst on its own (`get_rainfall_climatology` asks for 12 months x 30
+# years in a single request, and each seasonal baseline adds ~96
+# periods), so two overlapping reports reliably earn an HTTP 429 "Too
+# many concurrent aggregations" and both fail.
+#
+# Serialising costs nothing real: the droplet has 1 vCPU, so a second
+# concurrent report was never going to be faster, only more likely to
+# fail. A queued job stays PENDING — its accurate state, and one the
+# in-flight guard above already recognises.
+_EARTH_ENGINE_REPORT_SEMAPHORE = asyncio.Semaphore(1)
+
 
 @router.post("", response_model=CatchmentResponse, status_code=status.HTTP_201_CREATED)
 async def create_catchment(
@@ -343,10 +361,26 @@ async def get_catchment(
 
 async def _run_water_report_job(job_id: UUID, catchment_id: UUID) -> None:
     """Background-task entry point for a triggered water report (M5-002).
-    See the module docstring's "POST /catchments/{id}/water-reports"
-    paragraph for why this single function owns both provider
-    construction AND every Job status transition, unlike
-    `app/api/reports.py`'s `_run_report_job`/`generate_farm_report` split.
+
+    Nothing here but the Earth Engine concurrency gate — see
+    `_EARTH_ENGINE_REPORT_SEMAPHORE` for why one report at a time is the
+    correct limit. The work itself is
+    `_run_water_report_job_exclusively`, split out only so the lock's
+    scope is impossible to misread.
+    """
+    # Held across provider construction AND the pipeline: ee.Initialize()
+    # is itself an Earth Engine call, so admitting a second job while one
+    # is mid-run would reintroduce exactly the overlap this prevents.
+    async with _EARTH_ENGINE_REPORT_SEMAPHORE:
+        await _run_water_report_job_exclusively(job_id, catchment_id)
+
+
+async def _run_water_report_job_exclusively(job_id: UUID, catchment_id: UUID) -> None:
+    """Runs one water report, holding the Earth Engine gate above.
+
+    Owns both provider construction AND every Job status transition,
+    unlike `app/api/reports.py`'s `_run_report_job`/`generate_farm_report`
+    split.
 
     GEEHydrologyProvider()/GeeProvider() are constructed here, lazily,
     only once this actually runs — never in the request handler — for

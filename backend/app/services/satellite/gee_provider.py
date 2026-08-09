@@ -28,6 +28,7 @@ from app.services.satellite._gee_common import CLOUD_PROBABILITY_THRESHOLD as _C
 from app.services.satellite._gee_common import SENTINEL2_COLLECTION as _SENTINEL2_COLLECTION
 from app.services.satellite._gee_common import monthly_periods as _monthly_periods
 from app.services.risk.models import MonthlyValue
+from app.services.satellite.ee_retry import with_ee_retry
 from app.services.satellite.provider import (
     IndexObservation,
     SatelliteDataProvider,
@@ -177,7 +178,10 @@ class GeeProvider(SatelliteDataProvider):
                 },
             )
 
-        features = ee.FeatureCollection(period_dicts.map(_compute_period)).getInfo()["features"]
+        features = with_ee_retry(
+            lambda: ee.FeatureCollection(period_dicts.map(_compute_period)).getInfo(),
+            description="get_index_time_series",
+        )["features"]
         return self._parse_monthly_features(features, periods)
 
     def get_daily_rainfall_series(self, geometry_geojson: dict, start: date, end: date) -> list[MonthlyValue]:
@@ -215,7 +219,10 @@ class GeeProvider(SatelliteDataProvider):
                 },
             )
 
-        features = ee.FeatureCollection(chirps.map(_daily_value)).getInfo()["features"]
+        features = with_ee_retry(
+            lambda: ee.FeatureCollection(chirps.map(_daily_value)).getInfo(),
+            description="get_daily_rainfall_series",
+        )["features"]
 
         # Days the product never published are dropped, not zero-filled —
         # a zero would be a fabricated dry day, which for a runoff sum is
@@ -273,7 +280,10 @@ class GeeProvider(SatelliteDataProvider):
                 },
             )
 
-        features = ee.FeatureCollection(period_dicts.map(_compute_period)).getInfo()["features"]
+        features = with_ee_retry(
+            lambda: ee.FeatureCollection(period_dicts.map(_compute_period)).getInfo(),
+            description="get_rainfall_series",
+        )["features"]
         return self._parse_monthly_features(features, periods)
 
     def get_rainfall_climatology(self, geometry_geojson: dict) -> dict[int, float]:
@@ -305,7 +315,10 @@ class GeeProvider(SatelliteDataProvider):
             normal = ee.List(yearly_totals).reduce(ee.Reducer.mean())
             return ee.Feature(None, {"month": month, "normal": normal})
 
-        features = ee.FeatureCollection(months.map(_month_normal)).getInfo()["features"]
+        features = with_ee_retry(
+            lambda: ee.FeatureCollection(months.map(_month_normal)).getInfo(),
+            description="get_rainfall_climatology",
+        )["features"]
         climatology: dict[int, float] = {}
         for feature in features:
             props = feature["properties"]
@@ -318,7 +331,10 @@ class GeeProvider(SatelliteDataProvider):
         region = ee.Geometry(geometry_geojson)
         occurrence = ee.Image(_JRC_SURFACE_WATER).select("occurrence")
         stats = occurrence.reduceRegion(reducer=ee.Reducer.mean(), geometry=region, scale=30, maxPixels=1e9)
-        value = stats.get("occurrence").getInfo()
+        value = with_ee_retry(
+            lambda: stats.get("occurrence").getInfo(),
+            description="get_water_history",
+        )
 
         # JRC dataset's own fixed reference period.
         return WaterHistorySummary(
