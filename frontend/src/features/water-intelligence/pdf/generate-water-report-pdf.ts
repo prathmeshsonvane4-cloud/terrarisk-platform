@@ -228,7 +228,12 @@ function drawWaterBalanceChart(
   return y + chartHeight + 10;
 }
 
-function drawWaterBalance(doc: jsPDF, y: number, report: WaterReportDetailResponse): number {
+function drawWaterBalance(
+  doc: jsPDF,
+  y: number,
+  report: WaterReportDetailResponse,
+  catchment: CatchmentResponse,
+): number {
   const wb = report.water_balance;
   y = sectionHeading(doc, "Water Balance", y);
 
@@ -270,6 +275,29 @@ function drawWaterBalance(doc: jsPDF, y: number, report: WaterReportDetailRespon
       y,
       { size: 8.5, color: MUTED },
     );
+    y += 2;
+  }
+
+  // The closed-catchment assumption, for the same reason as the
+  // resolution limits above — and with more at stake. It governs whether
+  // the storage-change figure below means anything, and a forwarded PDF
+  // is exactly where a reader would otherwise never learn it was made.
+  const assumptions: string[] = [];
+  if (wb.closed_catchment_assumed) {
+    assumptions.push(
+      catchment.delineation_method === "auto_dem"
+        ? "Treated as a closed catchment (no lateral inflow or outflow except runoff) — the standard simplification for a DEM-delineated watershed."
+        : "Treated as a closed catchment (no lateral inflow or outflow except runoff). This boundary was not delineated from terrain, so it likely follows administrative rather than drainage lines; water does cross it, and that unmeasured flow lands in the storage-change residual.",
+    );
+  }
+  if (wb.calibration_status === "uncalibrated") {
+    assumptions.push(
+      "Uncalibrated — not checked against observed streamflow or groundwater levels. Use for comparing catchments and years, not as audited volumes.",
+    );
+  }
+  if (assumptions.length > 0) {
+    y = ensureSpace(doc, y, 16, "Water Balance");
+    y = bodyText(doc, `Assumptions: ${assumptions.join(" ")}`, y, { size: 8.5, color: MUTED });
     y += 2;
   }
 
@@ -348,6 +376,21 @@ function drawRechargeStress(doc: jsPDF, y: number, report: WaterReportDetailResp
     }
     y += 7;
   }
+
+  // The three factors are measured over different windows, which the
+  // table's three bare numbers imply they are not. The rainfall ratio in
+  // particular covers only the last three months, so without this line a
+  // reader takes it for the whole reporting period.
+  y += 2;
+  y = ensureSpace(doc, y, 20, "Recharge Stress");
+  y = bodyText(
+    doc,
+    "Measurement basis — Rainfall anomaly: last 3 months against the 30-year CHIRPS normal for those months. " +
+      "Vegetation condition and surface water trend: the latest month against the same calendar month across an " +
+      "8-year satellite record (bounded by Sentinel-2 availability, not chosen).",
+    y,
+    { size: 8.5, color: MUTED },
+  );
 
   return y + 5;
 }
@@ -706,7 +749,7 @@ export function generateWaterReportPdf(
   }
 
   y = ensureSpace(doc, y, 80, "Water Balance");
-  y = drawWaterBalance(doc, y, report);
+  y = drawWaterBalance(doc, y, report, catchment);
 
   y = ensureSpace(doc, y, 70, "Recharge Stress");
   y = drawRechargeStress(doc, y, report);

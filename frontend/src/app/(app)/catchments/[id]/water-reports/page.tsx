@@ -18,6 +18,7 @@ import { deriveWaterReportInsights } from "@/features/water-intelligence/insight
 import { DELINEATION_METHOD_LABELS } from "@/features/water-intelligence/labels";
 import { DownloadWaterReportPdfButton } from "@/features/water-intelligence/pdf/download-water-report-pdf-button";
 import { AnnualWaterBalanceChart } from "@/features/water-intelligence/annual-water-balance-chart";
+import { WaterBalanceAssumptions } from "@/features/water-intelligence/balance-assumptions";
 import { numberField } from "@/features/water-intelligence/raw-inputs";
 import { ResolutionFlagNotice } from "@/features/water-intelligence/resolution-flags";
 import { SpatialContextPanel } from "@/features/water-intelligence/spatial-context/spatial-context-panel";
@@ -25,7 +26,7 @@ import { bandForFactorScore } from "@/features/water-intelligence/stress-factor-
 import { SurfaceWaterIndicator } from "@/features/water-intelligence/surface-water-indicator";
 import { useCatchments } from "@/features/water-intelligence/use-catchments";
 import { useLatestWaterReport } from "@/features/water-intelligence/use-latest-water-report";
-import { WATER_BALANCE_BAR_COLORS, WaterBalanceChart } from "@/features/water-intelligence/water-balance-chart";
+import { WaterBalanceChart } from "@/features/water-intelligence/water-balance-chart";
 import { ApiError } from "@/lib/api/errors";
 import { formatArea } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -119,10 +120,18 @@ export default function WaterReportDashboardPage() {
   const confidence = numberField(rechargeStress.raw_inputs, "confidence");
   const insights = deriveWaterReportInsights(data);
 
+  // Each factor is measured over a DIFFERENT window, and the three bare
+  // numbers look directly comparable without saying so. The rainfall
+  // ratio is the most misread: it covers the last three months, so on a
+  // three-year report "0.87" invites the conclusion that this place is
+  // chronically 13% short of normal rainfall, when it may sit inside two
+  // well-above-normal years. Stating each basis costs one line and
+  // removes the ambiguity.
   const factorCards = [
     {
       key: "rainfall",
       label: "Rainfall anomaly",
+      basis: "Last 3 months vs the 30-year CHIRPS normal for those months",
       rawValue: rechargeStress.rainfall_anomaly_ratio,
       rawLabel: formatRatio(rechargeStress.rainfall_anomaly_ratio),
       stressScore: numberField(rechargeStress.raw_inputs, "rainfall_stress"),
@@ -130,6 +139,7 @@ export default function WaterReportDashboardPage() {
     {
       key: "vegetation",
       label: "Vegetation condition (VCI)",
+      basis: "Latest month vs the same calendar month across an 8-year Sentinel-2 record",
       rawValue: rechargeStress.vci,
       rawLabel: formatPercent(rechargeStress.vci),
       stressScore: numberField(rechargeStress.raw_inputs, "vegetation_stress"),
@@ -137,6 +147,7 @@ export default function WaterReportDashboardPage() {
     {
       key: "surface_water",
       label: "Surface water trend",
+      basis: "Latest month's percentile vs the same calendar month across an 8-year record",
       rawValue: rechargeStress.surface_water_trend,
       rawLabel: formatPercent(rechargeStress.surface_water_trend),
       stressScore: numberField(rechargeStress.raw_inputs, "surface_water_stress"),
@@ -236,6 +247,16 @@ export default function WaterReportDashboardPage() {
             * learning that has already formed the wrong impression. */}
           <ResolutionFlagNotice flags={waterBalance.resolution_flags} />
 
+          {/* Same placement reasoning as the resolution flags above: the
+            * closed-catchment assumption changes how much weight the
+            * storage-change figure can carry, so it has to be read before
+            * the number, not after it. */}
+          <WaterBalanceAssumptions
+            closedCatchmentAssumed={waterBalance.closed_catchment_assumed}
+            calibrationStatus={waterBalance.calibration_status}
+            delineationMethod={catchment.delineation_method}
+          />
+
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
             <div>
               <p className="text-xs text-muted-foreground">Total rainfall</p>
@@ -301,6 +322,7 @@ export default function WaterReportDashboardPage() {
                   {factor.stressScore !== null && <StressBandChip band={bandForFactorScore(factor.stressScore)} />}
                 </div>
                 <p className="text-lg font-semibold tabular-nums">{factor.rawLabel}</p>
+                <p className="text-[11px] leading-relaxed text-muted-foreground">{factor.basis}</p>
                 {factor.stressScore !== null && (
                   <p className="text-xs text-muted-foreground">Stress contribution: {Math.round(factor.stressScore)} / 100</p>
                 )}
