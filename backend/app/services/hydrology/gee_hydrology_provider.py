@@ -26,7 +26,7 @@ from app.services.satellite._gee_common import (
     SENTINEL2_COLLECTION,
     monthly_periods,
 )
-from app.services.satellite.ee_retry import with_ee_retry
+from app.services.satellite.ee_retry import fetch_mapped_features, with_ee_retry
 
 logger = logging.getLogger(__name__)
 
@@ -322,9 +322,7 @@ class GEEHydrologyProvider(HydrologyDataProvider):
             .select(_SAR_VV_BAND)
         )
 
-        period_dicts = ee.List(
-            [{"start": p_start.isoformat(), "end": p_end.isoformat()} for p_start, p_end in periods]
-        )
+        period_payload = [{"start": p_start.isoformat(), "end": p_end.isoformat()} for p_start, p_end in periods]
 
         def _compute_period(period) -> ee.Feature:
             period = ee.Dictionary(period)
@@ -398,10 +396,11 @@ class GEEHydrologyProvider(HydrologyDataProvider):
                 },
             )
 
-        features = with_ee_retry(
-            lambda: ee.FeatureCollection(period_dicts.map(_compute_period)).getInfo(),
+        features = fetch_mapped_features(
+            period_payload,
+            lambda batch: ee.FeatureCollection(ee.List(batch).map(_compute_period)),
             description="_get_sar_surface_water_extent_series",
-        )["features"]
+        )
         observations = self._parse_monthly_features(features, periods, scale_factor=1.0)
         self._warn_if_months_missing(observations, source="surface_water_sar")
         return observations
@@ -443,9 +442,7 @@ class GEEHydrologyProvider(HydrologyDataProvider):
                 .rename("mndwi")
             )
 
-        period_dicts = ee.List(
-            [{"start": p_start.isoformat(), "end": p_end.isoformat()} for p_start, p_end in periods]
-        )
+        period_payload = [{"start": p_start.isoformat(), "end": p_end.isoformat()} for p_start, p_end in periods]
 
         def _compute_period(period) -> ee.Feature:
             period = ee.Dictionary(period)
@@ -491,10 +488,11 @@ class GEEHydrologyProvider(HydrologyDataProvider):
                 },
             )
 
-        features = with_ee_retry(
-            lambda: ee.FeatureCollection(period_dicts.map(_compute_period)).getInfo(),
+        features = fetch_mapped_features(
+            period_payload,
+            lambda batch: ee.FeatureCollection(ee.List(batch).map(_compute_period)),
             description="_get_mndwi_surface_water_extent_series",
-        )["features"]
+        )
         observations = self._parse_monthly_features(features, periods, scale_factor=1.0)
         self._warn_if_months_missing(observations, source="surface_water_mndwi")
         return observations

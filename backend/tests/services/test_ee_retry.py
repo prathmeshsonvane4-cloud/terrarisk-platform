@@ -128,3 +128,83 @@ class TestSuccessPath:
         assert with_ee_retry(fine, description="test") == 42
         assert attempts["count"] == 1
         assert _no_sleep == []
+
+
+class TestChunkedFetch:
+    """`fetch_mapped_features` exists because Earth Engine evaluates a
+    mapped list as that many CONCURRENT aggregations, so the fan-out is
+    what trips the ceiling. These tests use a fake collection object;
+    nothing here talks to Earth Engine."""
+
+    class _FakeCollection:
+        def __init__(self, batch: list[dict], fail_above: int) -> None:
+            self._batch = batch
+            self._fail_above = fail_above
+
+        def getInfo(self) -> dict:  # noqa: N802 - mirrors the ee API
+            if len(self._batch) > self._fail_above:
+                raise ee.EEException("Too many concurrent aggregations.")
+            return {"features": [{"period": item["period"]} for item in self._batch]}
+
+    def _items(self, count: int) -> list[dict]:
+        return [{"period": index} for index in range(count)]
+
+    def test_splits_a_long_series_into_batches_and_concatenates_them(self) -> None:
+        seen: list[int] = []
+
+        def build(batch: list[dict]):
+            seen.append(len(batch))
+            return self._FakeCollection(batch, fail_above=99)
+
+        features = ee_retry.fetch_mapped_features(
+            self._items(20), build, description="test", chunk_size=8
+        )
+
+        assert [f["period"] for f in features] == list(range(20))
+        assert seen == [8, 8, 4]
+
+    def test_halves_the_batch_when_the_ceiling_is_below_the_default(self) -> None:
+        """The ceiling depends on how expensive each aggregation is, which
+        is a property of the catchment — so it is discovered, not
+        configured."""
+
+        def build(batch: list[dict]):
+            return self._FakeCollection(batch, fail_above=3)
+
+        features = ee_retry.fetch_mapped_features(
+            self._items(12), build, description="test", chunk_size=12
+        )
+
+        assert [f["period"] for f in features] == list(range(12))
+
+    def test_gives_up_when_even_a_single_period_is_refused(self) -> None:
+        """Halving cannot rescue a query that is too heavy at size 1;
+        failing is correct rather than looping forever."""
+
+        def build(batch: list[dict]):
+            return self._FakeCollection(batch, fail_above=0)
+
+        with pytest.raises(ee.EEException):
+            ee_retry.fetch_mapped_features(self._items(4), build, description="test", chunk_size=4)
+
+    def test_does_not_split_on_a_non_transient_error(self) -> None:
+        calls = {"count": 0}
+
+        def build(batch: list[dict]):
+            calls["count"] += 1
+
+            class _Broken:
+                def getInfo(self):  # noqa: N802
+                    raise ee.EEException("Asset 'users/nobody/missing' not found.")
+
+            return _Broken()
+
+        with pytest.raises(ee.EEException, match="not found"):
+            ee_retry.fetch_mapped_features(self._items(8), build, description="test", chunk_size=8)
+        assert calls["count"] == 1
+
+    def test_returns_empty_for_an_empty_series_without_calling_earth_engine(self) -> None:
+        def build(batch: list[dict]):
+            raise AssertionError("should not be called")
+
+        assert ee_retry.fetch_mapped_features([], build, description="test") == []

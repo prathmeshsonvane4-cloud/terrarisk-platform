@@ -32,7 +32,7 @@ from __future__ import annotations
 import logging
 import random
 import time
-from typing import Callable, TypeVar
+from typing import Any, Callable, Sequence, TypeVar
 
 import ee
 
@@ -104,3 +104,74 @@ def with_ee_retry(operation: Callable[[], T], *, description: str) -> T:
 
     # Unreachable: the loop either returns or raises on the final attempt.
     raise AssertionError("with_ee_retry exhausted its loop without returning or raising")
+
+
+# How many periods to request in one round trip before splitting.
+#
+# Measured, not guessed. Against a 1,649 ha catchment reducing Sentinel-2
+# NDVI at 10 m, an 18-period request was refused with "Too many
+# concurrent aggregations" while 12 succeeded — and 12, 9, 6, 4 and 3 all
+# returned in 6-8s, so wall time is dominated by round trips rather than
+# by chunk size. 12 is the measured ceiling for THAT catchment, so the
+# default sits below it; a larger or more fragmented polygon has a lower
+# ceiling still, which is what the halving below is for.
+_DEFAULT_CHUNK_SIZE = 8
+
+
+def fetch_mapped_features(
+    items: Sequence[dict],
+    build_collection: Callable[[list[dict]], Any],
+    *,
+    description: str,
+    chunk_size: int = _DEFAULT_CHUNK_SIZE,
+) -> list[dict]:
+    """Evaluate a per-period mapped FeatureCollection in bounded batches,
+    returning the concatenated `features` list.
+
+    Earth Engine evaluates `ee.List(periods).map(...)` as that many
+    CONCURRENT aggregations inside a single request, so the fan-out — not
+    the total work — is what trips the project's concurrency ceiling. A
+    36-month series over a large catchment therefore failed outright
+    while the same query for one month returned in 1.5s. Splitting the
+    list trades one refused request for several accepted ones.
+
+    On a throttle that survives `with_ee_retry`'s backoff, the batch is
+    halved and retried rather than abandoned. The ceiling scales with how
+    expensive each individual aggregation is, which depends on the
+    catchment's area and geometry — so it is a property of the data, not
+    a constant this module can know in advance. Halving discovers it per
+    call instead of forcing every future catchment to fit one guess.
+    """
+    features: list[dict] = []
+    for offset in range(0, len(items), chunk_size):
+        batch = list(items[offset : offset + chunk_size])
+        features.extend(_fetch_batch(batch, build_collection, description=description, chunk_size=chunk_size))
+    return features
+
+
+def _fetch_batch(
+    batch: list[dict],
+    build_collection: Callable[[list[dict]], Any],
+    *,
+    description: str,
+    chunk_size: int,
+) -> list[dict]:
+    try:
+        return with_ee_retry(
+            lambda: build_collection(batch).getInfo(),
+            description=f"{description}[{len(batch)} periods]",
+        )["features"]
+    except ee.EEException as error:
+        if not _is_transient(error) or len(batch) <= 1:
+            raise
+        half = max(1, len(batch) // 2)
+        logger.warning(
+            "earth_engine_chunk_split",
+            extra={
+                "ee_operation": description,
+                "from_chunk_size": len(batch),
+                "to_chunk_size": half,
+                "ee_error": str(error)[:200],
+            },
+        )
+        return fetch_mapped_features(batch, build_collection, description=description, chunk_size=half)

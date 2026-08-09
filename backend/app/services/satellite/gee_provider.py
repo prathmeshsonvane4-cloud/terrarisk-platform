@@ -28,7 +28,7 @@ from app.services.satellite._gee_common import CLOUD_PROBABILITY_THRESHOLD as _C
 from app.services.satellite._gee_common import SENTINEL2_COLLECTION as _SENTINEL2_COLLECTION
 from app.services.satellite._gee_common import monthly_periods as _monthly_periods
 from app.services.risk.models import MonthlyValue
-from app.services.satellite.ee_retry import with_ee_retry
+from app.services.satellite.ee_retry import fetch_mapped_features, with_ee_retry
 from app.services.satellite.provider import (
     IndexObservation,
     SatelliteDataProvider,
@@ -137,9 +137,7 @@ class GeeProvider(SatelliteDataProvider):
                 .rename("index_value")
             )
 
-        period_dicts = ee.List(
-            [{"start": p_start.isoformat(), "end": p_end.isoformat()} for p_start, p_end in periods]
-        )
+        period_payload = [{"start": p_start.isoformat(), "end": p_end.isoformat()} for p_start, p_end in periods]
 
         def _compute_period(period) -> ee.Feature:
             period = ee.Dictionary(period)
@@ -178,10 +176,11 @@ class GeeProvider(SatelliteDataProvider):
                 },
             )
 
-        features = with_ee_retry(
-            lambda: ee.FeatureCollection(period_dicts.map(_compute_period)).getInfo(),
+        features = fetch_mapped_features(
+            period_payload,
+            lambda batch: ee.FeatureCollection(ee.List(batch).map(_compute_period)),
             description="get_index_time_series",
-        )["features"]
+        )
         return self._parse_monthly_features(features, periods)
 
     def get_daily_rainfall_series(self, geometry_geojson: dict, start: date, end: date) -> list[MonthlyValue]:
