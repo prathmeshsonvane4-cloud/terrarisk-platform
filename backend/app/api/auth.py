@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user
@@ -13,7 +13,14 @@ router = APIRouter(prefix="/auth", tags=["Auth"])
 
 @router.post("/login", response_model=LoginResponse)
 async def login(payload: LoginRequest, db: AsyncSession = Depends(get_db)) -> LoginResponse:
-    result = await db.execute(select(AppUser).where(AppUser.email == payload.email))
+    # Case-insensitive lookup. Email addresses are case-insensitive in
+    # practice, but this compared raw strings — so a mobile keyboard
+    # autocapitalising the first letter, or a mail client "helpfully"
+    # sentence-casing a pasted address, produced "no such user" and the
+    # generic 401 that hides it. Two people were locked out by this on
+    # credentials that were entirely correct, and the error message gave
+    # them no way to tell.
+    result = await db.execute(select(AppUser).where(func.lower(AppUser.email) == payload.email.strip().lower()))
     user = result.scalar_one_or_none()
 
     # Same generic failure for "no such user" and "wrong password" — never

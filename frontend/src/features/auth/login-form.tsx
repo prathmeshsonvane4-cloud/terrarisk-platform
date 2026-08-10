@@ -30,8 +30,14 @@ export function LoginForm() {
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    // Trimmed, because credentials are overwhelmingly pasted rather than
+    // typed, and selecting a password out of an email or chat message
+    // almost always drags a trailing space or newline along with it.
+    // bcrypt compares exactly, so that invisible character is the
+    // difference between a working login and "Invalid email or
+    // password" — with nothing on screen to show why.
     loginMutation.mutate(
-      { email, password },
+      { email: email.trim(), password: password.trim() },
       {
         onSuccess: (data) => {
           if (!data) return;
@@ -51,6 +57,13 @@ export function LoginForm() {
           name="email"
           type="email"
           autoComplete="username"
+          // Mobile keyboards capitalise the first letter of a text field
+          // by default. Combined with the case-sensitive lookup this
+          // endpoint used to do, that silently locked out anyone signing
+          // in from a phone.
+          autoCapitalize="none"
+          autoCorrect="off"
+          spellCheck={false}
           required
           value={email}
           onChange={(event) => setEmail(event.target.value)}

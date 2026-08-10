@@ -116,3 +116,31 @@ async def test_refresh_with_garbage_token_is_rejected(client_with_seeded_user):
         "/api/v1/auth/refresh", headers={"Authorization": "Bearer not-a-real-token"}
     )
     assert response.status_code == 401
+
+
+# Two real people were locked out by a case-sensitive email lookup on
+# credentials that were entirely correct — a phone keyboard capitalised
+# the address and the generic 401 gave no hint why. These pin the fix.
+@pytest.mark.parametrize(
+    "email",
+    [
+        "Officer@example.com",
+        "OFFICER@EXAMPLE.COM",
+        "  officer@example.com  ",
+    ],
+)
+@pytest.mark.asyncio
+async def test_login_accepts_the_email_however_a_keyboard_or_paste_mangled_it(client_with_seeded_user, email):
+    response = await client_with_seeded_user.post(
+        "/api/v1/auth/login", json={"email": email, "password": "correct-password"}
+    )
+    assert response.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_email_casing_does_not_weaken_the_password_check(client_with_seeded_user):
+    """Relaxing the email match must not relax anything else."""
+    response = await client_with_seeded_user.post(
+        "/api/v1/auth/login", json={"email": "OFFICER@EXAMPLE.COM", "password": "wrong-password"}
+    )
+    assert response.status_code == 401
