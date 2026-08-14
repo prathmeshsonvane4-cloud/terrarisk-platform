@@ -93,3 +93,19 @@ next-env.d.ts
 # ==========================================
 
 Thumbs.db
+# ==========================================
+# Internal strategy documents
+# ==========================================
+# Business/market analysis and partner-facing proposals. This repository
+# is public for portfolio purposes, and these are neither code nor
+# anything a reader of it should see — they name third parties and
+# discuss commercial positioning. Listed explicitly so a future
+# `git add -A` cannot sweep them in.
+
+TerraRisk-Report.pdf
+docs/Nuksan_Praman_Validation.md
+docs/Problem_Discovery_2026.md
+docs/TerraRisk_Dhoran_Punarvichar_2026.md
+docs/WELL_Labs_Digital_Vertical_Proposal.md
+docs/WELL_Labs_Internship_Project_Plan.md
+docs/FSID_Incubation_Readiness_2026.md
