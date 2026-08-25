@@ -43,7 +43,7 @@ export function extractConflictingJobId(error: unknown): string | null {
  * plain `Error` (used throughout the codebase's mutation hooks) loses this
  * the moment it's constructed. Query hooks that back the P10 error-state
  * taxonomy (`ErrorState`, `components/ui/error-state.tsx`) throw this
- * instead, so the family (network / auth / not-found / server) can be
+ * instead, so the family (network / auth / forbidden / not-found / server) can be
  * derived from a real status code rather than guessed from message text.
  */
 export class ApiError extends Error {
@@ -56,7 +56,7 @@ export class ApiError extends Error {
   }
 }
 
-export type ErrorFamily = "network" | "auth" | "not-found" | "server";
+export type ErrorFamily = "network" | "auth" | "forbidden" | "not-found" | "server";
 
 /**
  * Classifies any error a query hook can throw into one of the four
@@ -68,7 +68,14 @@ export type ErrorFamily = "network" | "auth" | "not-found" | "server";
  */
 export function classifyError(error: unknown): ErrorFamily {
   if (error instanceof ApiError) {
-    if (error.status === 401 || error.status === 403) return "auth";
+    // 401 and 403 were one family, so a role-permission refusal told the
+    // user their session had expired. Signing out and back in then
+    // reproduces it exactly, because the session was never the problem —
+    // an endless loop with no way for the user to learn the real cause.
+    // A chairman hitting a credit-officer-only endpoint is the case that
+    // surfaced it, but every role boundary in the app had it.
+    if (error.status === 401) return "auth";
+    if (error.status === 403) return "forbidden";
     if (error.status === 404) return "not-found";
     return "server";
   }

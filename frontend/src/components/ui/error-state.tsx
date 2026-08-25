@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, Lock, RefreshCw, SearchX, ServerCrash, WifiOff } from "lucide-react";
+import { AlertTriangle, Lock, RefreshCw, SearchX, ServerCrash, ShieldX, WifiOff } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -25,6 +25,17 @@ const FAMILY_COPY: Record<ErrorFamily, FamilyCopy> = {
     icon: Lock,
     title: "Session no longer valid",
     description: "You'll need to sign in again to continue. Any unfinished assessment is saved.",
+    showRetry: false,
+  },
+  // Deliberately does NOT suggest signing in again. The account is
+  // signed in correctly; it simply lacks the role for this action, and
+  // telling the user to re-authenticate sends them round a loop that
+  // cannot succeed.
+  forbidden: {
+    icon: ShieldX,
+    title: "This account can't perform this action",
+    description:
+      "You're signed in, but your role doesn't have access to this. Ask an administrator for an account with the right role — drawing farms and running assessments needs a credit officer or branch manager login.",
     showRetry: false,
   },
   "not-found": {

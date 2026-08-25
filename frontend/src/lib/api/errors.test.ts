@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { extractApiErrorMessage, extractConflictingJobId } from "./errors";
+import { ApiError, classifyError, extractApiErrorMessage, extractConflictingJobId } from "./errors";
 
 describe("extractApiErrorMessage", () => {
   it("reads the message from the single error envelope", () => {
@@ -42,5 +42,25 @@ describe("extractConflictingJobId", () => {
     expect(extractConflictingJobId(null)).toBeNull();
     expect(extractConflictingJobId({})).toBeNull();
     expect(extractConflictingJobId({ error: { job_id: 12345 } })).toBeNull();
+  });
+});
+/**
+ * 401 and 403 shared one family, so a role-permission refusal rendered
+ * as "Session no longer valid" — sending the user to sign in again,
+ * which reproduces the same 403. These pin them apart.
+ */
+describe("classifyError", () => {
+  it("treats an expired session as an auth failure", () => {
+    expect(classifyError(new ApiError("Not authenticated", 401))).toBe("auth");
+  });
+
+  it("treats a wrong-role refusal as forbidden, not an auth failure", () => {
+    expect(classifyError(new ApiError("Insufficient role for this operation", 403))).toBe("forbidden");
+  });
+
+  it("keeps the other families unchanged", () => {
+    expect(classifyError(new ApiError("Not found", 404))).toBe("not-found");
+    expect(classifyError(new ApiError("Boom", 500))).toBe("server");
+    expect(classifyError(new TypeError("Failed to fetch"))).toBe("network");
   });
 });
