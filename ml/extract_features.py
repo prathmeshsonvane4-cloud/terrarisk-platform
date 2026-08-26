@@ -1,62 +1,91 @@
 """Turn labelled field polygons into a training table.
 
-Reads a GeoJSON FeatureCollection of labelled fields and writes one CSV
-row per field: a monthly satellite time series plus the phenology
-features a model actually learns from.
+    python ml/extract_features.py ml/labels.geojson ml/features.csv
 
-    python ml/extract_features.py labels.geojson features.csv \
-        --start 2025-06-01 --months 12
+RESUMABLE. Each field is appended as soon as it is fetched, and fields
+already present in the output are skipped on a re-run. Three hundred
+fields is roughly an hour of Earth Engine round trips; a failure at field
+250 must not cost the first 249.
 
 Each input feature needs these properties:
 
-    field_id   unique id
+    field_id   unique
     label      1 = sugarcane, 0 = not sugarcane
-    village    used ONLY to form spatial validation folds
+    village    used ONLY to build spatial validation folds
 
 WHY THE DEFAULTS ARE WHAT THEY ARE
 ----------------------------------
-`--edge-buffer 15` shrinks every polygon inward before sampling. At
-Sentinel-2's 10 m resolution a field's boundary pixels are mixtures of
-the field, the bund, the track and the neighbour's crop. On a 0.6 acre
-plot (~49 m across) the edge ring is most of the field, so sampling it
-raw measures the neighbourhood rather than the crop.
+`--edge-buffer 10` shrinks each polygon inward before sampling. At
+Sentinel-2's 10 m a field's boundary pixels mix the crop with the bund,
+the track and the neighbour. On the 0.6 acre Shera plot this leaves about
+7 interior pixels out of 25 — small, but measuring the field rather than
+its surroundings.
 
-Months with no cloud-free observation are written as empty, never as 0.
-An NDVI of 0 means bare rock; a cloudy August means we do not know. The
-two must not be confused, and the monsoon months over Maharashtra are
-frequently the latter — both test locations lost August entirely.
+Radar is averaged in LINEAR POWER, not decibels. dB is a logarithm, so
+averaging dB yields a geometric mean of power and biases low. The same
+defect was found and fixed in the hydrology provider.
+
+A month with no cloud-free scene is recorded as missing, never as 0.
+NDVI 0 means bare rock; a clouded month means we did not see. Over
+Maharashtra this is routine rather than exceptional — July and August
+2026 gave fourteen passes and no usable optical observation on the Shera
+plot.
 """
 
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 import math
 import sys
+import time
 from pathlib import Path
 
 import ee
+
+sys.path.insert(0, str(Path(__file__).parent))
+from features import phenology_features  # noqa: E402
 
 S2 = "COPERNICUS/S2_SR_HARMONIZED"
 S2_CLOUD_PROB = "COPERNICUS/S2_CLOUD_PROBABILITY"
 S1 = "COPERNICUS/S1_GRD"
 CLOUD_PROB_THRESHOLD = 40
 
+_TRANSIENT = ("too many", "quota", "timed out", "backend error", "internal error", "unavailable")
+
 
 def initialise(key_path: Path, project: str) -> None:
-    credentials = ee.ServiceAccountCredentials(
-        json.loads(key_path.read_text())["client_email"], str(key_path)
-    )
-    ee.Initialize(credentials, project=project)
+    email = json.loads(key_path.read_text())["client_email"]
+    ee.Initialize(ee.ServiceAccountCredentials(email, str(key_path)), project=project)
 
 
-def _optical_monthly(region: ee.Geometry, start: str, months: int) -> ee.FeatureCollection:
-    """Monthly cloud-masked NDVI and NDMI inside `region`."""
+def with_retry(operation, *, attempts: int = 4, base_delay: float = 3.0):
+    """Retry transient Earth Engine throttling, nothing else.
+
+    A malformed geometry or a missing asset fails the same way on every
+    attempt; retrying it spends quota to reach the same error and hides
+    the cause behind a delay.
+    """
+    for attempt in range(1, attempts + 1):
+        try:
+            return operation()
+        except ee.EEException as error:
+            transient = any(marker in str(error).lower() for marker in _TRANSIENT)
+            if not transient or attempt == attempts:
+                raise
+            delay = base_delay * (2 ** (attempt - 1))
+            print(f"      throttled, retrying in {delay:.0f}s", flush=True)
+            time.sleep(delay)
+    raise AssertionError("unreachable")
+
+
+def monthly_optical(region: ee.Geometry, start: str, months: int) -> list[dict]:
     end = ee.Date(start).advance(months, "month")
     scenes = ee.ImageCollection(S2).filterBounds(region).filterDate(start, end)
     clouds = ee.ImageCollection(S2_CLOUD_PROB).filterBounds(region)
     joined = ee.ImageCollection(
-        ee.Join.saveFirst("cloud_probability").apply(
+        ee.Join.saveFirst("cp").apply(
             primary=scenes,
             secondary=clouds,
             condition=ee.Filter.equals(leftField="system:index", rightField="system:index"),
@@ -65,19 +94,15 @@ def _optical_monthly(region: ee.Geometry, start: str, months: int) -> ee.Feature
 
     def mask(image: ee.Image) -> ee.Image:
         image = ee.Image(image)
-        probability = ee.Image(image.get("cloud_probability")).select("probability")
+        probability = ee.Image(image.get("cp")).select("probability")
         clear = image.updateMask(probability.lt(CLOUD_PROB_THRESHOLD))
-        # NDVI: greenness. NDMI: canopy water — sugarcane holds moisture
-        # well past the point annual crops have dried off, so it is a
-        # useful second opinion rather than a restatement of NDVI.
         return clear.normalizedDifference(["B8", "B4"]).rename("ndvi").addBands(
             clear.normalizedDifference(["B8", "B11"]).rename("ndmi")
         )
 
     def per_month(offset) -> ee.Feature:
         month_start = ee.Date(start).advance(offset, "month")
-        month_end = month_start.advance(1, "month")
-        window = joined.filterDate(month_start, month_end)
+        window = joined.filterDate(month_start, month_start.advance(1, "month"))
         stats = window.map(mask).mean().reduceRegion(
             reducer=ee.Reducer.mean(), geometry=region, scale=10, maxPixels=1e9
         )
@@ -85,23 +110,18 @@ def _optical_monthly(region: ee.Geometry, start: str, months: int) -> ee.Feature
             None,
             {
                 "month": month_start.format("YYYY-MM"),
-                # Guarded: a month with no clear scene yields a band-less
-                # composite, and a bare .get() throws server-side.
+                # Guarded: a month with no clear scene produces a
+                # band-less composite, and a bare .get() throws.
                 "ndvi": ee.Algorithms.If(stats.contains("ndvi"), stats.get("ndvi"), None),
                 "ndmi": ee.Algorithms.If(stats.contains("ndmi"), stats.get("ndmi"), None),
-                "scenes": window.size(),
             },
         )
 
-    return ee.FeatureCollection(ee.List.sequence(0, months - 1).map(per_month))
+    collection = ee.FeatureCollection(ee.List.sequence(0, months - 1).map(per_month))
+    return [f["properties"] for f in with_retry(collection.getInfo)["features"]]
 
 
-def _radar_monthly(region: ee.Geometry, start: str, months: int) -> ee.FeatureCollection:
-    """Monthly Sentinel-1 VV/VH backscatter — unaffected by cloud.
-
-    Averaged in LINEAR power, not decibels. dB is a logarithm, so an
-    arithmetic mean of dB is a geometric mean of power and biases low.
-    """
+def monthly_radar(region: ee.Geometry, start: str, months: int) -> list[dict]:
     end = ee.Date(start).advance(months, "month")
     scenes = (
         ee.ImageCollection(S1)
@@ -115,137 +135,114 @@ def _radar_monthly(region: ee.Geometry, start: str, months: int) -> ee.FeatureCo
     def per_month(offset) -> ee.Feature:
         month_start = ee.Date(start).advance(offset, "month")
         window = scenes.filterDate(month_start, month_start.advance(1, "month"))
-
-        def to_power(image: ee.Image) -> ee.Image:
-            image = ee.Image(image).select(["VV", "VH"])
-            return image.divide(10.0).multiply(math.log(10.0)).exp()
-
-        stats = window.map(to_power).mean().reduceRegion(
+        power = window.map(
+            lambda image: ee.Image(image).select(["VV", "VH"]).divide(10.0).multiply(math.log(10.0)).exp()
+        )
+        stats = power.mean().reduceRegion(
             reducer=ee.Reducer.mean(), geometry=region, scale=10, maxPixels=1e9
         )
 
         def as_db(band: str):
-            value = stats.get(band)
             return ee.Algorithms.If(
-                stats.contains(band), ee.Number(value).log10().multiply(10.0), None
+                stats.contains(band), ee.Number(stats.get(band)).log10().multiply(10.0), None
             )
 
-        return ee.Feature(
-            None,
-            {
-                "month": month_start.format("YYYY-MM"),
-                "vv": as_db("VV"),
-                "vh": as_db("VH"),
-                "scenes": window.size(),
-            },
-        )
+        return ee.Feature(None, {"month": month_start.format("YYYY-MM"), "vv": as_db("VV"), "vh": as_db("VH")})
 
-    return ee.FeatureCollection(ee.List.sequence(0, months - 1).map(per_month))
+    collection = ee.FeatureCollection(ee.List.sequence(0, months - 1).map(per_month))
+    return [f["properties"] for f in with_retry(collection.getInfo)["features"]]
 
 
-def derive_features(ndvi: list[float | None], ndmi: list[float | None]) -> dict:
-    """The columns the model actually sees.
-
-    `min_ndvi` is the one that matters: sugarcane runs 12-18 months and
-    never goes bare, while every annual crop here drops to soil between
-    seasons. Amplitude carries the same information from the other side.
-    """
-    clean = [v for v in ndvi if v is not None]
-    clean_ndmi = [v for v in ndmi if v is not None]
-    if not clean:
-        return {}
-
-    longest = current = 0
-    for value in ndvi:
-        if value is not None and value > 0.4:
-            current += 1
-            longest = max(longest, current)
-        else:
-            current = 0
-
-    return {
-        "min_ndvi": min(clean),
-        "max_ndvi": max(clean),
-        "mean_ndvi": sum(clean) / len(clean),
-        "amplitude_ndvi": max(clean) - min(clean),
-        "months_above_0_4": sum(1 for v in clean if v > 0.4),
-        "months_above_0_3": sum(1 for v in clean if v > 0.3),
-        "longest_green_run": longest,
-        "peak_month_index": ndvi.index(max(clean)),
-        "min_ndmi": min(clean_ndmi) if clean_ndmi else None,
-        "mean_ndmi": sum(clean_ndmi) / len(clean_ndmi) if clean_ndmi else None,
-        "observed_months": len(clean),
-    }
+def already_done(output: Path) -> set[str]:
+    if not output.exists():
+        return set()
+    with output.open(newline="", encoding="utf-8") as handle:
+        return {row["field_id"] for row in csv.DictReader(handle)}
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("labels", type=Path, help="GeoJSON FeatureCollection of labelled fields")
-    parser.add_argument("output", type=Path, help="CSV to write")
-    parser.add_argument("--start", default="2025-06-01", help="First month (agricultural year start)")
-    parser.add_argument("--months", type=int, default=12)
-    parser.add_argument("--edge-buffer", type=float, default=15.0, help="Metres to shrink each polygon")
+    parser.add_argument("labels", type=Path)
+    parser.add_argument("output", type=Path)
+    parser.add_argument("--start", default="2025-06-01", help="Window start (agricultural year)")
+    parser.add_argument("--months", type=int, default=14)
+    parser.add_argument("--edge-buffer", type=float, default=10.0)
     parser.add_argument("--key", type=Path, default=Path("terrarisk-platform-bfc1102a3c63.json"))
     parser.add_argument("--project", default="terrarisk-platform")
     parser.add_argument("--skip-radar", action="store_true")
     args = parser.parse_args()
 
     initialise(args.key, args.project)
-    collection = json.loads(args.labels.read_text())["features"]
-    print(f"{len(collection)} labelled fields", flush=True)
+    fields = json.loads(args.labels.read_text())["features"]
+    done = already_done(args.output)
+    pending = [f for f in fields if f["properties"].get("field_id") not in done]
 
-    rows: list[dict] = []
-    for index, feature in enumerate(collection, start=1):
-        properties = feature["properties"]
-        field_id = properties.get("field_id", f"field-{index}")
-        region = ee.Geometry(feature["geometry"]).buffer(-args.edge_buffer)
+    print(f"{len(fields)} labelled fields | {len(done)} already extracted | {len(pending)} to do")
+    if not pending:
+        print("nothing to do")
+        return
 
-        try:
-            area_m2 = region.area(maxError=1).getInfo()
-        except Exception as error:  # noqa: BLE001 - reported per field, never fatal
-            print(f"  SKIP {field_id}: geometry failed ({error})", flush=True)
-            continue
-        if area_m2 <= 0:
-            print(f"  SKIP {field_id}: nothing left after the {args.edge_buffer} m edge buffer", flush=True)
-            continue
+    writer = None
+    handle = args.output.open("a", newline="", encoding="utf-8")
+    failures: list[tuple[str, str]] = []
 
-        optical = _optical_monthly(region, args.start, args.months).getInfo()["features"]
-        ndvi = [f["properties"]["ndvi"] for f in optical]
-        ndmi = [f["properties"]["ndmi"] for f in optical]
-        months = [f["properties"]["month"] for f in optical]
+    try:
+        for index, field in enumerate(pending, start=1):
+            properties = field["properties"]
+            field_id = properties["field_id"]
+            try:
+                region = ee.Geometry(field["geometry"]).buffer(-args.edge_buffer)
+                area = with_retry(lambda: region.area(maxError=1).getInfo())
+                if area <= 0:
+                    raise ValueError(f"nothing left after the {args.edge_buffer:g} m edge buffer")
 
-        row = {
-            "field_id": field_id,
-            "label": properties["label"],
-            "village": properties.get("village", "unknown"),
-            "interior_area_m2": round(area_m2),
-            "interior_pixels_10m": round(area_m2 / 100),
-        }
-        row.update(derive_features(ndvi, ndmi))
-        for month, value in zip(months, ndvi):
-            row[f"ndvi_{month}"] = value
+                optical = monthly_optical(region, args.start, args.months)
+                ndvi = [row["ndvi"] for row in optical]
+                ndmi = [row["ndmi"] for row in optical]
+                vv = vh = None
+                if not args.skip_radar:
+                    radar = monthly_radar(region, args.start, args.months)
+                    vv = [row["vv"] for row in radar]
+                    vh = [row["vh"] for row in radar]
 
-        if not args.skip_radar:
-            radar = _radar_monthly(region, args.start, args.months).getInfo()["features"]
-            for f in radar:
-                row[f"vv_{f['properties']['month']}"] = f["properties"]["vv"]
-                row[f"vh_{f['properties']['month']}"] = f["properties"]["vh"]
+                row = {
+                    "field_id": field_id,
+                    "label": properties["label"],
+                    "village": properties.get("village", "unknown"),
+                    "crop": properties.get("crop", ""),
+                    "interior_area_m2": round(area),
+                    "interior_pixels_10m": round(area / 100),
+                }
+                row.update(phenology_features(ndvi, ndmi, vv, vh))
+                for month, value in zip((r["month"] for r in optical), ndvi):
+                    row[f"ndvi_{month}"] = value
 
-        rows.append(row)
-        print(
-            f"  [{index}/{len(collection)}] {field_id}  label={row['label']}  "
-            f"px={row['interior_pixels_10m']}  min_ndvi={row.get('min_ndvi')}",
-            flush=True,
-        )
+            except Exception as error:  # noqa: BLE001 - one bad field must not end the run
+                failures.append((field_id, str(error)[:120]))
+                print(f"  [{index}/{len(pending)}] {field_id}  FAILED: {str(error)[:90]}", flush=True)
+                continue
 
-    if not rows:
-        sys.exit("no usable fields")
+            if writer is None:
+                writer = csv.DictWriter(handle, fieldnames=list(row))
+                if not done:
+                    writer.writeheader()
+            writer.writerow(row)
+            handle.flush()  # survive a crash on the very next field
 
-    import pandas as pd
+            print(
+                f"  [{index}/{len(pending)}] {field_id}  label={row['label']}  "
+                f"px={row['interior_pixels_10m']}  run={row.get('longest_green_run')}  "
+                f"min={row.get('min_ndvi'):.3f}" if row.get("min_ndvi") is not None else "",
+                flush=True,
+            )
+    finally:
+        handle.close()
 
-    frame = pd.DataFrame(rows)
-    frame.to_csv(args.output, index=False)
-    print(f"\nwrote {args.output}  ({len(frame)} rows x {len(frame.columns)} columns)")
+    print(f"\nwrote {args.output}")
+    if failures:
+        print(f"{len(failures)} field(s) failed — re-run to retry just those:")
+        for field_id, message in failures[:10]:
+            print(f"  {field_id}: {message}")
 
 
 if __name__ == "__main__":

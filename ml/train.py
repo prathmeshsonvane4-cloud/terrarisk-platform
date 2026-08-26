@@ -4,11 +4,12 @@
 
 WHAT THIS DELIBERATELY DOES
 ---------------------------
-Reports a BASELINE FIRST. A single threshold on minimum NDVI already
-separates sugarcane from annual crops fairly well, because cane runs
-12-18 months and never goes bare. If LightGBM cannot beat that
-threshold, the honest conclusion is that we built a threshold with extra
-steps — and that conclusion should be impossible to avoid seeing.
+Reports a BASELINE FIRST: a single threshold on how many months the
+field stayed continuously green. Sugarcane runs 12-18 months, an
+annual crop about four, so that one number already separates them
+fairly well. If LightGBM cannot beat it, the honest conclusion is
+that we built a threshold with extra steps — and that conclusion
+should be impossible to avoid seeing.
 
 Validates by LEAVE-ONE-VILLAGE-OUT, never a random split. Fields in one
 village share soil, rainfall, management, and often a farmer. A random
@@ -33,7 +34,7 @@ from lightgbm import LGBMClassifier
 from sklearn.metrics import confusion_matrix, precision_recall_fscore_support, roc_auc_score
 from sklearn.model_selection import LeaveOneGroupOut
 
-NON_FEATURE_COLUMNS = {"field_id", "label", "village"}
+NON_FEATURE_COLUMNS = {"field_id", "label", "village", "crop", "planted", "source"}
 
 
 def _feature_columns(frame: pd.DataFrame) -> list[str]:
@@ -78,12 +79,17 @@ def _report(name: str, y_true: np.ndarray, y_pred: np.ndarray, y_score: np.ndarr
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("features", type=Path)
-    parser.add_argument("--threshold", type=float, default=0.30, help="Baseline min-NDVI cutoff")
+    parser.add_argument(
+        "--baseline-run",
+        type=int,
+        default=6,
+        help="Baseline: months of continuous green above which a field is called sugarcane",
+    )
     parser.add_argument("--model-out", type=Path, default=Path("ml/sugarcane_model.txt"))
     args = parser.parse_args()
 
     frame = pd.read_csv(args.features)
-    frame = frame.dropna(subset=["min_ndvi"])
+    frame = frame.dropna(subset=["longest_green_run"])
     y = frame["label"].to_numpy()
     villages = frame["village"].to_numpy()
 
@@ -102,9 +108,17 @@ def main() -> None:
     # ---------------------------------------------------------------
     # Baseline. Must be beaten for the model to have earned its place.
     # ---------------------------------------------------------------
-    baseline_pred = (frame["min_ndvi"] >= args.threshold).astype(int).to_numpy()
+    # Duration, not minimum. A real plot settled this: newly planted
+    # cane sits at bare-soil NDVI for months while it is below detection,
+    # so a minimum-NDVI rule misses every new planting. How long the
+    # field stays green is what actually separates cane from an annual
+    # crop. See ml/features.py.
+    baseline_pred = (frame["longest_green_run"] >= args.baseline_run).astype(int).to_numpy()
     baseline = _report(
-        f"BASELINE: min_ndvi >= {args.threshold}", y, baseline_pred, frame["min_ndvi"].to_numpy()
+        f"BASELINE: longest_green_run >= {args.baseline_run} months",
+        y,
+        baseline_pred,
+        frame["longest_green_run"].to_numpy(),
     )
 
     # ---------------------------------------------------------------
