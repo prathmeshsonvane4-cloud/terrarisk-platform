@@ -1,0 +1,15 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": { "field_id": "shera-01", "label": 1, "village": "Shera", "note": "own plot, sugarcane planted 2025-12-20" },
+      "geometry": { "type": "Polygon", "coordinates": [[[76.4978, 18.5458], [76.4982, 18.5458], [76.4982, 18.5454], [76.4978, 18.5454], [76.4978, 18.5458]]] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "field_id": "shera-02", "label": 0, "village": "Shera", "note": "soybean" },
+      "geometry": { "type": "Polygon", "coordinates": [[[76.4988, 18.5458], [76.4992, 18.5458], [76.4992, 18.5454], [76.4988, 18.5454], [76.4988, 18.5458]]] }
+    }
+  ]
+}
