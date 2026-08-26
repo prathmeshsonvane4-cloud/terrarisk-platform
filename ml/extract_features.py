@@ -210,6 +210,9 @@ def main() -> None:
                     "label": properties["label"],
                     "village": properties.get("village", "unknown"),
                     "crop": properties.get("crop", ""),
+                    "cane_type": properties.get("cane_type", ""),
+                    "sown_year": properties.get("sown_year", ""),
+                    "source": properties.get("source", ""),
                     "interior_area_m2": round(area),
                     "interior_pixels_10m": round(area / 100),
                 }

@@ -34,7 +34,16 @@ from lightgbm import LGBMClassifier
 from sklearn.metrics import confusion_matrix, precision_recall_fscore_support, roc_auc_score
 from sklearn.model_selection import LeaveOneGroupOut
 
-NON_FEATURE_COLUMNS = {"field_id", "label", "village", "crop", "planted", "source"}
+NON_FEATURE_COLUMNS = {
+    "field_id",
+    "label",
+    "village",
+    "crop",
+    "planted",
+    "source",
+    "cane_type",
+    "sown_year",
+}
 
 
 def _feature_columns(frame: pd.DataFrame) -> list[str]:
@@ -146,6 +155,24 @@ def main() -> None:
         predictions[test_index] = (scores[test_index] >= 0.5).astype(int)
 
     model_metrics = _report("LightGBM: leave-one-village-out", y, predictions, scores)
+
+    # Plant cane and ratoon are different shapes of the same crop, and an
+    # overall score can hide a model that finds every established field
+    # and misses every new planting. A real plot showed plant cane
+    # sitting at bare-soil NDVI for months; if that case is being missed,
+    # it has to be visible here rather than averaged away.
+    if "cane_type" in frame.columns:
+        print("\n--- recall by cane type ---")
+        for cane_type in ("plant", "ratoon"):
+            mask = (frame["cane_type"] == cane_type).to_numpy()
+            positives = int(y[mask].sum())
+            if positives == 0:
+                print(f"  {cane_type:7} no labelled fields")
+                continue
+            found = int(predictions[mask & (y == 1)].sum())
+            print(f"  {cane_type:7} {found}/{positives} found  (recall {found / positives:.2f})")
+        if ((frame["cane_type"] == "plant").sum() < 3) or ((frame["cane_type"] == "ratoon").sum() < 3):
+            print("  too few of one type to conclude anything from these")
 
     # ---------------------------------------------------------------
     # The verdict, stated plainly so it cannot be skimmed past.

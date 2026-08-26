@@ -87,6 +87,19 @@ def main() -> None:
     parser.add_argument("--crop", default="", help="Free text, e.g. sugarcane / soybean / tur")
     parser.add_argument("--planted", default="", help="Planting date if known, YYYY-MM-DD")
     parser.add_argument(
+        "--cane-type",
+        choices=["plant", "ratoon"],
+        help="Required when --label 1. Plant cane spends its first months at bare-soil "
+        "NDVI while below detection; ratoon is green from the start. They are different "
+        "shapes of the same crop and the model's recall must be checked on each.",
+    )
+    parser.add_argument(
+        "--sown-year",
+        default="",
+        help="Year the current cycle began, e.g. 2025. Lets a field be re-checked against "
+        "the observation window later without reopening the label.",
+    )
+    parser.add_argument(
         "--source",
         default="visual",
         choices=["visual", "field", "mill", "owner"],
@@ -97,6 +110,14 @@ def main() -> None:
 
     if bool(args.point) == bool(args.coords):
         sys.exit("give exactly one of --point or --coords")
+
+    # Demanded now, not later. Relabelling is the expensive part, and a
+    # sugarcane label without its type cannot be split into plant and
+    # ratoon after the fact without revisiting the field.
+    if args.label == 1 and not args.cane_type:
+        sys.exit("--cane-type plant|ratoon is required for sugarcane (--label 1)")
+    if args.label == 0 and args.cane_type:
+        sys.exit("--cane-type only applies to sugarcane (--label 1)")
 
     if args.point:
         lat, lon = (float(part) for part in args.point.split(","))
@@ -117,6 +138,8 @@ def main() -> None:
                 "village": args.village,
                 "crop": args.crop,
                 "planted": args.planted,
+                "cane_type": args.cane_type or "",
+                "sown_year": args.sown_year,
                 "source": args.source,
             },
             "geometry": {"type": "Polygon", "coordinates": [ring]},
@@ -135,6 +158,14 @@ def main() -> None:
 
     if len(villages) < 3:
         print("  NOTE: leave-one-village-out needs several villages to mean anything.")
+    if cane:
+        plant = sum(1 for f in features if f["properties"].get("cane_type") == "plant")
+        ratoon = sum(1 for f in features if f["properties"].get("cane_type") == "ratoon")
+        print(f"  cane: {plant} plant, {ratoon} ratoon")
+        if plant < 3 or ratoon < 3:
+            print("  NOTE: too few of one cane type to tell whether the model handles it.")
+            print("        A model can score well overall and still miss every new planting.")
+
     if cane and cane / len(features) > 0.6:
         print("  NOTE: heavily weighted to sugarcane. Real fields are mostly not cane,")
         print("        and a balanced label set will mis-calibrate against the district.")
