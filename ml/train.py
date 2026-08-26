@@ -34,6 +34,14 @@ from lightgbm import LGBMClassifier
 from sklearn.metrics import confusion_matrix, precision_recall_fscore_support, roc_auc_score
 from sklearn.model_selection import LeaveOneGroupOut
 
+# Below this many fields, leave-one-village-out folds are too small to
+# fit anything and the resulting score is noise wearing a decimal point.
+# A green-light run on three fields scored a perfect F1 while the model
+# made no splits at all — the number came from luck and a fallback, not
+# from learning. The verdict is withheld rather than printed with a
+# caveat, because a caveat under a headline number gets skimmed past.
+MIN_FIELDS_FOR_VERDICT = 30
+
 NON_FEATURE_COLUMNS = {
     "field_id",
     "label",
@@ -180,7 +188,11 @@ def main() -> None:
     gain = model_metrics["f1"] - baseline["f1"]
     print(f"\n{'=' * 58}")
     print(f"F1: baseline {baseline['f1']:.3f} -> model {model_metrics['f1']:.3f}  ({gain:+.3f})")
-    if gain <= 0.02:
+    if len(frame) < MIN_FIELDS_FOR_VERDICT:
+        print(f"VERDICT: withheld. {len(frame)} fields is below the {MIN_FIELDS_FOR_VERDICT}")
+        print("         a fold needs to fit anything at all. Read the numbers")
+        print("         above as a pipeline check, not as performance.")
+    elif gain <= 0.02:
         print("VERDICT: the model does not beat a one-line threshold.")
         print("         Ship the threshold. It is simpler and easier to defend.")
     else:
@@ -196,6 +208,13 @@ def main() -> None:
     print(f"\nmodel written to {args.model_out}")
 
     importance = sorted(zip(features, final.feature_importances_), key=lambda pair: -pair[1])
+    if not any(value for _, value in importance):
+        # Every importance zero means the trees never split — too few
+        # samples for min_child_samples. Whatever the scores above said,
+        # it came from the class prior, not from any feature.
+        print("\nNO FEATURE WAS USED. The trees never split, so nothing was learned;")
+        print("any score above came from the class balance. Add labelled fields.")
+        return
     print("\ntop features:")
     for name, value in importance[:8]:
         print(f"  {name:22} {value}")
