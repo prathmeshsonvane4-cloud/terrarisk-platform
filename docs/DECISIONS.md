@@ -2603,6 +2603,13 @@ so zone groundwork happens first.
 
 **Future migration path.** Persist findings with provenance (item 5). Wire
 PML_V22a for ET cross-checks and PET for aridity-index zoning once a tolerance
-is agreed. Derive `high_relief_terrain` from a DEM. Recompute the stale
-pre-fix water balances and the Service 1 assessments carrying inflated JRC
-flood factors.
+is agreed. Derive `high_relief_terrain` from a DEM. Recompute the Service 1
+assessments carrying inflated JRC flood factors.
+
+**Correction (13 Sep 2026).** This entry's first version, and commit
+`f17c514`, said the stored production Maski balance showed ET at 20% of
+rainfall and had never been regenerated. False: the figures came from the
+project brief and match no stored balance. Validating all 135 stored
+balances in production found none with the ET defect; 121 pass. Thirteen
+show the opposite problem — ET at 95-109% of rainfall, consistent with
+unmodelled canal irrigation. See `docs/GEE_Product_Audit_2026.md`.

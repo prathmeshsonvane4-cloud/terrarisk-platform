@@ -77,23 +77,50 @@ No code was changed. The asymmetry is latent, not live, over the deployment area
 
 ---
 
-## The Maski water balance — settled
+## Stored production water balances — what is actually wrong
 
-A production report for Maski (233.48 ha) showed, over three years: rainfall 1,692.3 mm, ET 339.9 mm, runoff 688.1 mm, recharge 664.3 mm — **ET at 20% of rainfall**, displayed at 97% confidence.
+> **Correction, 13 Sep 2026.** An earlier version of this section said the Maski report "predates the ET fix and was never regenerated". That was wrong. The figures it relied on do not exist in production. The claim was made before production was checked, and it was also repeated in the message of commit `f17c514`.
 
-Question: is that the known MOD16A2 8-day-composite defect in a report that was never regenerated, or is the defect still live?
+### The Maski figures in the project brief
 
-**Probe, water year 2022-23, Maski-area polygon (approximate — the exact geometry is in the production database):**
+The brief quotes, for Maski (233.48 ha), over three years: rainfall 1,692.3 mm, ET 339.9 mm, runoff 688.1 mm, recharge 664.3 mm — **ET at 20% of rainfall**, at 97% confidence.
 
-| | Value | ET / P |
-|---|---|---|
-| CHIRPS rainfall | 610.2 mm | — |
-| MOD16A2, **current fixed code** | **499.6 mm** | 0.82 |
-| Production report, per year | 113.3 mm | 0.20 |
+**Production holds five Maski water balances, and none match.** All five were computed 7 Aug 2026, put ET at 77–78% of rainfall and runoff at 15–17%, and pass every check in the harness:
 
-499.6 / 113.3 = 4.4×, the factor-of-four signature. **The current code is correct; the report is stale.** It predates the ET fix and was never regenerated. The new validation harness fails that stored balance on three counts (ET fraction, runoff coefficient, residual fraction) and attributes all three to the ET term.
+| Computed | P | ET | Q | ΔS | ET / P |
+|---|---|---|---|---|---|
+| 7 Aug 12:26 | 1,692 | 1,300 | 283 | 110 | 77% |
+| 7 Aug 14:23 | 1,730 | 1,348 | 263 | 118 | 78% |
+| (three further runs repeat these two results) | | | | | |
 
-The report's 97% figure measured NDVI series completeness only. It had no connection to the ET term and could not have flagged this.
+The brief's figures share the same 1,692 mm of rainfall but carry **both** pre-audit defects: ET about 4× low (the MOD16A2 8-day-composite error) and a ~41% runoff coefficient from SCS-CN applied to monthly totals. They come from a run that predates the hydrology fixes, not from what production serves. They remain in the test suite as a regression fixture, because they are exactly what those defects produce.
+
+An independent re-computation agrees with production: the current MOD16A2 code gives **499.6 mm** of ET on a Maski-area polygon for water year 2022-23, an ET/P of 0.82.
+
+### Every catchment, validated
+
+The deployed harness was run read-only inside the production container against the latest stored balance for each catchment (13 Sep 2026). Zone was taken from each catchment's annualised rainfall.
+
+| | Count |
+|---|---|
+| Catchments | 142 |
+| With a stored water balance | 135 |
+| **Pass all plausibility checks** | **121** |
+| ET ≥ 95% of rainfall | 13 |
+| — of which ET exceeds rainfall outright | 6 |
+| Annual rainfall outside the assigned zone | 1 |
+
+**No stored balance shows the factor-of-four ET defect.** The earlier statement in this project that most catchments carried pre-fix numbers is also not supported: ET/P across the fleet sits between 63% and 109%.
+
+**The real finding points the opposite way — ET too high, not too low.** Thirteen Raichur catchments have ET at 95–109% of rainfall, highest at Kanoor (109%), Yeddal Dinni (105%) and Jangamarhalli (104%). In a closed catchment ET cannot exceed rainfall. This matches what PML_V2 showed at Maski, and is consistent with **canal irrigation importing water** the balance has no term for. Because ΔS is the residual, those catchments report storage *loss* that may reflect irrigation rather than depletion. **Not verified** — whether these catchments lie in a Tungabhadra command area has not been checked.
+
+129 of the 135 latest balances have no per-water-year breakdown stored. They pre-date that feature, and the Curve Number in force when they ran cannot be recovered from the stored row.
+
+### A false positive in the harness
+
+The identity guard (ΔS = P − ET − Q) fired an ERROR on **17** stored balances. That is not an engine regression. Production stores each term as `NUMERIC(10,2)`, so recomputing the identity from four independently rounded values drifts: the largest drift is exactly 0.0100 mm, and none exceed 0.02 mm. The guard's 0.01 mm tolerance was set for in-memory arithmetic.
+
+**The live pipeline is unaffected** — it validates the engine's unrounded result before persistence. The false positive appears only when stored rows are re-validated. The tolerance has **not** been changed: see Decisions needed.
 
 ---
 
@@ -140,5 +167,7 @@ Findings are merged into one report, returned with the result, and logged at ERR
 
 1. **ET cross-product tolerance.** The check exists with no default. At 25% it fails Maski; it passes only near 50%. Which is it — and is a 48% disagreement acceptable ET uncertainty for a product going to a bank?
 2. **Whether to wire PML_V22a live**, given it covers roughly the first half of a current report window.
-3. **Recomputing stale outputs.** The pre-fix water balances (Maski and most of the other catchments) and every Service 1 assessment with an inflated JRC factor are still stored and still served.
+3. **Recomputing Service 1 assessments** computed before the JRC fix, which carry an inflated flood-exposure factor wherever a farm polygon touched surface water. (Water balances do not need recomputing for the ET defect — see above.)
+5. **The identity-guard tolerance for stored rows.** Proposed: keep 0.01 mm for in-memory results, and use 0.02 mm (four terms × 0.005 rounding) only when validating values read back from `NUMERIC(10,2)` columns. This is derived from storage precision, not widened to make the check pass — but you asked to decide tolerance changes, so it is unchanged.
+6. **The 13 catchments with ET ≥ 95% of rainfall** — check them against Tungabhadra canal command areas before treating their storage-loss bands as real.
 4. **The zone envelopes** — particularly the semi-arid ET/P floor of 0.55, set deliberately generous against a Budyko expectation near 0.95 for Raichur.

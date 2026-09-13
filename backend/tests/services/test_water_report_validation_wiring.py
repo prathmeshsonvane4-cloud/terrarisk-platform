@@ -71,8 +71,8 @@ class TestZoneFromClimatology:
 
 
 class TestValidateAtTheCallSite:
-    def test_the_maski_defect_fails_at_the_call_site_and_logs_at_warning_or_above(self, caplog):
-        """The production numbers, through the real orchestrator helper.
+    def test_the_pre_audit_maski_defect_fails_at_the_call_site_and_logs_at_warning_or_above(self, caplog):
+        """The pre-audit Maski figures, through the real orchestrator helper.
         This is the test that proves the harness is live in the pipeline
         rather than merely importable."""
         caplog.set_level(logging.INFO, logger="app.services.hydrology.water_report_generator")

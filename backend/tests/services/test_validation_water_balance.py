@@ -1,10 +1,10 @@
 """Tests for the physical validation harness.
 
-The fixture that matters most in this file is `_maski_result()`. Those
-are real numbers from a real production Water Intelligence report, and
-they are wrong. Every existing test in this repository passes on the
-pipeline that produced them. The point of this file is that these do
-not.
+The fixture that matters most in this file is `_maski_result()`: a
+water balance carrying the two worst pre-audit defects at once (ET ~4x
+low, runoff from monthly-aggregated SCS-CN). The pipeline that produced
+numbers like these passed the whole suite. The point of this file is
+that these do not pass the harness.
 """
 
 from __future__ import annotations
@@ -80,10 +80,18 @@ def _plausible_semi_arid() -> WaterBalanceEngineResult:
 
 
 # ---------------------------------------------------------------------
-# The regression fixture. Real production numbers, and they are wrong.
+# The regression fixture. Pre-audit figures, and they are wrong.
 # ---------------------------------------------------------------------
 def _maski_result() -> WaterBalanceEngineResult:
-    """Maski catchment, 233.48 ha, as reported in production.
+    """Maski catchment, 233.48 ha, as quoted in the Sep 2026 project brief.
+
+    PROVENANCE, CORRECTED 13 Sep 2026: these figures were originally
+    described here as a production report. They are not. None of the five
+    Maski balances stored in production match them — all five put ET at
+    77-78% of rainfall and pass this harness. These numbers pre-date the
+    hydrology audit fixes (same 1,692 mm rainfall, but ET and runoff from
+    the defective methods). They remain the right fixture because they are
+    exactly what those defects produce.
 
     Over the 3-year window: rainfall 1692.3 mm, ET 339.9 mm, runoff
     688.1 mm, recharge (the residual) 664.3 mm. Per year that is 564 mm
@@ -96,8 +104,6 @@ def _maski_result() -> WaterBalanceEngineResult:
     ~4x shortfall matches the MOD16A2 8-day-composite defect exactly,
     and because storage change is the residual, the missing ET reappears
     as recharge the catchment has no physical claim to.
-
-    The report carrying these numbers displayed 97% confidence.
     """
     return _result(
         rainfall_mm=1692.3,
@@ -111,7 +117,7 @@ def _maski_result() -> WaterBalanceEngineResult:
 class TestMaskiRegression:
     """The whole harness justifies itself here or not at all."""
 
-    def test_the_production_maski_balance_fails_validation(self):
+    def test_the_pre_audit_maski_balance_fails_validation(self):
         report = validate_water_balance(
             _maski_result(), zone=AgroClimaticZone.SEMI_ARID, subject="maski"
         )

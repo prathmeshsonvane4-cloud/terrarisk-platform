@@ -50,7 +50,7 @@ closure**: per-term and per-ratio envelopes that catch a term wrong by a
 large factor. That is a weaker guarantee than the word "closure"
 implies, and it is stated in those terms everywhere it is reported.
 
-What plausibility bounds DO catch, demonstrably: a production Raichur
+What plausibility bounds DO catch, demonstrably: a pre-audit Maski
 water balance reporting ET at 20% of rainfall, runoff at 41%, and a
 residual at 39% trips three separate warnings here — the ET term is far
 below any semi-arid envelope, and because dS is the residual, the
