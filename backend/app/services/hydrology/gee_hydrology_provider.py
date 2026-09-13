@@ -55,13 +55,16 @@ _ET_SCALE_FACTOR = 0.1
 # physical claim to.
 _ET_COMPOSITE_DAYS = 8.0
 
-# MOD16A2's own documented fill-value convention: valid ET is 0-32700;
-# 32761 (and the reserved codes above it — water/urban/snow/gap-filled/
-# etc.) mark a pixel with no valid retrieval for that 8-day composite.
-# This is a per-product QC convention, not the s2cloudless probability
-# mask the optical indices use — MODIS ET has no comparable cloud-
-# probability side channel to threshold against.
-_ET_FILL_VALUE_THRESHOLD = 32761
+# MOD16A2's documented valid range is -32767 to 32700 (stored units, before
+# the 0.1 scale factor). Anything above 32700 is not a retrieval.
+#
+# CORRECTED 6 Sep 2026. This was previously `< 32761`, commented as
+# excluding "reserved codes 32761 and above". Two problems: the catalog
+# states those fill codes are already excluded from the Earth Engine
+# asset, so that guard was mostly redundant; and it let 32701-32760 —
+# outside the valid range — through as real ET. The bound is now the
+# documented valid maximum, inclusive. See validation/products.py.
+_ET_VALID_MAX = 32700
 
 # Blueprint v2 D9's explicit, named scale policy for this index — MODIS
 # MOD16A2's own native pixel size, not a tunable. A catchment below ~25 ha
@@ -207,7 +210,7 @@ class GEEHydrologyProvider(HydrologyDataProvider):
         )
 
         def _mask_fill_values(image: ee.Image) -> ee.Image:
-            return image.updateMask(image.lt(_ET_FILL_VALUE_THRESHOLD))
+            return image.updateMask(image.lte(_ET_VALID_MAX))
 
         def _compute_period(period) -> ee.Feature:
             period = ee.Dictionary(period)

@@ -102,6 +102,6 @@ class FakeSatelliteDataProvider(SatelliteDataProvider):
     def get_water_history(self, geometry_geojson: dict) -> WaterHistorySummary:
         return WaterHistorySummary(
             occurrence_percent=self._jrc_occurrence_percent,
-            period_start=date(1984, 3, 1),
-            period_end=date(2021, 1, 1),
+            period_start=date(1984, 3, 16),
+            period_end=date(2021, 12, 31),
         )

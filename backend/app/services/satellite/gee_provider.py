@@ -327,19 +327,50 @@ class GeeProvider(SatelliteDataProvider):
         return climatology
 
     def get_water_history(self, geometry_geojson: dict) -> WaterHistorySummary:
+        """Mean JRC water occurrence over the WHOLE polygon, 0-100.
+
+        CORRECTED 6 Sep 2026 — the previous read was biased high twice
+        over, and this number feeds flood-exposure risk directly.
+
+        The JRC occurrence band has two properties a plain
+        `reduceRegion(ee.Reducer.mean())` gets wrong, both documented in
+        Google's own catalog entry for this collection:
+
+        1. Pixels where water was NEVER detected are MASKED, not zero. A
+           plain mean therefore averages only over pixels that have been
+           water at some point and ignores all the dry land in the
+           polygon. `.unmask(0)` restores dry pixels as the zero they are.
+        2. The band is its own mask weight ("the mask value for the
+           occurrence band is equal to the band value"), and Earth Engine
+           reducers are mask-weighted — so `mean()` computed
+           sum(x^2)/sum(x) rather than the mean. `.unweighted()` removes
+           that.
+
+        Measured on live polygons before the fix (old -> corrected):
+        Manjara reservoir edge 7.58 -> 0.04; a Maski-area square
+        23.29 -> 0.00; Ujani reservoir edge 82.57 -> 35.19. The last sat
+        just under the 85 floor-rule threshold that forces an assessment
+        to HIGH. The bias is worst exactly where it matters most — a
+        farm containing a little water — and vanishes only for a polygon
+        with no water at all, where the old null fell back to 0.0 and
+        happened to be right.
+        """
         region = ee.Geometry(geometry_geojson)
-        occurrence = ee.Image(_JRC_SURFACE_WATER).select("occurrence")
-        stats = occurrence.reduceRegion(reducer=ee.Reducer.mean(), geometry=region, scale=30, maxPixels=1e9)
+        occurrence = ee.Image(_JRC_SURFACE_WATER).select("occurrence").unmask(0)
+        stats = occurrence.reduceRegion(
+            reducer=ee.Reducer.mean().unweighted(), geometry=region, scale=30, maxPixels=1e9
+        )
         value = with_ee_retry(
             lambda: stats.get("occurrence").getInfo(),
             description="get_water_history",
         )
 
-        # JRC dataset's own fixed reference period.
+        # JRC GSW v1.4's own record: 16 Mar 1984 to 31 Dec 2021. The end
+        # was previously reported as 1 Jan 2021, a year short.
         return WaterHistorySummary(
             occurrence_percent=float(value) if value is not None else 0.0,
-            period_start=date(1984, 3, 1),
-            period_end=date(2021, 1, 1),
+            period_start=date(1984, 3, 16),
+            period_end=date(2021, 12, 31),
         )
 
     @staticmethod
