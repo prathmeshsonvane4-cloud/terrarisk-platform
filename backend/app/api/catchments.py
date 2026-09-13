@@ -119,11 +119,12 @@ from app.database.base import AsyncSessionLocal
 from app.database.session import get_db
 from app.models.admin import AdminBoundary
 from app.models.catchment import Catchment
-from app.models.enums import DelineationMethod, JobStatus, JobType, UserRole
+from app.models.enums import DelineationMethod, EvidenceResultTable, JobStatus, JobType, UserRole
 from app.models.job import Job
 from app.models.organization import Organization
 from app.models.user import AppUser
 from app.models.water_balance import RechargeStressScore, WaterBalanceResult
+from app.schemas.evidence import WaterReportLineageResponse
 from app.schemas.catchment import (
     CatchmentCreateRequest,
     CatchmentDetailResponse,
@@ -144,6 +145,7 @@ from app.services.hydrology.engine import WaterBalanceEngine
 from app.services.hydrology.gee_hydrology_provider import GEEHydrologyProvider
 from app.services.hydrology.recharge_stress import RechargeStressEngine
 from app.services.hydrology.water_report_generator import generate_water_report
+from app.services.provenance.read import load_result_lineage
 from app.services.satellite.gee_provider import GeeProvider
 
 router = APIRouter(prefix="/catchments", tags=["Catchments"])
@@ -561,6 +563,46 @@ async def get_latest_water_report(
     itself is outside the caller's own scope — the same IDOR-safe,
     not-found-vs-forbidden convention `get_catchment` already uses.
     """
+    job, water_balance_result, recharge_stress_score = await _load_latest_water_report(catchment_id, current_user, db)
+    return WaterReportDetailResponse(
+        catchment_id=catchment_id,
+        generated_at=water_balance_result.computed_at,
+        water_balance=WaterBalanceResultResponse.model_validate(water_balance_result),
+        recharge_stress=RechargeStressScoreResponse.model_validate(recharge_stress_score),
+        job=JobStatusResponse.model_validate(job),
+    )
+
+
+@router.get("/{catchment_id}/water-reports/lineage", response_model=WaterReportLineageResponse)
+async def get_latest_water_report_lineage(
+    catchment_id: UUID,
+    current_user: AppUser = Depends(require_role(UserRole.PROGRAMME_OFFICER, UserRole.PROGRAMME_ADMIN)),
+    db: AsyncSession = Depends(get_db),
+) -> WaterReportLineageResponse:
+    """Evidence lineage and validation findings for the latest completed
+    water report — every input each result depended on, and every check
+    run against it. Same access rule and the same 404s as the report
+    itself, through the same loader, so lineage can never be visible to
+    someone the report is not."""
+    _job, water_balance_result, recharge_stress_score = await _load_latest_water_report(
+        catchment_id, current_user, db
+    )
+    return WaterReportLineageResponse(
+        catchment_id=catchment_id,
+        water_balance=await load_result_lineage(
+            db, EvidenceResultTable.WATER_BALANCE_RESULT, water_balance_result.id
+        ),
+        recharge_stress=await load_result_lineage(
+            db, EvidenceResultTable.RECHARGE_STRESS_SCORE, recharge_stress_score.id
+        ),
+    )
+
+
+async def _load_latest_water_report(
+    catchment_id: UUID, current_user: AppUser, db: AsyncSession
+) -> tuple[Job, WaterBalanceResult, RechargeStressScore]:
+    """The latest completed report's job and result pair, or 404. Shared by
+    the report and lineage endpoints so their access rules cannot drift."""
     catchment = await db.get(Catchment, catchment_id)
     if catchment is None or catchment.created_by != current_user.id:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Catchment not found")
@@ -603,13 +645,7 @@ async def get_latest_water_report(
         # report" rather than returned as a broken partial response.
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="No completed water report found for this catchment")
 
-    return WaterReportDetailResponse(
-        catchment_id=catchment_id,
-        generated_at=water_balance_result.computed_at,
-        water_balance=WaterBalanceResultResponse.model_validate(water_balance_result),
-        recharge_stress=RechargeStressScoreResponse.model_validate(recharge_stress_score),
-        job=JobStatusResponse.model_validate(job),
-    )
+    return job, water_balance_result, recharge_stress_score
 
 
 _MAX_HISTORY_LIMIT = 100

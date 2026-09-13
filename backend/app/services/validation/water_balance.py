@@ -76,6 +76,18 @@ __all__ = ["validate_water_balance"]
 # the engine's arithmetic changed; that is the finding.
 _IDENTITY_TOLERANCE_MM = 0.01
 
+# The same guard applied to values READ BACK from the database, where
+# every term is stored as NUMERIC(10,2) and rounded independently. Four
+# terms each off by up to 0.005 mm can drift the recomputed identity by
+# up to 0.02 mm with nothing wrong in the engine.
+#
+# Derived from storage precision, not chosen: re-validating the 135
+# stored production balances (13 Sep 2026) showed a maximum drift of
+# exactly 0.0100 mm and 17 false ERRORs against the in-memory tolerance,
+# none above 0.02 mm. Selected ONLY by `values_from_storage=True`; the
+# live pipeline still validates unrounded values at 0.01 mm.
+_STORED_IDENTITY_TOLERANCE_MM = 0.02
+
 # Below this, ratios stop meaning anything: dividing by a near-zero
 # rainfall total turns rounding noise into a 400% runoff coefficient.
 # A catchment with essentially no rainfall over the window is a data
@@ -101,6 +113,7 @@ def validate_water_balance(
     *,
     zone: AgroClimaticZone = AgroClimaticZone.UNKNOWN,
     subject: str = "water_balance",
+    values_from_storage: bool = False,
 ) -> ValidationReport:
     """Check one computed water balance against physics and against the
     plausible envelope for its agro-climatic zone.
@@ -114,6 +127,11 @@ def validate_water_balance(
     and records each one as skipped. That default is deliberate: a caller
     that has not established the zone gets a visibly incomplete report,
     not a silently permissive one.
+
+    `values_from_storage` must be True when `result` was rebuilt from
+    database rows rather than taken from the engine. It changes only the
+    identity guard's rounding allowance — see `_STORED_IDENTITY_TOLERANCE_MM`
+    — and nothing about any physical plausibility bound.
     """
     findings: list[ValidationFinding] = []
     run = 0
@@ -170,7 +188,13 @@ def validate_water_balance(
             )
 
     run += 1
-    identity_finding = _check_identity(rainfall, et, runoff, storage_change)
+    identity_finding = _check_identity(
+        rainfall,
+        et,
+        runoff,
+        storage_change,
+        tolerance_mm=_STORED_IDENTITY_TOLERANCE_MM if values_from_storage else _IDENTITY_TOLERANCE_MM,
+    )
     if identity_finding is not None:
         findings.append(identity_finding)
 
@@ -223,7 +247,12 @@ def validate_water_balance(
 
 
 def _check_identity(
-    rainfall: float | None, et: float | None, runoff: float | None, storage_change: float | None
+    rainfall: float | None,
+    et: float | None,
+    runoff: float | None,
+    storage_change: float | None,
+    *,
+    tolerance_mm: float,
 ) -> ValidationFinding | None:
     """REFACTOR GUARD, NOT A CLOSURE TEST.
 
@@ -238,7 +267,7 @@ def _check_identity(
         return None
     expected = rainfall - et - runoff
     drift = abs(storage_change - expected)
-    if drift <= _IDENTITY_TOLERANCE_MM:
+    if drift <= tolerance_mm:
         return None
     return ValidationFinding(
         check="water_balance_identity",
@@ -250,7 +279,7 @@ def _check_identity(
             f"({expected:.4f} mm); drift {drift:.4f} mm. The engine's arithmetic has changed. "
             "This is a code regression, not a physical finding."
         ),
-        expected=f"P - ET - Q = {expected:.4f} mm (within {_IDENTITY_TOLERANCE_MM} mm)",
+        expected=f"P - ET - Q = {expected:.4f} mm (within {tolerance_mm} mm)",
     )
 
 

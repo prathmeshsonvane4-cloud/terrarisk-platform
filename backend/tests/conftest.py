@@ -44,3 +44,35 @@ async def sqlite_session_factory():
     yield session_factory
 
     await engine.dispose()
+
+
+_ORPHAN_LINEAGE_SQL = """
+DELETE FROM {table} lineage
+WHERE NOT EXISTS (SELECT 1 FROM water_balance_result r WHERE r.id = lineage.result_id)
+  AND NOT EXISTS (SELECT 1 FROM recharge_stress_score r WHERE r.id = lineage.result_id)
+  AND NOT EXISTS (SELECT 1 FROM risk_score r WHERE r.id = lineage.result_id)
+"""
+
+
+@pytest.fixture(scope="session", autouse=True)
+async def _remove_orphaned_lineage_after_the_session():
+    """Evidence and validation rows reference their result without a
+    foreign key (the polymorphic pattern risk_score already uses), so a test
+    teardown that deletes results leaves their lineage behind. Application
+    code never deletes results; tests do, in many files. One sweep at the end
+    of the session covers all of them, including teardowns written later.
+
+    Best-effort by design: without a reachable database, or against a
+    schema older than migration 0012, there is nothing to sweep.
+    """
+    yield
+    try:
+        from sqlalchemy import text
+
+        from app.database.base import engine
+
+        async with engine.begin() as conn:
+            for table in ("validation_run", "evidence_record"):
+                await conn.execute(text(_ORPHAN_LINEAGE_SQL.format(table=table)))
+    except Exception:  # noqa: BLE001 - cleanup must never fail the test session
+        pass

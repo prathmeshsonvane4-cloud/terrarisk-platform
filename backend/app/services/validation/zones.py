@@ -67,6 +67,7 @@ __all__ = [
     "ZoneRanges",
     "RANGES_BY_ZONE",
     "classify_zone_by_rainfall",
+    "classify_zone_from_normals",
     "ranges_for",
 ]
 
@@ -209,6 +210,22 @@ def classify_zone_by_rainfall(mean_annual_rainfall_mm: float | None) -> AgroClim
     if mean_annual_rainfall_mm < _SUB_HUMID_CEILING_MM:
         return AgroClimaticZone.SUB_HUMID
     return AgroClimaticZone.HUMID
+
+
+def classify_zone_from_normals(rainfall_normal_by_month: dict[int, float]) -> AgroClimaticZone:
+    """Zone from a 30-year climatology: the long-term mean annual rainfall.
+
+    Using the climatology rather than the observed years matters: a window
+    containing one failed monsoon would otherwise be classified arid and
+    validated against arid bounds — a recent drought silently redefining
+    normal, the failure Blueprint v2 D6 already fixed for recharge stress.
+
+    Fewer than twelve monthly normals is not extrapolated to a year; the
+    annual total is then genuinely unknown.
+    """
+    if len(rainfall_normal_by_month) < 12:
+        return AgroClimaticZone.UNKNOWN
+    return classify_zone_by_rainfall(sum(rainfall_normal_by_month.values()))
 
 
 def ranges_for(zone: AgroClimaticZone) -> ZoneRanges | None:

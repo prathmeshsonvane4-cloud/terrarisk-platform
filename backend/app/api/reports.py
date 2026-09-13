@@ -29,12 +29,13 @@ from app.core.config import get_settings
 from app.database.base import AsyncSessionLocal
 from app.database.session import get_db
 from app.models.admin import AdminBoundary
-from app.models.enums import JobStatus, JobType, RiskEntityType, SatelliteIndexType, UserRole
+from app.models.enums import EvidenceResultTable, JobStatus, JobType, RiskEntityType, SatelliteIndexType, UserRole
 from app.models.farm import FarmPolygon
 from app.models.job import Job
 from app.models.risk import ConfigWeight, RiskFactorScore, RiskScore
 from app.models.satellite import SatelliteObservation
 from app.models.user import AppUser
+from app.schemas.evidence import ResultLineageResponse
 from app.schemas.report import (
     FactorScoreResponse,
     ObservationPoint,
@@ -49,6 +50,7 @@ from app.schemas.report import (
     ReportTriggerResponse,
 )
 from app.schemas.workspace import ReportListItem, ReportListResponse
+from app.services.provenance.read import load_result_lineage
 from app.services.reporting.map_snapshot import fetch_map_snapshot
 from app.services.reporting.pdf_renderer import PDF_LAYOUT_VERSION, render_report_pdf
 from app.services.reporting.report_generator import _GENERIC_FAILURE_MESSAGE, generate_farm_report
@@ -178,12 +180,11 @@ async def trigger_report(
     return ReportTriggerResponse(job_id=job.id, status="queued")
 
 
-async def _load_report_response(
+async def _authorized_report(
     risk_score_id: UUID, current_user: AppUser, db: AsyncSession
-) -> ReportResponse:
-    """Shared payload assembly for the JSON and PDF endpoints — one loader,
-    one authorization guard, so the two views can never diverge on either
-    data or access rules (Blueprint §08 one-artifact rule)."""
+) -> tuple[RiskScore, FarmPolygon]:
+    """The report's score and farm, or 404 — the single authorisation
+    guard shared by the JSON, PDF and lineage endpoints."""
     risk_score = await db.get(RiskScore, risk_score_id)
     if risk_score is None or risk_score.entity_type != RiskEntityType.FARM:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Report not found")
@@ -192,6 +193,16 @@ async def _load_report_response(
     if farm is None or not await user_can_access_owned_resource(db, current_user, farm.drawn_by):
         # Same not-found-vs-forbidden guard as jobs (app/api/jobs.py).
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Report not found")
+    return risk_score, farm
+
+
+async def _load_report_response(
+    risk_score_id: UUID, current_user: AppUser, db: AsyncSession
+) -> ReportResponse:
+    """Shared payload assembly for the JSON and PDF endpoints — one loader,
+    one authorization guard, so the two views can never diverge on either
+    data or access rules (Blueprint §08 one-artifact rule)."""
+    risk_score, farm = await _authorized_report(risk_score_id, current_user, db)
 
     factor_rows = (
         await db.execute(select(RiskFactorScore).where(RiskFactorScore.risk_score_id == risk_score.id))
@@ -361,6 +372,19 @@ async def get_report(
     db: AsyncSession = Depends(get_db),
 ) -> ReportResponse:
     return await _load_report_response(risk_score_id, current_user, db)
+
+
+@router.get("/reports/{risk_score_id}/lineage", response_model=ResultLineageResponse)
+async def get_report_lineage(
+    risk_score_id: UUID,
+    current_user: AppUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> ResultLineageResponse:
+    """Evidence lineage and validation findings for one farm report — every
+    input the score depended on and every check run against it. Guarded by
+    the same `_authorized_report` as the report itself."""
+    risk_score, _farm = await _authorized_report(risk_score_id, current_user, db)
+    return await load_result_lineage(db, EvidenceResultTable.RISK_SCORE, risk_score.id)
 
 
 @router.get("/reports", response_model=ReportListResponse)

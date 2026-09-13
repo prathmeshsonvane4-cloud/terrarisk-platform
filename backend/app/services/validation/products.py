@@ -136,6 +136,10 @@ class BandSpec:
 class ProductSpec:
     collection_id: str
     name: str
+    # The product version as its publisher states it. Taken from the
+    # collection id where the id encodes it (MODIS/061, GSW1_4) or from
+    # the catalog title; never inferred.
+    product_version: str
     # Native pixel size in metres — the product's own, never the `scale`
     # this codebase happens to request.
     native_resolution_m: float
@@ -162,6 +166,7 @@ PRODUCTS: dict[str, ProductSpec] = {
     "MODIS/061/MOD16A2": ProductSpec(
         collection_id="MODIS/061/MOD16A2",
         name="MODIS Terra Net Evapotranspiration 8-Day",
+        product_version="Collection 6.1",
         native_resolution_m=500.0,
         temporal_resolution="8-day",
         record_start=date(2001, 1, 1),
@@ -203,6 +208,7 @@ PRODUCTS: dict[str, ProductSpec] = {
     "UCSB-CHG/CHIRPS/DAILY": ProductSpec(
         collection_id="UCSB-CHG/CHIRPS/DAILY",
         name="CHIRPS Daily Precipitation",
+        product_version="2.0 Final",
         native_resolution_m=5566.0,
         temporal_resolution="daily",
         record_start=date(1981, 1, 1),
@@ -246,6 +252,7 @@ PRODUCTS: dict[str, ProductSpec] = {
     "JRC/GSW1_4/GlobalSurfaceWater": ProductSpec(
         collection_id="JRC/GSW1_4/GlobalSurfaceWater",
         name="JRC Global Surface Water Mapping Layers v1.4",
+        product_version="1.4",
         native_resolution_m=30.0,
         temporal_resolution="static summary over the full record",
         record_start=date(1984, 3, 16),
@@ -293,6 +300,7 @@ PRODUCTS: dict[str, ProductSpec] = {
     "COPERNICUS/S2_SR_HARMONIZED": ProductSpec(
         collection_id="COPERNICUS/S2_SR_HARMONIZED",
         name="Sentinel-2 MSI Level-2A Surface Reflectance, harmonized",
+        product_version="Level-2A, harmonized",
         native_resolution_m=10.0,
         temporal_resolution="~5-day revisit (two satellites)",
         record_start=date(2017, 3, 28),
@@ -316,10 +324,12 @@ PRODUCTS: dict[str, ProductSpec] = {
             for band in ("B3", "B4", "B8", "B11")
         },
         compositing="Per-scene; this codebase composites by monthly mean after cloud masking.",
+        # Product-wide caveats only. B11's native 20 m is band-specific — it
+        # applies to MNDWI and NDMI, not NDVI — so it is attached per index
+        # in provenance/lineage.py rather than here, where every Sentinel-2
+        # series would inherit it.
         geographic_limitations=(
-            "B11 is natively 20 m and is resampled to 10 m by the index math, so MNDWI and "
-            "NDMI carry 20 m effective resolution despite being computed at 10 m. Over "
-            "Maharashtra, July and August are routinely a total optical loss to monsoon cloud."
+            "Over Maharashtra, July and August are routinely a total optical loss to monsoon cloud."
         ),
         verified_against=Verification.CATALOG,
         verified_on=_AUDIT_DATE,
@@ -328,6 +338,7 @@ PRODUCTS: dict[str, ProductSpec] = {
     "COPERNICUS/S2_CLOUD_PROBABILITY": ProductSpec(
         collection_id="COPERNICUS/S2_CLOUD_PROBABILITY",
         name="Sentinel-2 cloud probability (s2cloudless)",
+        product_version="s2cloudless",
         native_resolution_m=10.0,
         temporal_resolution="one image per Sentinel-2 scene",
         record_start=date(2015, 6, 27),
@@ -352,6 +363,7 @@ PRODUCTS: dict[str, ProductSpec] = {
     "COPERNICUS/S1_GRD": ProductSpec(
         collection_id="COPERNICUS/S1_GRD",
         name="Sentinel-1 SAR GRD",
+        product_version="GRD, IW mode",
         native_resolution_m=10.0,
         temporal_resolution="~6-12 day revisit depending on latitude and orbit",
         record_start=date(2014, 10, 3),

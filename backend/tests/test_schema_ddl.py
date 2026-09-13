@@ -48,11 +48,14 @@ EXPECTED_TABLES = {
     "organization",
     "config_weight",
     "cgwb_groundwater_observation",
+    "evidence_record",
     "recharge_stress_score",
     "risk_score",
     "risk_factor_score",
     "risk_rollup",
     "job",
+    "validation_finding",
+    "validation_run",
     "water_balance_result",
 }
 
@@ -186,3 +189,53 @@ def test_farmer_identity_is_the_only_table_with_pii_columns():
             continue
         columns = {c.name for c in table.columns}
         assert not (columns & pii_like_columns), f"{table_name} has unexpected PII-shaped column(s)"
+
+
+def test_evidence_vocabulary_constraints_admit_exactly_the_python_enum_values():
+    """The evidence tables store vocabulary as strings behind CHECK
+    constraints (see app/models/evidence.py for why). This pins that the
+    constraints are generated from the enums, so adding a value in Python
+    without the database learning it — the silent failure 0010 exists to
+    fix for native enums — cannot happen here."""
+    import re
+
+    from app.models.enums import EvidenceKind, EvidenceResultTable, EvidenceValidation, FindingSeverity
+
+    expected = {
+        ("evidence_record", "ck_evidence_record_kind"): EvidenceKind,
+        ("evidence_record", "ck_evidence_record_validation"): EvidenceValidation,
+        ("evidence_record", "ck_evidence_record_result_table"): EvidenceResultTable,
+        ("validation_run", "ck_validation_run_result_table"): EvidenceResultTable,
+        ("validation_finding", "ck_validation_finding_severity"): FindingSeverity,
+    }
+    for (table_name, constraint_name), enum_cls in expected.items():
+        table = Base.metadata.tables[table_name]
+        constraint = next(c for c in table.constraints if isinstance(c, CheckConstraint) and c.name == constraint_name)
+        admitted = set(re.findall(r"'([^']+)'", str(constraint.sqltext)))
+        assert admitted == {m.value for m in enum_cls}, f"{constraint_name} drifted from {enum_cls.__name__}"
+
+
+def test_there_is_no_plausibility_level_of_validation():
+    """Passing a plausibility envelope is not validation. A label saying
+    otherwise would put 'validated' next to numbers that merely failed to
+    look broken."""
+    from app.models.enums import EvidenceValidation
+
+    assert not any("plausib" in m.value for m in EvidenceValidation)
+
+
+def test_the_migration_constraints_match_the_model_constraints():
+    """The migration writes its CHECK expressions out literally; the
+    model generates them. Both must admit the same values, or a fresh
+    database and the ORM disagree about what is legal."""
+    import re
+    from pathlib import Path
+
+    migration = (Path(__file__).parents[1] / "alembic" / "versions" / "0012_evidence_provenance.py").read_text(encoding="utf-8")
+    for table_name in ("evidence_record", "validation_run", "validation_finding"):
+        for constraint in Base.metadata.tables[table_name].constraints:
+            if not isinstance(constraint, CheckConstraint) or " IN (" not in str(constraint.sqltext):
+                continue
+            model_values = set(re.findall(r"'([^']+)'", str(constraint.sqltext)))
+            for value in model_values:
+                assert f"'{value}'" in migration, f"{constraint.name}: '{value}' missing from migration 0012"

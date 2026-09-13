@@ -21,6 +21,7 @@ from app.database.base import AsyncSessionLocal, engine
 from app.main import app
 from app.models.catchment import Catchment
 from app.models.enums import DelineationMethod, UserRole
+from app.models.evidence import EvidenceRecord, ValidationRun
 from app.models.job import Job
 from app.models.user import AppUser
 from app.models.water_balance import RechargeStressScore, WaterBalanceResult
@@ -101,6 +102,12 @@ async def users_and_catchment():
     yield {"officer": officer, "other_officer": other_officer, "credit_officer": credit_officer, "catchment": catchment}
 
     async with AsyncSessionLocal() as db:
+        # Lineage references results without a foreign key; clear it first.
+        result_ids = select(WaterBalanceResult.id).where(WaterBalanceResult.catchment_id == catchment.id).union(
+            select(RechargeStressScore.id).where(RechargeStressScore.catchment_id == catchment.id)
+        )
+        await db.execute(delete(ValidationRun).where(ValidationRun.result_id.in_(result_ids)))
+        await db.execute(delete(EvidenceRecord).where(EvidenceRecord.result_id.in_(result_ids)))
         await db.execute(delete(RechargeStressScore).where(RechargeStressScore.catchment_id == catchment.id))
         await db.execute(delete(WaterBalanceResult).where(WaterBalanceResult.catchment_id == catchment.id))
         await db.execute(delete(Job).where(Job.created_by.in_([officer.id, other_officer.id, credit_officer.id])))
@@ -272,3 +279,58 @@ async def test_get_latest_water_report_returns_the_latest_of_multiple_completed_
     assert len(water_balance_rows) == 2, "both runs must have persisted their own result row"
     latest_by_computed_at = max(water_balance_rows, key=lambda row: row.computed_at)
     assert body["water_balance"]["id"] == str(latest_by_computed_at.id)
+
+
+# =====================================================================
+# GET /catchments/{id}/water-reports/lineage (evidence-aware roadmap, Phase B)
+# =====================================================================
+
+
+@pytest.mark.asyncio
+async def test_water_report_lineage_covers_both_results(api_client, users_and_catchment):
+    officer = users_and_catchment["officer"]
+    catchment = users_and_catchment["catchment"]
+    token = await _login(api_client, officer.email)
+    await _trigger_and_complete(api_client, token, catchment.id)
+
+    response = await api_client.get(
+        f"/api/v1/catchments/{catchment.id}/water-reports/lineage", headers={"Authorization": f"Bearer {token}"}
+    )
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    for key, table in (("water_balance", "water_balance_result"), ("recharge_stress", "recharge_stress_score")):
+        section = body[key]
+        assert section["result_table"] == table
+        assert section["provenance_recorded"] is True
+        assert section["evidence"], f"{key} has no lineage"
+        assert len(section["validation_runs"]) == 1
+    balance_quantities = {item["quantity"] for item in body["water_balance"]["evidence"]}
+    assert {"et_monthly_mm", "curve_number", "closed_catchment_assumed"} <= balance_quantities
+
+
+@pytest.mark.asyncio
+async def test_water_report_lineage_follows_the_report_access_rules(api_client, users_and_catchment):
+    """Another programme officer gets the report's own 404; a bank role
+    gets the report's own 403. Lineage is never wider than the report."""
+    officer = users_and_catchment["officer"]
+    catchment = users_and_catchment["catchment"]
+    token = await _login(api_client, officer.email)
+    await _trigger_and_complete(api_client, token, catchment.id)
+    url = f"/api/v1/catchments/{catchment.id}/water-reports/lineage"
+
+    other = await _login(api_client, users_and_catchment["other_officer"].email)
+    bank = await _login(api_client, users_and_catchment["credit_officer"].email)
+
+    assert (await api_client.get(url, headers={"Authorization": f"Bearer {other}"})).status_code == 404
+    assert (await api_client.get(url, headers={"Authorization": f"Bearer {bank}"})).status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_water_report_lineage_404s_before_any_report_exists(api_client, users_and_catchment):
+    token = await _login(api_client, users_and_catchment["officer"].email)
+    response = await api_client.get(
+        f"/api/v1/catchments/{users_and_catchment['catchment'].id}/water-reports/lineage",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert response.status_code == 404

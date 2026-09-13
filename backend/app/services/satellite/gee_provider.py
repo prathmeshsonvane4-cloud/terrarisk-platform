@@ -52,6 +52,17 @@ _JRC_SURFACE_WATER = "JRC/GSW1_4/GlobalSurfaceWater"
 _CHIRPS_SCALE_METERS = 5000
 _CHIRPS_MAX_PIXELS = 1e9
 
+# Sentinel-2 native 10 m for the optical indices. Note B11 (SWIR1, used by
+# MNDWI and NDMI) is natively 20 m, so those indices carry 20 m effective
+# resolution despite being reduced at 10 m.
+_INDEX_SCALE_METERS = 10
+
+# JRC Global Surface Water native 30 m (Landsat).
+_JRC_SCALE_METERS = 30
+
+# Named so provenance records (app/services/provenance/lineage.py) can
+# import the values this module actually uses rather than restating them.
+
 # 30-year climate-normal window (WMO-standard normal period length),
 # computed relative to the last fully-completed calendar year rather than
 # hardcoded, so it doesn't silently go stale.
@@ -145,7 +156,9 @@ class GeeProvider(SatelliteDataProvider):
             period_end = ee.Date(period.get("end"))
             month_images = joined.filterDate(period_start, period_end)
             composite = month_images.map(_mask_clouds_and_compute_index).mean()
-            stats = composite.reduceRegion(reducer=ee.Reducer.mean(), geometry=region, scale=10, maxPixels=1e9)
+            stats = composite.reduceRegion(
+                reducer=ee.Reducer.mean(), geometry=region, scale=_INDEX_SCALE_METERS, maxPixels=1e9
+            )
             # The real Sentinel-2 acquisition dates that fed this month's
             # composite (M2B P9 — Blueprint §08 data lineage): each image's
             # own system:time_start, formatted server-side so a single
@@ -255,7 +268,9 @@ class GeeProvider(SatelliteDataProvider):
             period_start = ee.Date(period.get("start"))
             period_end = ee.Date(period.get("end"))
             month_total = chirps.filterDate(period_start, period_end).sum()
-            stats = month_total.reduceRegion(reducer=ee.Reducer.mean(), geometry=region, scale=5000, maxPixels=1e9)
+            stats = month_total.reduceRegion(
+                reducer=ee.Reducer.mean(), geometry=region, scale=_CHIRPS_SCALE_METERS, maxPixels=1e9
+            )
             # Guarded lookup — REAL bug found during M2A P4's live E2E:
             # CHIRPS publishes with a multi-week lag, so the lookback
             # window's most recent month can have zero published images.
@@ -303,7 +318,7 @@ class GeeProvider(SatelliteDataProvider):
                 period_end = period_start.advance(1, "month")
                 year_month_total = chirps.filterDate(period_start, period_end).sum()
                 stats = year_month_total.reduceRegion(
-                    reducer=ee.Reducer.mean(), geometry=region, scale=5000, maxPixels=1e9
+                    reducer=ee.Reducer.mean(), geometry=region, scale=_CHIRPS_SCALE_METERS, maxPixels=1e9
                 )
                 # Same empty-month guard as get_rainfall_series; the
                 # climatology's mean reducer simply averages over the
@@ -358,7 +373,7 @@ class GeeProvider(SatelliteDataProvider):
         region = ee.Geometry(geometry_geojson)
         occurrence = ee.Image(_JRC_SURFACE_WATER).select("occurrence").unmask(0)
         stats = occurrence.reduceRegion(
-            reducer=ee.Reducer.mean().unweighted(), geometry=region, scale=30, maxPixels=1e9
+            reducer=ee.Reducer.mean().unweighted(), geometry=region, scale=_JRC_SCALE_METERS, maxPixels=1e9
         )
         value = with_ee_retry(
             lambda: stats.get("occurrence").getInfo(),

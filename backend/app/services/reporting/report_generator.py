@@ -44,17 +44,19 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database.base import AsyncSessionLocal
-from app.models.enums import JobStatus, RiskEntityType, RiskFactor, SatelliteIndexType
+from app.models.enums import EvidenceResultTable, JobStatus, RiskEntityType, RiskFactor, SatelliteIndexType
 from app.models.farm import FarmPolygon
 from app.models.job import Job
 from app.models.risk import ConfigWeight, RiskFactorScore, RiskScore
 from app.models.satellite import SatelliteObservation
+from app.services.provenance import EvidenceItem, add_evidence, add_validation_run, risk_score_evidence
 from app.services.reporting.progress import ProgressTracker
 from app.services.risk.engine import RiskEngine
 from app.services.risk.models import MonthlyValue, ObservationBundle, RiskEngineConfig
 from app.services.risk.seasonal import BASELINE_YEARS
 from app.services.satellite.gee_provider import _monthly_periods
 from app.services.satellite.provider import IndexObservation, SatelliteDataProvider, SatelliteIndex
+from app.services.validation import ValidationReport, classify_zone_from_normals, validate_series
 
 logger = logging.getLogger(__name__)
 
@@ -117,16 +119,18 @@ async def _run_pipeline(
     periods = _monthly_periods(start, end)
     await tracker.complete("loading_geometry")
 
-    ndvi = await _get_or_fetch_index_series(
+    ndvi, ndvi_retrieval = await _get_or_fetch_index_series(
         db, farm_id, SatelliteIndex.NDVI, "vegetation_observations", geometry_geojson, start, end, satellite_provider, tracker
     )
-    mndwi = await _get_or_fetch_index_series(
+    mndwi, mndwi_retrieval = await _get_or_fetch_index_series(
         db, farm_id, SatelliteIndex.MNDWI, "surface_water_observations", geometry_geojson, start, end, satellite_provider, tracker
     )
-    ndmi = await _get_or_fetch_index_series(
+    ndmi, ndmi_retrieval = await _get_or_fetch_index_series(
         db, farm_id, SatelliteIndex.NDMI, "crop_moisture_observations", geometry_geojson, start, end, satellite_provider, tracker
     )
-    rainfall = await _get_or_fetch_rainfall_series(db, farm_id, geometry_geojson, start, end, satellite_provider, tracker)
+    rainfall, rainfall_retrieval = await _get_or_fetch_rainfall_series(
+        db, farm_id, geometry_geojson, start, end, satellite_provider, tracker
+    )
 
     await tracker.start("rainfall_climatology")
     rainfall_normal_by_month = await asyncio.to_thread(satellite_provider.get_rainfall_climatology, geometry_geojson)
@@ -154,13 +158,13 @@ async def _run_pipeline(
     # "cache". The progress feed would be describing the wrong fetch.
     baseline_start = start.replace(year=start.year - BASELINE_YEARS)
     baseline_periods = _monthly_periods(baseline_start, end)
-    ndvi_baseline = await _get_or_fetch_index_series(
+    ndvi_baseline, ndvi_baseline_retrieval = await _get_or_fetch_index_series(
         db, farm_id, SatelliteIndex.NDVI, "seasonal_baselines", geometry_geojson, baseline_start, end, satellite_provider, tracker
     )
-    mndwi_baseline = await _get_or_fetch_index_series(
+    mndwi_baseline, mndwi_baseline_retrieval = await _get_or_fetch_index_series(
         db, farm_id, SatelliteIndex.MNDWI, "seasonal_baselines", geometry_geojson, baseline_start, end, satellite_provider, tracker
     )
-    ndmi_baseline = await _get_or_fetch_index_series(
+    ndmi_baseline, ndmi_baseline_retrieval = await _get_or_fetch_index_series(
         db, farm_id, SatelliteIndex.NDMI, "seasonal_baselines", geometry_geojson, baseline_start, end, satellite_provider, tracker
     )
 
@@ -187,8 +191,38 @@ async def _run_pipeline(
     result = risk_engine.compute(bundle, config)
     await tracker.complete("scoring")
 
+    lineage = risk_score_evidence(
+        index_observations={
+            SatelliteIndex.NDVI: (ndvi, bundle.ndvi_monthly, ndvi_retrieval),
+            SatelliteIndex.MNDWI: (mndwi, bundle.mndwi_monthly, mndwi_retrieval),
+            SatelliteIndex.NDMI: (ndmi, bundle.ndmi_monthly, ndmi_retrieval),
+        },
+        baseline_observations={
+            SatelliteIndex.NDVI: (ndvi_baseline, bundle.ndvi_baseline, ndvi_baseline_retrieval),
+            SatelliteIndex.MNDWI: (mndwi_baseline, bundle.mndwi_baseline, mndwi_baseline_retrieval),
+            SatelliteIndex.NDMI: (ndmi_baseline, bundle.ndmi_baseline, ndmi_baseline_retrieval),
+        },
+        rainfall_observations=rainfall,
+        rainfall_monthly=bundle.rainfall_monthly,
+        rainfall_retrieval=rainfall_retrieval,
+        rainfall_normals=rainfall_normal_by_month,
+        jrc_period=(water_history.period_start, water_history.period_end),
+        start=start,
+        end=end,
+        baseline_start=baseline_start,
+        weights=config.weights,
+        weights_version_id=str(config_row.id),
+        floor_threshold=config.floor_threshold,
+        computed_in_year=datetime.now(timezone.utc).year,
+        satellite_provider=satellite_provider,
+    )
+    validation = _validate_inputs(bundle, farm_id)
+    zone = classify_zone_from_normals(rainfall_normal_by_month)
+
     await tracker.start("saving")
-    risk_score_id = await _persist_risk_result(db, farm_id, config_row.id, result, start, end)
+    risk_score_id = await _persist_risk_result(
+        db, farm_id, config_row.id, result, start, end, lineage=lineage, validation=validation, zone=zone.value
+    )
     await tracker.complete("saving")
 
     await tracker.start("completed")
@@ -204,11 +238,16 @@ async def _persist_risk_result(
     result,
     observation_window_start: date,
     observation_window_end: date,
+    *,
+    lineage: list[EvidenceItem],
+    validation: ValidationReport,
+    zone: str,
 ) -> UUID:
     """Single atomic transaction: a RiskScore is never left without its
-    RiskFactorScore rows. The window is exactly what _run_pipeline actually
-    queried Earth Engine with (M2B P9 Evidence tab) — persisted once, here,
-    never re-derived at read time."""
+    RiskFactorScore rows — nor, since Phase B, without its evidence lineage
+    and validation findings. The window is exactly what _run_pipeline
+    actually queried Earth Engine with (M2B P9 Evidence tab) — persisted
+    once, here, never re-derived at read time."""
     risk_score = RiskScore(
         entity_type=RiskEntityType.FARM,
         entity_id=farm_id,
@@ -236,8 +275,40 @@ async def _persist_risk_result(
             )
         )
 
+    add_evidence(db, EvidenceResultTable.RISK_SCORE, risk_score.id, lineage)
+    add_validation_run(db, EvidenceResultTable.RISK_SCORE, risk_score.id, validation, zone=zone, source="pipeline")
+
     await db.commit()
     return risk_score.id
+
+
+def _validate_inputs(bundle: ObservationBundle, farm_id: UUID) -> ValidationReport:
+    """Ingestion checks over every series the risk score consumes.
+
+    Service 1 has no physical balance to close, so input sanity is the
+    validation that genuinely applies. Logged at WARNING on failure and
+    persisted with the score either way — the same "returned, never
+    raised" contract the water report uses.
+    """
+    reports = [
+        validate_series(key, values)
+        for key, values in (
+            ("ndvi", [m.value for m in bundle.ndvi_monthly]),
+            ("mndwi", [m.value for m in bundle.mndwi_monthly]),
+            ("ndmi", [m.value for m in bundle.ndmi_monthly]),
+            ("rainfall_monthly_mm", [m.value for m in bundle.rainfall_monthly]),
+            ("jrc_occurrence_percent", [bundle.jrc_water_occurrence_percent]),
+        )
+    ]
+    merged = ValidationReport(
+        subject=f"farm:{farm_id}:risk_inputs",
+        findings=[finding for report in reports for finding in report.findings],
+        checks_run=sum(report.checks_run for report in reports),
+        checks_skipped=sum(report.checks_skipped for report in reports),
+    )
+    if merged.failed:
+        logger.warning("risk_input_validation", extra={"farm_id": str(farm_id), "summary": merged.summary()})
+    return merged
 
 
 async def _get_or_fetch_index_series(
@@ -250,7 +321,10 @@ async def _get_or_fetch_index_series(
     end: date,
     provider: SatelliteDataProvider,
     tracker: ProgressTracker,
-) -> list[IndexObservation]:
+) -> tuple[list[IndexObservation], str]:
+    """Returns the observations and whether they were "fetched" for this
+    run or reused from "cache" — the same label the progress feed shows,
+    now also recorded in the result's lineage."""
     await tracker.start(stage_id)
     index_type = _INDEX_TO_SATELLITE_INDEX_TYPE[index]
     cached = await _read_cached_observations(db, farm_id, index_type, start, end)
@@ -258,12 +332,12 @@ async def _get_or_fetch_index_series(
         # Truthful cache label (B7): a re-assessment that flies through
         # this stage must say so, not look like nothing happened.
         await tracker.complete(stage_id, metadata={"source": "cache", "months": len(cached)})
-        return cached
+        return cached, "cache"
 
     fetched = await asyncio.to_thread(provider.get_index_time_series, geometry_geojson, index, start, end)
     await _persist_observations(db, farm_id, index_type, fetched)
     await tracker.complete(stage_id, metadata={"source": "fetched", "months": len(fetched)})
-    return fetched
+    return fetched, "fetched"
 
 
 async def _get_or_fetch_rainfall_series(
@@ -274,17 +348,17 @@ async def _get_or_fetch_rainfall_series(
     end: date,
     provider: SatelliteDataProvider,
     tracker: ProgressTracker,
-) -> list[IndexObservation]:
+) -> tuple[list[IndexObservation], str]:
     await tracker.start("rainfall_observations")
     cached = await _read_cached_observations(db, farm_id, SatelliteIndexType.RAINFALL, start, end)
     if cached:
         await tracker.complete("rainfall_observations", metadata={"source": "cache", "months": len(cached)})
-        return cached
+        return cached, "cache"
 
     fetched = await asyncio.to_thread(provider.get_rainfall_series, geometry_geojson, start, end)
     await _persist_observations(db, farm_id, SatelliteIndexType.RAINFALL, fetched)
     await tracker.complete("rainfall_observations", metadata={"source": "fetched", "months": len(fetched)})
-    return fetched
+    return fetched, "fetched"
 
 
 async def _read_cached_observations(
@@ -302,7 +376,18 @@ async def _read_cached_observations(
         .order_by(SatelliteObservation.period_start)
     )
     rows = (await db.execute(stmt)).scalars().all()
-    return [IndexObservation(period_start=r.period_start, period_end=r.period_end, value=r.value) for r in rows]
+    # Scene dates are carried back out of the cache. They were previously
+    # dropped here, so a cached re-assessment silently lost its acquisition
+    # lineage even though every date was sitting in source_dates.
+    return [
+        IndexObservation(
+            period_start=r.period_start,
+            period_end=r.period_end,
+            value=r.value,
+            source_scene_dates=[date.fromisoformat(d) for d in (r.source_dates or [])],
+        )
+        for r in rows
+    ]
 
 
 async def _persist_observations(

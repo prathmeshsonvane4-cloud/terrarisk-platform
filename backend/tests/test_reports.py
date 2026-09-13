@@ -27,6 +27,7 @@ from app.database.base import AsyncSessionLocal, engine
 from app.main import app
 from app.models.admin import AdminBoundary
 from app.models.enums import BoundaryLevel, JobStatus, JobType, RiskFactor, UserRole
+from app.models.evidence import EvidenceRecord, ValidationRun
 from app.models.farm import FarmPolygon
 from app.models.job import Job
 from app.models.risk import ConfigWeight, RiskFactorScore, RiskScore
@@ -139,6 +140,11 @@ async def scenario():
             await db.execute(select(FarmPolygon.id).where(FarmPolygon.village_id == village.id))
         ).scalars().all()
         if farm_ids:
+            # Lineage references its score without a foreign key; clear it
+            # before the score or it is orphaned. Findings cascade from runs.
+            score_ids = select(RiskScore.id).where(RiskScore.entity_id.in_(farm_ids))
+            await db.execute(delete(ValidationRun).where(ValidationRun.result_id.in_(score_ids)))
+            await db.execute(delete(EvidenceRecord).where(EvidenceRecord.result_id.in_(score_ids)))
             await db.execute(
                 delete(RiskFactorScore).where(
                     RiskFactorScore.risk_score_id.in_(select(RiskScore.id).where(RiskScore.entity_id.in_(farm_ids)))
@@ -502,3 +508,72 @@ async def test_report_pdf_returns_404_for_unknown_id(api_client, scenario, pdf_e
         f"/api/v1/reports/{uuid4()}/pdf", headers={"Authorization": f"Bearer {token}"}
     )
     assert response.status_code == 404
+
+
+# =====================================================================
+# GET /reports/{id}/lineage (evidence-aware roadmap, Phase B)
+# =====================================================================
+
+
+async def _completed_report(client: AsyncClient, token: str, village_id) -> str:
+    farm_id = await _create_farm(client, token, village_id)
+    trigger = await client.post(f"/api/v1/farms/{farm_id}/reports", headers={"Authorization": f"Bearer {token}"}, json={})
+    assert trigger.status_code == 202, trigger.text
+    job = (await client.get(f"/api/v1/jobs/{trigger.json()['job_id']}", headers={"Authorization": f"Bearer {token}"})).json()
+    assert job["status"] == "done", job
+    return job["entity_id"]
+
+
+@pytest.mark.asyncio
+async def test_report_lineage_returns_every_input_and_the_validation_run(api_client, scenario):
+    token = await _login(api_client, scenario["officer"].email)
+    risk_score_id = await _completed_report(api_client, token, scenario["village"].id)
+
+    response = await api_client.get(f"/api/v1/reports/{risk_score_id}/lineage", headers={"Authorization": f"Bearer {token}"})
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["result_table"] == "risk_score"
+    assert body["provenance_recorded"] is True
+    assert body["provenance_note"] is None
+    quantities = {item["quantity"] for item in body["evidence"]}
+    assert {"ndvi", "rainfall_monthly_mm", "jrc_occurrence_percent", "floor_threshold"} <= quantities
+    assert all(item["validation_status"] == "unvalidated" for item in body["evidence"])
+    assert len(body["validation_runs"]) == 1
+    assert body["validation_runs"][0]["source"] == "pipeline"
+
+
+@pytest.mark.asyncio
+async def test_report_lineage_is_not_visible_to_someone_who_cannot_see_the_report(api_client, scenario):
+    """Same guard as the report itself: a 404, not a 403, so existence is
+    not disclosed either."""
+    token = await _login(api_client, scenario["officer"].email)
+    risk_score_id = await _completed_report(api_client, token, scenario["village"].id)
+    outsider_token = await _login(api_client, scenario["outsider"].email)
+
+    response = await api_client.get(
+        f"/api/v1/reports/{risk_score_id}/lineage", headers={"Authorization": f"Bearer {outsider_token}"}
+    )
+
+    assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_a_report_from_before_lineage_says_provenance_was_not_recorded(api_client, scenario):
+    """A score computed before Phase B has no evidence rows, and none are
+    reconstructed. The endpoint must say that in words, not return an empty
+    list that reads like a report which depended on nothing."""
+    token = await _login(api_client, scenario["officer"].email)
+    risk_score_id = await _completed_report(api_client, token, scenario["village"].id)
+    async with AsyncSessionLocal() as db:
+        await db.execute(delete(EvidenceRecord).where(EvidenceRecord.result_id == risk_score_id))
+        await db.execute(delete(ValidationRun).where(ValidationRun.result_id == risk_score_id))
+        await db.commit()
+
+    body = (
+        await api_client.get(f"/api/v1/reports/{risk_score_id}/lineage", headers={"Authorization": f"Bearer {token}"})
+    ).json()
+
+    assert body["provenance_recorded"] is False
+    assert "cannot be recovered" in body["provenance_note"]
+    assert body["evidence"] == []

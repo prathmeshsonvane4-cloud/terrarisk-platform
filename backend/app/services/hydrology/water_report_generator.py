@@ -87,7 +87,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.catchment import Catchment
-from app.models.enums import BaselineWindow, StorageChangeBand, StressBand
+from app.models.enums import BaselineWindow, EvidenceResultTable, StorageChangeBand, StressBand
 from app.models.water_balance import RechargeStressScore, WaterBalanceResult
 from app.services.hydrology.engine import WaterBalanceEngine
 from app.services.hydrology.models import WaterBalanceBundle, WaterBalanceConfig
@@ -98,6 +98,13 @@ from app.services.hydrology.recharge_stress import (
     RechargeStressEngine,
     RechargeStressFactor,
 )
+from app.services.provenance import (
+    EvidenceItem,
+    add_evidence,
+    add_validation_run,
+    recharge_stress_evidence,
+    water_balance_evidence,
+)
 from app.services.risk.models import MonthlyValue
 from app.services.risk.seasonal import BASELINE_YEARS
 from app.services.satellite._gee_common import monthly_periods
@@ -105,7 +112,7 @@ from app.services.satellite.provider import IndexObservation, SatelliteDataProvi
 from app.services.validation import (
     AgroClimaticZone,
     ValidationReport,
-    classify_zone_by_rainfall,
+    classify_zone_from_normals,
     validate_series,
     validate_water_balance,
 )
@@ -127,6 +134,17 @@ _DEFAULT_RECHARGE_STRESS_WEIGHTS: dict[RechargeStressFactor, float] = {
 _DEFAULT_RECHARGE_STRESS_WEIGHTS_LABEL = "recharge-stress-equal-weights-v1"
 
 _DEFAULT_LOOKBACK_YEARS = 3
+
+
+@dataclass(frozen=True)
+class _FetchContext:
+    """What the bundles discard but lineage needs: the raw index
+    observations (which carry their Sentinel-2 scene dates) and the
+    baseline window's start."""
+
+    ndvi_observations: list[IndexObservation]
+    ndvi_baseline_observations: list[IndexObservation]
+    baseline_start: date
 
 
 @dataclass(frozen=True)
@@ -189,7 +207,7 @@ async def generate_water_report(
     start = date(end.year - lookback_years, end.month, 1)
     periods = monthly_periods(start, end)
 
-    water_balance_bundle, recharge_stress_bundle = await _assemble_bundles(
+    water_balance_bundle, recharge_stress_bundle, fetched = await _assemble_bundles(
         catchment, geometry_geojson, start, end, periods, hydrology_provider, satellite_provider
     )
 
@@ -205,10 +223,49 @@ async def generate_water_report(
 
     zone = _zone_for(recharge_stress_bundle.rainfall_normal_by_month)
     validation = _validate(water_balance_bundle, water_balance_result, zone, catchment_id)
+    stress_validation = _validate_stress_inputs(recharge_stress_bundle, catchment_id)
 
     computed_at = datetime.now(timezone.utc)
+    flags = list(catchment.resolution_flags)
+    water_balance_lineage = water_balance_evidence(
+        rainfall_monthly=water_balance_bundle.rainfall_monthly,
+        rainfall_daily=water_balance_bundle.rainfall_daily,
+        et_monthly=water_balance_bundle.et_monthly,
+        start=start,
+        end=end,
+        resolution_flags=flags,
+        satellite_provider=satellite_provider,
+        hydrology_provider=hydrology_provider,
+    )
+    recharge_stress_lineage = recharge_stress_evidence(
+        rainfall_monthly=recharge_stress_bundle.rainfall_monthly,
+        rainfall_normals=recharge_stress_bundle.rainfall_normal_by_month,
+        ndvi_observations=fetched.ndvi_observations,
+        ndvi_monthly=recharge_stress_bundle.ndvi_monthly,
+        ndvi_baseline_observations=fetched.ndvi_baseline_observations,
+        ndvi_baseline=recharge_stress_bundle.ndvi_baseline,
+        surface_water_monthly=recharge_stress_bundle.surface_water_monthly,
+        surface_water_baseline=recharge_stress_bundle.surface_water_baseline,
+        start=start,
+        end=end,
+        baseline_start=fetched.baseline_start,
+        weights=_DEFAULT_RECHARGE_STRESS_WEIGHTS,
+        computed_in_year=computed_at.year,
+        resolution_flags=flags,
+        satellite_provider=satellite_provider,
+        hydrology_provider=hydrology_provider,
+    )
     water_balance_row, recharge_stress_row = await _persist_results(
-        db, catchment_id, start, end, computed_at, water_balance_result, recharge_stress_result
+        db,
+        catchment_id,
+        start,
+        end,
+        computed_at,
+        water_balance_result,
+        recharge_stress_result,
+        lineage=(water_balance_lineage, recharge_stress_lineage),
+        validation=(validation, stress_validation),
+        zone=zone,
     )
 
     return WaterReportMetadata(
@@ -227,24 +284,36 @@ async def generate_water_report(
 
 def _zone_for(rainfall_normal_by_month: dict[int, float]) -> AgroClimaticZone:
     """Agro-climatic zone from the catchment's own 30-year CHIRPS
-    climatology — the long-term mean annual rainfall, not the three
-    observed years.
+    climatology. Shared with Service 1 — see
+    `validation.zones.classify_zone_from_normals` for why the climatology,
+    not the observed years, and why a partial one yields UNKNOWN."""
+    return classify_zone_from_normals(rainfall_normal_by_month)
 
-    Using the climatology matters: a catchment whose observation window
-    happens to contain a failed monsoon would otherwise be classified
-    arid and then validated against arid bounds, which is the same
-    "a recent drought silently redefines normal" failure D6 already
-    fixed for the recharge-stress baseline.
 
-    A partial climatology is not extrapolated to twelve months. Fewer
-    than twelve monthly normals means the annual total is genuinely
-    unknown, and returning UNKNOWN disables the plausibility checks
-    visibly rather than validating against a zone derived from a
-    number that was never a year.
-    """
-    if len(rainfall_normal_by_month) < 12:
-        return AgroClimaticZone.UNKNOWN
-    return classify_zone_by_rainfall(sum(rainfall_normal_by_month.values()))
+def _validate_stress_inputs(bundle: RechargeStressBundle, catchment_id: UUID) -> ValidationReport:
+    """Ingestion checks over the series the recharge-stress score consumes.
+    The score is a relative index with no physical balance to check, so
+    input sanity is the validation that genuinely applies to it."""
+    reports = [
+        validate_series(key, values)
+        for key, values in (
+            ("rainfall_monthly_mm", [m.value for m in bundle.rainfall_monthly]),
+            ("ndvi", [m.value for m in bundle.ndvi_monthly]),
+            ("surface_water_percent", [m.value for m in bundle.surface_water_monthly]),
+        )
+    ]
+    merged = ValidationReport(
+        subject=f"catchment:{catchment_id}:recharge_stress_inputs",
+        findings=[finding for report in reports for finding in report.findings],
+        checks_run=sum(report.checks_run for report in reports),
+        checks_skipped=sum(report.checks_skipped for report in reports),
+    )
+    if merged.failed:
+        logger.warning(
+            "recharge_stress_input_validation",
+            extra={"catchment_id": str(catchment_id), "summary": merged.summary()},
+        )
+    return merged
 
 
 def _validate(bundle, result, zone: AgroClimaticZone, catchment_id: UUID) -> ValidationReport:
@@ -299,7 +368,7 @@ async def _assemble_bundles(
     periods: list[tuple[date, date]],
     hydrology_provider: HydrologyDataProvider,
     satellite_provider: SatelliteDataProvider,
-) -> tuple[WaterBalanceBundle, RechargeStressBundle]:
+) -> tuple[WaterBalanceBundle, RechargeStressBundle, _FetchContext]:
     """Every provider call wrapped in `asyncio.to_thread()` — both
     provider ABCs are synchronous by design (they wrap the Earth Engine
     Python SDK, which has no async variant), the identical reasoning
@@ -366,7 +435,15 @@ async def _assemble_bundles(
         surface_water_baseline=surface_water_baseline,
         baseline_window=BaselineWindow.CLIMATOLOGY_30YR,
     )
-    return water_balance_bundle, recharge_stress_bundle
+    return (
+        water_balance_bundle,
+        recharge_stress_bundle,
+        _FetchContext(
+            ndvi_observations=ndvi_observations,
+            ndvi_baseline_observations=ndvi_baseline_observations,
+            baseline_start=baseline_start,
+        ),
+    )
 
 
 def _index_observations_to_monthly_values(
@@ -394,6 +471,10 @@ async def _persist_results(
     computed_at: datetime,
     water_balance_result,
     recharge_stress_result,
+    *,
+    lineage: tuple[list[EvidenceItem], list[EvidenceItem]],
+    validation: tuple[ValidationReport, ValidationReport],
+    zone: AgroClimaticZone,
 ) -> tuple[WaterBalanceResult, RechargeStressScore]:
     """Both rows in one transaction — a water-balance result and its
     sibling recharge-stress score for the same run are never left
@@ -439,10 +520,35 @@ async def _persist_results(
         raw_inputs=recharge_stress_result.raw_inputs,
     )
 
+    # Evidence lineage and validation findings (Phase B) join the same
+    # transaction: a result is never committed without the record of what
+    # it rests on, and lineage is never committed for a result that failed
+    # to persist.
     try:
         db.add(water_balance_row)
         db.add(recharge_stress_row)
-        await db.flush()
+        await db.flush()  # assigns both result ids for the lineage rows below
+
+        water_balance_lineage, recharge_stress_lineage = lineage
+        water_balance_validation, recharge_stress_validation = validation
+        add_evidence(db, EvidenceResultTable.WATER_BALANCE_RESULT, water_balance_row.id, water_balance_lineage)
+        add_evidence(db, EvidenceResultTable.RECHARGE_STRESS_SCORE, recharge_stress_row.id, recharge_stress_lineage)
+        add_validation_run(
+            db,
+            EvidenceResultTable.WATER_BALANCE_RESULT,
+            water_balance_row.id,
+            water_balance_validation,
+            zone=zone.value,
+            source="pipeline",
+        )
+        add_validation_run(
+            db,
+            EvidenceResultTable.RECHARGE_STRESS_SCORE,
+            recharge_stress_row.id,
+            recharge_stress_validation,
+            zone=zone.value,
+            source="pipeline",
+        )
         await db.commit()
     except SQLAlchemyError:
         logger.error(

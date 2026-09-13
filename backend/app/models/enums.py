@@ -182,3 +182,57 @@ class OrganizationType(str, enum.Enum):
     GOVERNMENT = "government"
     INTERNATIONAL_DEV = "international_dev"
     OTHER = "other"
+
+
+# ---------------------------------------------------------------------
+# Evidence provenance and validation (evidence-aware roadmap, Phase B).
+#
+# These are stored as plain strings behind database CHECK constraints
+# generated from these classes — NOT as native Postgres enum types like
+# the ones above. The evidence vocabulary is expected to grow through the
+# remaining roadmap phases, and every value added to a native enum needs
+# its own ALTER TYPE migration that fails silently if forgotten (see
+# 0010_extend_existing_enums). A CHECK constraint built from the class
+# still rejects unknown values at the database, and extending it is a
+# single constraint replacement. See docs/DECISIONS.md, Phase B.
+# ---------------------------------------------------------------------
+
+
+class EvidenceKind(str, enum.Enum):
+    # A value read from a remote-sensing product.
+    OBSERVATION = "observation"
+    # A constant the method assumes: a Curve Number, a threshold, a weight.
+    PARAMETER = "parameter"
+
+
+class EvidenceValidation(str, enum.Enum):
+    """How far one input has actually been validated.
+
+    There is deliberately NO level for "passed plausibility checks".
+    A value inside a literature envelope has not been validated — it has
+    failed to look broken — and a label implying otherwise would breach
+    the rule that unvalidated outputs are labelled unvalidated.
+    Plausibility results live in validation_run / validation_finding.
+    """
+
+    UNVALIDATED = "unvalidated"
+    # Agrees with an independent estimate of the same quantity within a
+    # stated tolerance. Carries its own caveat about how independent.
+    CROSS_CHECKED = "cross_checked"
+    # Compared against ground-truth measurement for this location.
+    FIELD_VALIDATED = "field_validated"
+
+
+class EvidenceResultTable(str, enum.Enum):
+    """Which result table an evidence or validation row describes.
+    Polymorphic by design, mirroring risk_score.entity_type."""
+
+    WATER_BALANCE_RESULT = "water_balance_result"
+    RECHARGE_STRESS_SCORE = "recharge_stress_score"
+    RISK_SCORE = "risk_score"
+
+
+class FindingSeverity(str, enum.Enum):
+    ERROR = "error"
+    WARNING = "warning"
+    INFO = "info"

@@ -24,15 +24,24 @@ from app.core.security import hash_password
 from app.database.base import AsyncSessionLocal, engine
 from app.models.admin import AdminBoundary
 from app.models.enums import BoundaryLevel, JobStatus, JobType, RiskFactor, SatelliteIndexType, UserRole
+from app.models.evidence import EvidenceRecord, ValidationFinding, ValidationRun
 from app.models.farm import FarmPolygon
 from app.models.job import Job
 from app.models.risk import ConfigWeight, RiskFactorScore, RiskScore
 from app.models.satellite import SatelliteObservation
 from app.models.user import AppUser
+from app.services.provenance import HARNESS_VERSION
 from app.services.reporting.progress import STAGE_IDS
-from app.services.reporting.report_generator import generate_farm_report
+from app.services.reporting.report_generator import _read_cached_observations, generate_farm_report
 from app.services.risk.engine import RiskEngine
+from app.services.satellite.gee_provider import GeeProvider
 from tests.fakes.fake_satellite_provider import FakeSatelliteDataProvider
+
+
+class _DescribedFakeProvider(FakeSatelliteDataProvider, GeeProvider):
+    """The fake's data and constructor (no credentials, no network), but an
+    instance of GeeProvider — so provenance takes the described Earth Engine
+    lineage path end to end, not the "lineage not described" fallback."""
 
 
 async def _database_reachable() -> bool:
@@ -104,6 +113,12 @@ async def scenario(db_session):
     yield {"farm": farm, "user": user, "village": village, "config": config, "job": job}
 
     async with AsyncSessionLocal() as cleanup:
+        # Lineage references its result without a foreign key (the house
+        # polymorphic pattern), so deleting the score would orphan it.
+        # Findings cascade from their run at the database.
+        score_ids = select(RiskScore.id).where(RiskScore.entity_id == farm.id)
+        await cleanup.execute(delete(ValidationRun).where(ValidationRun.result_id.in_(score_ids)))
+        await cleanup.execute(delete(EvidenceRecord).where(EvidenceRecord.result_id.in_(score_ids)))
         await cleanup.execute(delete(RiskFactorScore).where(RiskFactorScore.risk_score_id.in_(
             select(RiskScore.id).where(RiskScore.entity_id == farm.id)
         )))
@@ -482,3 +497,129 @@ async def test_progress_preserves_earlier_completed_stages_when_a_later_stage_fa
             stage = by_id[pending_stage_id]
             assert stage["status"] == "pending"
             assert stage["started_at"] is None
+
+
+# =====================================================================
+# Evidence provenance and validation (evidence-aware roadmap, Phase B)
+# =====================================================================
+
+
+async def _run_report(scenario, provider) -> RiskScore:
+    await generate_farm_report(
+        job_id=scenario["job"].id,
+        farm_id=scenario["farm"].id,
+        lookback_years=3,
+        satellite_provider=provider,
+        risk_engine=RiskEngine(),
+    )
+    async with AsyncSessionLocal() as db:
+        job = await db.get(Job, scenario["job"].id)
+        assert job.status == JobStatus.DONE, job.error_message
+        return await db.get(RiskScore, job.entity_id)
+
+
+@pytest.mark.asyncio
+async def test_the_score_is_persisted_with_its_lineage(scenario):
+    score = await _run_report(scenario, _DescribedFakeProvider())
+
+    async with AsyncSessionLocal() as db:
+        rows = (await db.execute(select(EvidenceRecord).where(EvidenceRecord.result_id == score.id))).scalars().all()
+
+    by_quantity = {row.quantity: row for row in rows}
+    for quantity in (
+        "ndvi", "mndwi", "ndmi", "ndvi_baseline", "rainfall_monthly_mm", "rainfall_climatology_mm",
+        "jrc_occurrence_percent", "neutral_score_when_uncomputable", "floor_threshold",
+    ):
+        assert quantity in by_quantity, f"no lineage recorded for {quantity}"
+
+    assert all(row.result_table == "risk_score" for row in rows)
+    assert all(row.validation_status == "unvalidated" for row in rows)
+    assert by_quantity["jrc_occurrence_percent"].source == "JRC/GSW1_4/GlobalSurfaceWater"
+    assert "unweighted" in by_quantity["jrc_occurrence_percent"].reducer
+    assert by_quantity["ndvi"].acquisition_dates, "Sentinel-2 scene dates should reach the lineage"
+    assert by_quantity["floor_threshold"].source == f"config_weight:{scenario['config'].id}"
+
+
+@pytest.mark.asyncio
+async def test_validation_findings_persist_with_their_run(scenario):
+    """Regression test for a real defect found against a live database:
+    findings were inserted before their run and rejected on the foreign
+    key. The first Service 1 tests missed it because clean fake data
+    produced no findings at all — so this one forces an ERROR."""
+    score = await _run_report(scenario, FakeSatelliteDataProvider(jrc_occurrence_percent=150.0))
+
+    async with AsyncSessionLocal() as db:
+        runs = (await db.execute(select(ValidationRun).where(ValidationRun.result_id == score.id))).scalars().all()
+        assert len(runs) == 1
+        run = runs[0]
+        findings = (
+            await db.execute(select(ValidationFinding).where(ValidationFinding.validation_run_id == run.id))
+        ).scalars().all()
+
+    assert run.source == "pipeline"
+    assert run.harness_version == HARNESS_VERSION
+    assert run.failed is True
+    assert run.error_count >= 1
+    assert any(f.check_name == "series_within_hard_range" and f.severity == "error" for f in findings)
+
+
+@pytest.mark.asyncio
+async def test_a_cached_rerun_records_cache_retrieval_and_keeps_its_scene_dates(scenario):
+    """Two defects in one path. Cached observations used to be rebuilt
+    without their scene dates, so a re-assessment lost its acquisition
+    lineage; and nothing recorded that the data was reused at all."""
+    await _run_report(scenario, _DescribedFakeProvider())
+
+    async with AsyncSessionLocal() as db:
+        job2 = Job(type=JobType.FARM_REPORT, status=JobStatus.PENDING, created_by=scenario["user"].id)
+        db.add(job2)
+        await db.commit()
+        await db.refresh(job2)
+    await generate_farm_report(
+        job_id=job2.id,
+        farm_id=scenario["farm"].id,
+        lookback_years=3,
+        satellite_provider=_DescribedFakeProvider(),
+        risk_engine=RiskEngine(),
+    )
+
+    async with AsyncSessionLocal() as db:
+        job2_after = await db.get(Job, job2.id)
+        second = await db.get(RiskScore, job2_after.entity_id)
+        ndvi = (
+            await db.execute(
+                select(EvidenceRecord).where(EvidenceRecord.result_id == second.id, EvidenceRecord.quantity == "ndvi")
+            )
+        ).scalar_one()
+        cached = await _read_cached_observations(
+            db, scenario["farm"].id, SatelliteIndexType.NDVI, second.observation_window_start, second.observation_window_end
+        )
+        await db.execute(delete(Job).where(Job.id == job2.id))
+        await db.commit()
+
+    assert ndvi.retrieval == "cache"
+    assert ndvi.acquisition_dates, "scene dates must survive the cache"
+    assert all(obs.source_scene_dates for obs in cached)
+
+
+@pytest.mark.asyncio
+async def test_the_database_rejects_a_validation_level_that_does_not_exist(scenario):
+    """The CHECK constraints are the database's half of the honesty rule:
+    there is no 'plausibility_checked' level, and an ORM bypass cannot
+    write one."""
+    from sqlalchemy.exc import IntegrityError
+
+    async with AsyncSessionLocal() as db:
+        db.add(
+            EvidenceRecord(
+                result_table="risk_score",
+                result_id=uuid4(),
+                kind="observation",
+                quantity="ndvi",
+                source="test",
+                units="dimensionless",
+                validation_status="plausibility_checked",
+            )
+        )
+        with pytest.raises(IntegrityError):
+            await db.commit()

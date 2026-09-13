@@ -216,6 +216,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/reports/{risk_score_id}/lineage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Report Lineage
+         * @description Evidence lineage and validation findings for one farm report — every
+         *     input the score depended on and every check run against it. Guarded by
+         *     the same `_authorized_report` as the report itself.
+         */
+        get: operations["get_report_lineage_api_v1_reports__risk_score_id__lineage_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/reports": {
         parameters: {
             query?: never;
@@ -391,6 +413,30 @@ export interface paths {
          *     (reused as-is, not a new schema — `Do NOT: Modify schemas`).
          */
         post: operations["trigger_water_report_api_v1_catchments__catchment_id__water_reports_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/catchments/{catchment_id}/water-reports/lineage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Latest Water Report Lineage
+         * @description Evidence lineage and validation findings for the latest completed
+         *     water report — every input each result depended on, and every check
+         *     run against it. Same access rule and the same 404s as the report
+         *     itself, through the same loader, so lineage can never be visible to
+         *     someone the report is not.
+         */
+        get: operations["get_latest_water_report_lineage_api_v1_catchments__catchment_id__water_reports_lineage_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -618,6 +664,35 @@ export interface components {
             geometry?: {
                 [key: string]: unknown;
             } | null;
+        };
+        /**
+         * AnnualWaterBalanceResponse
+         * @description One water year's water balance.
+         *
+         *     June-May, not calendar year: a calendar split cuts each monsoon in
+         *     half and makes consecutive years look alternately wet and dry for no
+         *     physical reason.
+         *
+         *     `months_covered` is exposed so a partial year at the edge of the
+         *     observation window is visibly partial. Without it a 5-month stub and
+         *     a full year sit side by side as comparable annual totals, which is
+         *     the most likely way this view could mislead a reader.
+         */
+        AnnualWaterBalanceResponse: {
+            /** Label */
+            label: string;
+            /** Start Year */
+            start_year: number;
+            /** Months Covered */
+            months_covered: number;
+            /** Rainfall Mm */
+            rainfall_mm: number | null;
+            /** Et Mm */
+            et_mm: number | null;
+            /** Runoff Mm */
+            runoff_mm: number | null;
+            /** Storage Change Mm */
+            storage_change_mm: number | null;
         };
         /**
          * AssessmentListItem
@@ -850,6 +925,51 @@ export interface components {
          * @enum {string}
          */
         DelineationMethod: "manual" | "upload" | "auto_dem";
+        /** EvidenceRecordResponse */
+        EvidenceRecordResponse: {
+            /** Kind */
+            kind: string;
+            /** Quantity */
+            quantity: string;
+            /** Source */
+            source: string;
+            /** Product Version */
+            product_version: string | null;
+            /** Band */
+            band: string | null;
+            /** Units */
+            units: string;
+            /** Value */
+            value: number | null;
+            /** Native Resolution M */
+            native_resolution_m: number | null;
+            /** Requested Scale M */
+            requested_scale_m: number | null;
+            /** Resampled */
+            resampled: boolean | null;
+            /** Reducer */
+            reducer: string | null;
+            /** Temporal Aggregation */
+            temporal_aggregation: string | null;
+            /** Period Start */
+            period_start: string | null;
+            /** Period End */
+            period_end: string | null;
+            /** Observations Expected */
+            observations_expected: number | null;
+            /** Observations Used */
+            observations_used: number | null;
+            /** Acquisition Dates */
+            acquisition_dates: string[] | null;
+            /** Retrieval */
+            retrieval: string | null;
+            /** Known Limitations */
+            known_limitations: string[];
+            /** Validation Status */
+            validation_status: string;
+            /** Spec Verified On */
+            spec_verified_on: string | null;
+        };
         /** FactorScoreResponse */
         FactorScoreResponse: {
             factor: components["schemas"]["RiskFactor"];
@@ -1381,6 +1501,32 @@ export interface components {
             status: string;
         };
         /**
+         * ResultLineageResponse
+         * @description Lineage and validation for one result row.
+         *
+         *     `provenance_recorded` is False for any result computed before lineage
+         *     was persisted. Those results get NO reconstructed evidence — the
+         *     parameters they were computed with cannot be recovered — and the note
+         *     says so plainly rather than the list simply being empty.
+         */
+        ResultLineageResponse: {
+            /** Result Table */
+            result_table: string;
+            /**
+             * Result Id
+             * Format: uuid
+             */
+            result_id: string;
+            /** Provenance Recorded */
+            provenance_recorded: boolean;
+            /** Provenance Note */
+            provenance_note: string | null;
+            /** Evidence */
+            evidence: components["schemas"]["EvidenceRecordResponse"][];
+            /** Validation Runs */
+            validation_runs: components["schemas"]["ValidationRunResponse"][];
+        };
+        /**
          * RiskBand
          * @enum {string}
          */
@@ -1392,12 +1538,23 @@ export interface components {
         RiskFactor: "vegetation_stability" | "water_availability" | "drought_risk" | "flood_exposure";
         /**
          * StorageChangeBand
-         * @description The MVP headline figure for a water balance result (Blueprint v2 D5)
-         *     — a qualitative, climatology-relative descriptor. The underlying mm
-         *     value and its confidence interval are computed and stored, but shown
-         *     only in the technical/detailed report view, never as the headline,
-         *     because the mm figure is an unvalidated residual for every generic
-         *     customer at MVP (calibration_status defaults to UNCALIBRATED).
+         * @description The MVP headline figure for a water balance result (Blueprint v2 D5).
+         *     The underlying mm value and its confidence interval are computed and
+         *     stored, but shown only in the technical/detailed report view, never
+         *     as the headline, because the mm figure is an unvalidated residual for
+         *     every generic customer at MVP (calibration_status defaults to
+         *     UNCALIBRATED).
+         *
+         *     NOT climatology-relative, despite the member names. Blueprint v2 D5
+         *     intended a percentile/z-score against the catchment's own history,
+         *     but no provider fetches that historical distribution, so the bands
+         *     are cut at fixed +/-50 and +/-150 mm thresholds
+         *     (`WaterBalanceEngine._STORAGE_CHANGE_BAND_THRESHOLDS`). The member
+         *     names are kept because they are persisted values and renaming them is
+         *     a migration; the presentation layer deliberately labels them by sign
+         *     and magnitude instead ("Large net gain", not "Much above normal" —
+         *     see the frontend's STORAGE_CHANGE_BANDS), because a fixed-threshold
+         *     result cannot support a claim about what is normal HERE.
          * @enum {string}
          */
         StorageChangeBand: "much_below_normal" | "below_normal" | "normal" | "above_normal" | "much_above_normal";
@@ -1428,6 +1585,49 @@ export interface components {
             /** Context */
             ctx?: Record<string, never>;
         };
+        /** ValidationFindingResponse */
+        ValidationFindingResponse: {
+            /** Check Name */
+            check_name: string;
+            /** Severity */
+            severity: string;
+            /** Subject */
+            subject: string;
+            /** Observed */
+            observed: number | null;
+            /** Expected */
+            expected: string;
+            /** Message */
+            message: string;
+            /** Source */
+            source: string;
+        };
+        /** ValidationRunResponse */
+        ValidationRunResponse: {
+            /** Harness Version */
+            harness_version: string;
+            /** Agro Climatic Zone */
+            agro_climatic_zone: string;
+            /** Checks Run */
+            checks_run: number;
+            /** Checks Skipped */
+            checks_skipped: number;
+            /** Error Count */
+            error_count: number;
+            /** Warning Count */
+            warning_count: number;
+            /** Failed */
+            failed: boolean;
+            /** Source */
+            source: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Findings */
+            findings: components["schemas"]["ValidationFindingResponse"][];
+        };
         /** VillageCentroid */
         VillageCentroid: {
             /** Lat */
@@ -1456,27 +1656,6 @@ export interface components {
          *     (see that model for the full column-by-column rationale) — no
          *     catchment_id (redundant with the parent response's own field).
          */
-        /**
-         * One water year's water balance (June-May, not calendar year).
-         * `months_covered` distinguishes a complete year from a partial
-         * stub at the edge of the observation window.
-         */
-        AnnualWaterBalanceResponse: {
-            /** Label */
-            label: string;
-            /** Start Year */
-            start_year: number;
-            /** Months Covered */
-            months_covered: number;
-            /** Rainfall Mm */
-            rainfall_mm: number | null;
-            /** Et Mm */
-            et_mm: number | null;
-            /** Runoff Mm */
-            runoff_mm: number | null;
-            /** Storage Change Mm */
-            storage_change_mm: number | null;
-        };
         WaterBalanceResultResponse: {
             /**
              * Id
@@ -1501,12 +1680,7 @@ export interface components {
             runoff_mm: number | null;
             /** Storage Change Mm */
             storage_change_mm: number | null;
-            /**
-             * Annual
-             * @description Per water year, oldest first. Null on reports
-             *     generated before this field existed — treat as "not
-             *     computed", never as "no change".
-             */
+            /** Annual */
             annual?: components["schemas"]["AnnualWaterBalanceResponse"][] | null;
             storage_change_band: components["schemas"]["StorageChangeBand"];
             /** Data Completeness */
@@ -1569,6 +1743,16 @@ export interface components {
             generated_at: string;
             water_balance: components["schemas"]["WaterBalanceResultResponse"];
             recharge_stress: components["schemas"]["RechargeStressScoreResponse"];
+        };
+        /** WaterReportLineageResponse */
+        WaterReportLineageResponse: {
+            /**
+             * Catchment Id
+             * Format: uuid
+             */
+            catchment_id: string;
+            water_balance: components["schemas"]["ResultLineageResponse"];
+            recharge_stress: components["schemas"]["ResultLineageResponse"];
         };
     };
     responses: never;
@@ -1895,6 +2079,37 @@ export interface operations {
             };
         };
     };
+    get_report_lineage_api_v1_reports__risk_score_id__lineage_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                risk_score_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResultLineageResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_reports_api_v1_reports_get: {
         parameters: {
             query?: never;
@@ -2124,6 +2339,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ReportTriggerResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_latest_water_report_lineage_api_v1_catchments__catchment_id__water_reports_lineage_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                catchment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WaterReportLineageResponse"];
                 };
             };
             /** @description Validation Error */

@@ -207,6 +207,27 @@ class TestIdentityGuard:
         finding = next(f for f in report.errors if f.check == "water_balance_identity")
         assert "code regression, not a physical finding" in finding.message
 
+    def test_rounding_from_stored_numeric_columns_is_not_reported_as_a_regression(self):
+        """Four terms stored as NUMERIC(10,2) and rounded independently.
+        Re-validating production rows produced exactly this drift, and it
+        is not an engine change."""
+        stored = _result(rainfall_mm=1729.86, et_mm=1348.47, runoff_mm=263.10, storage_change_mm=118.30)
+        assert "water_balance_identity" not in {
+            f.check for f in validate_water_balance(stored, values_from_storage=True).errors
+        }
+
+    def test_the_stored_allowance_still_catches_a_real_drift(self):
+        stored = _result(rainfall_mm=1729.86, et_mm=1348.47, runoff_mm=263.10, storage_change_mm=118.40)
+        assert "water_balance_identity" in {
+            f.check for f in validate_water_balance(stored, values_from_storage=True).errors
+        }
+
+    def test_in_memory_results_keep_the_tight_tolerance(self):
+        """The allowance must not leak into the live pipeline, where values
+        are unrounded and a 0.011 mm drift genuinely is a code change."""
+        in_memory = _result(rainfall_mm=1000.0, et_mm=600.0, runoff_mm=200.0, storage_change_mm=200.015)
+        assert "water_balance_identity" in {f.check for f in validate_water_balance(in_memory).errors}
+
     def test_the_engines_own_residual_always_satisfies_it(self):
         """Documents the vacuity honestly: this passes by construction,
         which is exactly why it is not evidence that the balance closes.

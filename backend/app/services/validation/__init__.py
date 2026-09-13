@@ -32,6 +32,7 @@ from app.services.validation.zones import (
     AgroClimaticZone,
     ZoneRanges,
     classify_zone_by_rainfall,
+    classify_zone_from_normals,
     ranges_for,
 )
 
@@ -48,6 +49,7 @@ __all__ = [
     "Verification",
     "ZoneRanges",
     "classify_zone_by_rainfall",
+    "classify_zone_from_normals",
     "ranges_for",
     "relative_difference",
     "spec_for",

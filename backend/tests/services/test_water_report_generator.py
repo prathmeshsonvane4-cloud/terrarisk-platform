@@ -18,22 +18,35 @@ import pytest
 import pytest_asyncio
 from geoalchemy2.shape import from_shape
 from shapely.geometry import Polygon
-from sqlalchemy import delete, text
+from sqlalchemy import delete, select, text
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.security import hash_password
 from app.database.base import AsyncSessionLocal, engine
 from app.models.catchment import Catchment
 from app.models.enums import DelineationMethod, StorageChangeBand, StressBand, UserRole
+from app.models.evidence import EvidenceRecord, ValidationFinding, ValidationRun
 from app.models.user import AppUser
 from app.models.water_balance import RechargeStressScore, WaterBalanceResult
 from app.services.hydrology.engine import WaterBalanceEngine
+from app.services.hydrology.gee_hydrology_provider import GEEHydrologyProvider
 from app.services.hydrology.recharge_stress import RechargeStressEngine
 from app.services.hydrology.water_report_generator import _index_observations_to_monthly_values, generate_water_report
 from app.services.satellite._gee_common import monthly_periods
+from app.services.satellite.gee_provider import GeeProvider
 from app.services.satellite.provider import IndexObservation
 from tests.fakes.fake_hydrology_provider import FakeHydrologyDataProvider
 from tests.fakes.fake_satellite_provider import FakeSatelliteDataProvider
+
+
+class _DescribedSatellite(FakeSatelliteDataProvider, GeeProvider):
+    """Fake data and constructor, but an instance of GeeProvider, so the
+    described Earth Engine lineage path runs without credentials."""
+
+
+class _DescribedHydrology(FakeHydrologyDataProvider, GEEHydrologyProvider):
+    """Same, for the hydrology provider."""
+
 
 _VALID_SQUARE = [(76.0, 18.0), (76.01, 18.0), (76.01, 18.01), (76.0, 18.01), (76.0, 18.0)]
 
@@ -90,10 +103,12 @@ def _fake_catchment(*, resolution_flags: list[str] | None = None) -> Catchment:
 
 def _mock_session(catchment: Catchment) -> AsyncMock:
     """Mirrors test_cgwb_persistence.py's own _mock_session() shape:
-    `.add` overridden to a plain (non-async) Mock, since the real
-    AsyncSession.add() is synchronous even on an async session."""
+    `.add` and `.add_all` overridden to plain (non-async) Mocks, since the
+    real AsyncSession.add()/add_all() are synchronous even on an async
+    session."""
     session = AsyncMock()
     session.add = Mock()
+    session.add_all = Mock()
     session.get = AsyncMock(return_value=catchment)
     return session
 
@@ -157,6 +172,9 @@ async def test_persistence_failure_rolls_back_and_propagates():
     session = _mock_session(_fake_catchment())
     session.commit = AsyncMock(side_effect=SQLAlchemyError("connection lost"))
 
+    # Lineage and validation rows join the same transaction (Phase B), so a
+    # failed commit must roll them back with the results rather than leave
+    # them behind. The rows are added before the commit that fails.
     with pytest.raises(SQLAlchemyError):
         await generate_water_report(
             session,
@@ -168,6 +186,12 @@ async def test_persistence_failure_rolls_back_and_propagates():
         )
 
     session.rollback.assert_awaited_once()
+    # Lineage and findings were in the failed transaction, so the rollback
+    # covers them too — none can outlive the results they describe.
+    # add: the two results and the two validation runs (findings ride on
+    # their run). add_all: the two evidence batches.
+    assert session.add.call_count == 4
+    assert session.add_all.call_count == 2
 
 
 @pytest.mark.asyncio
@@ -232,6 +256,13 @@ async def catchment_fixture():
     yield catchment
 
     async with AsyncSessionLocal() as db:
+        # Lineage references results without a foreign key; clear it first
+        # or deleting the results orphans it. Findings cascade from runs.
+        result_ids = select(WaterBalanceResult.id).where(WaterBalanceResult.catchment_id == catchment.id).union(
+            select(RechargeStressScore.id).where(RechargeStressScore.catchment_id == catchment.id)
+        )
+        await db.execute(delete(ValidationRun).where(ValidationRun.result_id.in_(result_ids)))
+        await db.execute(delete(EvidenceRecord).where(EvidenceRecord.result_id.in_(result_ids)))
         await db.execute(delete(RechargeStressScore).where(RechargeStressScore.catchment_id == catchment.id))
         await db.execute(delete(WaterBalanceResult).where(WaterBalanceResult.catchment_id == catchment.id))
         await db.execute(delete(Catchment).where(Catchment.id == catchment.id))
@@ -309,3 +340,96 @@ async def test_empty_provider_data_still_produces_a_neutral_persisted_result(cat
     assert water_balance_row.et_mm is None
     assert water_balance_row.runoff_mm is None
     assert water_balance_row.storage_change_mm is None
+
+
+# =====================================================================
+# Evidence provenance and validation (evidence-aware roadmap, Phase B)
+# =====================================================================
+
+
+@pytest.mark.asyncio
+async def test_both_results_are_persisted_with_lineage_and_validation(catchment_fixture):
+    catchment = catchment_fixture
+
+    async with AsyncSessionLocal() as db:
+        metadata = await generate_water_report(
+            db,
+            catchment_id=catchment.id,
+            hydrology_provider=_DescribedHydrology(),
+            satellite_provider=_DescribedSatellite(),
+            water_balance_engine=WaterBalanceEngine(),
+            recharge_stress_engine=RechargeStressEngine(),
+        )
+
+    async with AsyncSessionLocal() as db:
+        evidence = (
+            await db.execute(
+                select(EvidenceRecord).where(
+                    EvidenceRecord.result_id.in_([metadata.water_balance_result_id, metadata.recharge_stress_score_id])
+                )
+            )
+        ).scalars().all()
+        runs = (
+            await db.execute(
+                select(ValidationRun).where(
+                    ValidationRun.result_id.in_([metadata.water_balance_result_id, metadata.recharge_stress_score_id])
+                )
+            )
+        ).scalars().all()
+        findings = (
+            await db.execute(select(ValidationFinding).where(ValidationFinding.validation_run_id.in_([r.id for r in runs])))
+        ).scalars().all()
+
+    balance = {e.quantity: e for e in evidence if e.result_table == "water_balance_result"}
+    stress = {e.quantity: e for e in evidence if e.result_table == "recharge_stress_score"}
+
+    assert {"rainfall_monthly_mm", "rainfall_daily_mm", "et_monthly_mm", "curve_number", "closed_catchment_assumed"} <= set(balance)
+    assert {"ndvi", "ndvi_baseline", "surface_water_percent", "surface_water_baseline", "rainfall_climatology_mm"} <= set(stress)
+    assert balance["et_monthly_mm"].source == "MODIS/061/MOD16A2"
+    assert balance["et_monthly_mm"].acquisition_dates is None  # not recorded, and stored as NULL, not []
+    # The catchment's own sub-pixel flag reaches the lineage of its inputs.
+    assert any("et_sub_pixel" in limitation for limitation in balance["et_monthly_mm"].known_limitations)
+
+    assert {r.result_table for r in runs} == {"water_balance_result", "recharge_stress_score"}
+    assert all(r.source == "pipeline" for r in runs)
+    # The fake climatology is 80 mm x 12 months = 960 mm/yr.
+    assert all(r.agro_climatic_zone == "sub_humid" for r in runs)
+    # Findings persist, including INFO ones: a skipped check must stay
+    # distinguishable from a passed one after it leaves memory.
+    assert findings, "validation findings should be stored with their runs"
+
+
+@pytest.mark.asyncio
+async def test_lineage_is_not_persisted_when_the_result_is_not(catchment_fixture):
+    """The same transaction, both ways: a commit that fails must take the
+    lineage with it, not leave evidence describing a result that does not
+    exist."""
+    catchment = catchment_fixture
+
+    async with AsyncSessionLocal() as db:
+        async def _fail(*args, **kwargs):
+            raise SQLAlchemyError("simulated commit failure")
+
+        db.commit = _fail
+        with pytest.raises(SQLAlchemyError):
+            await generate_water_report(
+                db,
+                catchment_id=catchment.id,
+                hydrology_provider=_DescribedHydrology(),
+                satellite_provider=_DescribedSatellite(),
+                water_balance_engine=WaterBalanceEngine(),
+                recharge_stress_engine=RechargeStressEngine(),
+            )
+
+    async with AsyncSessionLocal() as db:
+        results = (
+            await db.execute(select(WaterBalanceResult).where(WaterBalanceResult.catchment_id == catchment.id))
+        ).scalars().all()
+        orphans = (
+            await db.execute(select(EvidenceRecord).where(EvidenceRecord.source == "MODIS/061/MOD16A2"))
+        ).scalars().all()
+        orphan_ids = {e.result_id for e in orphans}
+        existing = set((await db.execute(select(WaterBalanceResult.id))).scalars().all())
+
+    assert results == []
+    assert orphan_ids <= existing, "evidence rows exist for a water balance that was never persisted"
