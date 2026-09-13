@@ -2613,3 +2613,83 @@ project brief and match no stored balance. Validating all 135 stored
 balances in production found none with the ET defect; 121 pass. Thirteen
 show the opposite problem — ET at 95-109% of rainfall, consistent with
 unmodelled canal irrigation. See `docs/GEE_Product_Audit_2026.md`.
+
+---
+
+### Evidence-aware roadmap, Phase B — evidence provenance and lineage (Sep 2026)
+
+**Decision.** Persist, in the same transaction as every result in both
+services, one `evidence_record` per input the result depended on (each
+remote-sensing series and each assumed parameter), plus a `validation_run`
+and its `validation_finding`s. Expose them read-only at
+`GET /reports/{id}/lineage` and `GET /catchments/{id}/water-reports/lineage`.
+Backfill validation findings — not lineage — for stored water balances.
+Schema and rules: `docs/Climate_Intelligence_Data_Model.md`.
+
+**Founder decisions taken at the start of this phase.**
+1. Recompute Service 1 assessments with an inflated JRC flood factor —
+   after Phase B, so recomputed rows carry lineage; only rows with a
+   non-zero JRC value, appended, old rows kept.
+2. ET cross-product tolerance: 25%, warning only, never a block, and not
+   wired live. The 48% MOD16A2/PML_V2 disagreement at Maski is measured
+   uncertainty for item 8, not a defect to gate on.
+3. Identity-guard tolerance for values read back from `NUMERIC(10,2)`:
+   0.02 mm, derived from storage precision. In-memory stays 0.01 mm.
+4. The 13 catchments with ET at 95-109% of rainfall are flagged in the
+   database via backfill; canal command-area verification is a separate
+   data task. The envelope is not widened to pass them.
+5. Semi-arid ET/P envelope kept at 0.55-0.95, labelled uncalibrated.
+
+**Reason.** Item 5 requires every number to be traceable to source,
+version, dates, resolution, resampling, limitations and validation status,
+persisted with the result rather than only rendered.
+
+**Trade-offs.**
+- **No "plausibility checked" validation level.** A value inside a
+  literature envelope has not been validated. Every input today is
+  `unvalidated`; plausibility lives in the validation tables.
+- **String vocabularies behind CHECK constraints, not native enums** — the
+  one deliberate break from house convention. The evidence vocabulary will
+  grow through the roadmap, and every native enum value needs an ALTER TYPE
+  migration that fails silently if forgotten. Constraints are generated
+  from the Python enums; a test pins model and migration to them.
+- **Polymorphic `(result_table, result_id)`, no foreign key**, mirroring
+  `risk_score`. No cascade on result deletion. Application code never
+  deletes results; the test suite sweeps orphans at session end.
+- **No reconstructed provenance** for results pre-dating migration 0012.
+  Their parameters, including a Curve Number changed during the hydrology
+  audit, are unrecoverable. The API states "provenance not recorded".
+- **Lineage describes the Earth Engine providers only.** Values are
+  imported from the provider and engine modules, not restated. Any other
+  provider gets a record saying its lineage is not described.
+- **Not rendered in the report yet.** Report output is redesigned in
+  Phases C-D; rendering lineage now would be built twice.
+- **Hydrology provider returns no scene dates**, so ET and SAR lineage
+  record `acquisition_dates` as null ("not recorded") with a stated
+  limitation. Fixing it needs a provider contract change.
+
+**Defects found while building this.**
+- **Findings inserted before their run.** With no ORM relationship, the
+  unit of work had no dependency between `validation_finding` and
+  `validation_run` and inserted findings first; Postgres rejected the
+  foreign key. Found on the first live-database run of the water report.
+  Service 1's tests had passed only because clean fake data produced no
+  findings. Fixed with a declared relationship; a regression test forces
+  an ERROR finding through the real database.
+- **Cached Service 1 observations lost their scene dates.**
+  `_read_cached_observations` rebuilt observations without
+  `source_dates`, so any re-assessment silently lost acquisition lineage.
+- **Sentinel-2 registry caveat mis-scoped.** B11's 20 m native resolution
+  was a product-wide limitation, so NDVI (B8/B4) inherited it. Now
+  attached per index.
+- **Three scale literals in `gee_provider.py`** — the monthly and
+  climatology rainfall paths hardcoded 5000 instead of the existing
+  `_CHIRPS_SCALE_METERS`. Named; no behaviour change.
+- **Committed frontend API types had drifted** from the backend before
+  this phase. Regenerated; type-check clean.
+
+**Future migration path.** Item 3 adds model confidence and decision
+sufficiency as distinct persisted fields, reading from these tables. The
+hydrology provider contract should return composite and pass dates. Wire
+PML_V22a so ET can reach `cross_checked`. Recompute the affected Service 1
+assessments (decision 1).

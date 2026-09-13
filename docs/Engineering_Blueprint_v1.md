@@ -324,3 +324,24 @@ Secondary methodology parameters, deliberately deferred rather than guessed — 
 > - Source and definition of the rainfall "long-term normal" baseline (e.g. IMD 1981–2010 normals vs. the chosen rainfall product's own available history)
 > - Exact severe-threshold values that trigger the overall-score floor rule, per factor
 > - Confidence-score formula — what specifically counts as "low confidence" (minimum usable scene count, data-gap tolerance)
+
+---
+
+## Addendum — Evidence-aware architecture (September 2026)
+
+This blueprint describes Service 1 as an inference pipeline: fetch observations, score, report. Since September 2026 the pipeline also records what each result rests on and how far it has been checked. The architecture otherwise stands — FastAPI, PostGIS, the provider abstraction and the zero-I/O engine contract are all kept.
+
+```
+provider --> ingestion checks --> engine --> result --+
+   |                                                  +--> one transaction
+   +----------> lineage (provenance/lineage.py) ------+
+               validation (services/validation/) ----+
+```
+
+- **`app/services/validation/`** — a product registry verified against the Earth Engine catalog; ingestion-time unit, scale and range checks; zone-relative physical plausibility for water balances; a cross-product agreement check.
+- **`app/services/provenance/`** — per-input lineage built from the providers' and engines' own constants, persisted to `evidence_record`, with findings persisted to `validation_run` / `validation_finding`.
+- **§08's "data lineage footer"** is now backed by stored lineage for every new report, readable at `GET /reports/{id}/lineage`. It is not yet rendered in the report.
+
+Data model and honesty rules: `docs/Climate_Intelligence_Data_Model.md`. Product audit: `docs/GEE_Product_Audit_2026.md`. Decisions: `docs/DECISIONS.md` (Phases A and B).
+
+Still to come on this roadmap, in order: model confidence separated from decision sufficiency; a recommended action computed from score, uncertainty and stakes (loan amount, reversibility); an observation policy per factor; an evidence decision log; uncertainty propagation; and a transferability test across agro-climatic zones.

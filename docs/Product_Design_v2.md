@@ -599,3 +599,21 @@ principles P6–P8 (§1.1), Methodology top-level page removed in favor of
 contextual entry points, deterministic recommendation added to P9 scope.
 Every phase must be independently deployable, fully tested, production
 ready, security reviewed, live verified, and documented in DECISIONS.md.*
+
+---
+
+## Addendum — Evidence-aware assessments (September 2026)
+
+The product is moving from "here is a score" to "here is whether the evidence is sufficient for the decision you are about to make". A score of 44 means something different for a ₹50,000 seasonal crop loan than for a ₹5,00,000 term loan, and model confidence is not decision sufficiency.
+
+**Shipped so far (backend only):**
+
+- **Physical validation on every water report** — findings stored with the result, not only logged.
+- **Evidence lineage for every new report in both services** — for each input: source product and version, acquisition dates where available, resolution and resampling, known limitations, and validation status. Retrievable through the API.
+- **Nothing is labelled validated.** Every input is marked `unvalidated` until it is cross-checked against an independent source or field data.
+
+**Not yet in the product surface:** lineage and validation findings are not shown in the dashboard or PDF. They arrive with the report redesign below rather than being built twice.
+
+**Planned, in order:** separate *model confidence* from *decision sufficiency*; replace the band-only recommendation (§7.5) with PROCEED / VERIFY / WAIT / ESCALATE / ABSTAIN computed from score, uncertainty and stakes, with loan amount and reversibility as explicit inputs; for each factor, show what additional evidence would change the answer and what it would cost.
+
+§11 item 3 still stands: back-testing against loan outcomes is the real validation, and it still requires the pilot.

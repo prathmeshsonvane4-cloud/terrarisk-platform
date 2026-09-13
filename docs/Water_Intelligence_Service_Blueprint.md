@@ -493,6 +493,13 @@ Three honest layers, same structure recommended for the internship-scale prototy
 2. **Cross-dataset consistency (automated, periodic):** does the CGWB category for a catchment's containing block agree directionally with the recharge-stress classification? Logged as a QA signal, never silently corrected against.
 3. **Field calibration (manual, opt-in per customer):** when a customer (any customer — this is generic, not WELL-Labs-specific) supplies logger or well-level readings for a catchment, the system computes and displays calibration error directly, and flips `calibration_status` accordingly. This is the mechanism, not yet built in MVP, that the Future Roadmap names explicitly.
 
+> **Status, September 2026.** Layer 1 is now built and runs on every report (`backend/app/services/validation/`), with findings persisted to `validation_run` / `validation_finding` and per-input lineage to `evidence_record`. Two corrections to its wording above, both recorded in `docs/DECISIONS.md` (Phases A and B):
+>
+> - **"Does the water balance close" cannot be tested against this engine.** ΔS is defined as P − ET − Q, so the balance closes identically on every run. Layer 1 checks *plausibility* instead: ET/P, runoff coefficient and |ΔS|/P against zone envelopes, plus physical invariants. Real closure needs an independent estimate of a term. MOD16A2 and PML_V2 already disagree by 48% on a Maski-area polygon.
+> - The SAR/MNDWI agreement signal is still logged only, not persisted.
+>
+> Layer 2 (CGWB cross-check) and layer 3 (field calibration) remain unbuilt. See `docs/GEE_Product_Audit_2026.md` for the product audit and a validation sweep over all stored balances.
+
 ---
 
 # PART 12 — Testing Strategy
