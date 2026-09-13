@@ -102,6 +102,13 @@ from app.services.risk.models import MonthlyValue
 from app.services.risk.seasonal import BASELINE_YEARS
 from app.services.satellite._gee_common import monthly_periods
 from app.services.satellite.provider import IndexObservation, SatelliteDataProvider, SatelliteIndex
+from app.services.validation import (
+    AgroClimaticZone,
+    ValidationReport,
+    classify_zone_by_rainfall,
+    validate_series,
+    validate_water_balance,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -137,6 +144,22 @@ class WaterReportMetadata:
     computed_at: datetime
     storage_change_band: StorageChangeBand
     stress_band: StressBand
+    # Physical validation of the inputs and of the computed balance.
+    #
+    # Returned rather than raised, and the results are still persisted
+    # when it fails. That is deliberate and it is NOT "degrading
+    # quietly": a report suppressed on a failed check is a report nobody
+    # can inspect, and the defects this catches are diagnosed by looking
+    # at the numbers. What must never happen is a failing balance being
+    # presented as a sound one — so the report travels with the result,
+    # every failure is logged at ERROR, and the field is non-optional so
+    # no caller can render a headline without having been handed the
+    # verdict alongside it.
+    #
+    # Persisting these findings to PostGIS is item 5's job (evidence
+    # provenance and lineage); today they live only here and in the log.
+    validation: ValidationReport
+    agro_climatic_zone: AgroClimaticZone
 
 
 async def generate_water_report(
@@ -180,6 +203,9 @@ async def generate_water_report(
         ),
     )
 
+    zone = _zone_for(recharge_stress_bundle.rainfall_normal_by_month)
+    validation = _validate(water_balance_bundle, water_balance_result, zone, catchment_id)
+
     computed_at = datetime.now(timezone.utc)
     water_balance_row, recharge_stress_row = await _persist_results(
         db, catchment_id, start, end, computed_at, water_balance_result, recharge_stress_result
@@ -194,7 +220,75 @@ async def generate_water_report(
         computed_at=computed_at,
         storage_change_band=water_balance_result.storage_change_band,
         stress_band=recharge_stress_result.stress_band,
+        validation=validation,
+        agro_climatic_zone=zone,
     )
+
+
+def _zone_for(rainfall_normal_by_month: dict[int, float]) -> AgroClimaticZone:
+    """Agro-climatic zone from the catchment's own 30-year CHIRPS
+    climatology — the long-term mean annual rainfall, not the three
+    observed years.
+
+    Using the climatology matters: a catchment whose observation window
+    happens to contain a failed monsoon would otherwise be classified
+    arid and then validated against arid bounds, which is the same
+    "a recent drought silently redefines normal" failure D6 already
+    fixed for the recharge-stress baseline.
+
+    A partial climatology is not extrapolated to twelve months. Fewer
+    than twelve monthly normals means the annual total is genuinely
+    unknown, and returning UNKNOWN disables the plausibility checks
+    visibly rather than validating against a zone derived from a
+    number that was never a year.
+    """
+    if len(rainfall_normal_by_month) < 12:
+        return AgroClimaticZone.UNKNOWN
+    return classify_zone_by_rainfall(sum(rainfall_normal_by_month.values()))
+
+
+def _validate(bundle, result, zone: AgroClimaticZone, catchment_id: UUID) -> ValidationReport:
+    """Run the physical validation harness over the inputs and the
+    computed balance, and log any failure at ERROR.
+
+    Series checks come first and their findings are merged into one
+    report: an implausible balance whose ET series is ALSO flagged is
+    one defect with a named cause, and splitting them across two reports
+    would leave whoever reads the log to reconnect them.
+    """
+    report = validate_water_balance(result, zone=zone, subject=f"catchment:{catchment_id}")
+    series_findings = [
+        finding
+        for key, values in (
+            ("et_monthly_mm", [m.value for m in bundle.et_monthly]),
+            ("rainfall_monthly_mm", [m.value for m in bundle.rainfall_monthly]),
+            ("rainfall_daily_mm", [d.value for d in bundle.rainfall_daily]),
+        )
+        for finding in validate_series(key, values).findings
+    ]
+    merged = ValidationReport(
+        subject=report.subject,
+        findings=[*series_findings, *report.findings],
+        checks_run=report.checks_run + len(series_findings),
+        checks_skipped=report.checks_skipped,
+    )
+
+    log = logger.error if merged.errors else (logger.warning if merged.failed else logger.info)
+    log(
+        "water_report_physical_validation",
+        extra={
+            "catchment_id": str(catchment_id),
+            "zone": zone.value,
+            "failed": merged.failed,
+            "summary": merged.summary(),
+            "findings": [
+                {"check": f.check, "severity": f.severity.value, "subject": f.subject, "message": f.message}
+                for f in merged.findings
+                if f.is_failure
+            ],
+        },
+    )
+    return merged
 
 
 async def _assemble_bundles(

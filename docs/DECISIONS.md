@@ -2565,3 +2565,44 @@ deployment beyond a controlled pilot (same trigger condition already
 named in the M2A entry). Revisit resource limits and monitoring once real
 pilot load data exists to size them against. Revisit GEE retry if transient
 failures are observed in practice to be more than a rare inconvenience.
+
+---
+
+### Evidence-aware roadmap, Phase A — physical validation harness (Sep 2026)
+
+**Decision.** Add `app/services/validation/`: a product registry, ingestion-time
+unit/scale assertions, zone-relative water balance plausibility checks, and a
+cross-product agreement check. Run it on every water report and return the
+findings with the result. Fix the three product-read defects the audit
+confirmed (JRC occurrence reducer, JRC coverage date, MOD16A2 valid range).
+Full findings and measurements: `docs/GEE_Product_Audit_2026.md`.
+
+**Reason.** Six specification defects, including MOD16A2 ET wrong by ~4x,
+passed the whole suite green: the tests verified execution, not physics.
+Blueprint v2 Part 11 specified this layer in July ("does the water balance
+close within a plausible residual range?") and it was never built. Work order
+for the full roadmap: 1 → 5 → 3 → 2 → 4 → 6 → 8 → 7, with items 1 and 7 split
+so zone groundwork happens first.
+
+**Trade-offs.**
+- **No closure test against the engine.** ΔS is defined as P − ET − Q, so
+  `P − ET − Q − ΔS` is identically zero and any tolerance test on it is
+  vacuous. The identity is asserted only as a labelled refactor guard;
+  plausibility envelopes stand in until an independent ET estimate is wired.
+- **Findings are returned and logged, not raised, and results are still
+  persisted on failure.** A suppressed report cannot be diagnosed; the field
+  is non-optional so no caller can render a headline without the verdict.
+  Persisting findings is Phase B (item 5).
+- **Zone envelopes are uncalibrated and unreviewed**, and classification uses
+  rainfall rather than the aridity index. Every finding says so.
+- **The cross-product tolerance has no default.** MOD16A2 and PML_V2 disagree
+  by 48% on a Maski-area polygon; picking a tolerance is a scientific
+  decision, not a default.
+- **CHIRPS no-data asymmetry left unfixed:** probed over 1,096 days with no
+  such pixels present. Latent, guarded by the ingestion range check.
+
+**Future migration path.** Persist findings with provenance (item 5). Wire
+PML_V22a for ET cross-checks and PET for aridity-index zoning once a tolerance
+is agreed. Derive `high_relief_terrain` from a DEM. Recompute the stale
+pre-fix water balances and the Service 1 assessments carrying inflated JRC
+flood factors.
