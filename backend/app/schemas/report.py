@@ -25,9 +25,55 @@ class FactorScoreResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     factor: RiskFactor
-    value: float
-    band: RiskBand
+    # Null when the factor could not be computed — `raw_inputs.sub_signals`
+    # says why. Assessments computed before rule-engine-v2 stored a neutral
+    # 50 here instead; their model_version tells them apart.
+    value: float | None
+    band: RiskBand | None
+    computed: bool = True
+    interval_low: float | None = None
+    interval_high: float | None = None
     raw_inputs: dict
+
+
+class ModelConfidenceResponse(BaseModel):
+    """A statistical property of the estimate, independent of any decision.
+    Only baseline-sampling uncertainty in the seasonal percentile signals is
+    quantified; `interval_coverage` and `statement` say what is not."""
+
+    factors_computed: int
+    factors_total: int
+    weight_coverage: float
+    overall_estimable: bool
+    overall_interval: list[float] | None
+    interval_coverage: str
+    confidence_level: float
+    statement: str
+
+
+class InadequacyResponse(BaseModel):
+    code: str
+    statement: str
+    factor: str | None = None
+
+
+class TierVerdictResponse(BaseModel):
+    tier: str
+    sufficient: bool
+    description: str
+    inadequacies: list[InadequacyResponse]
+
+
+class DecisionSufficiencyResponse(BaseModel):
+    """Whether the evidence is adequate for a decision at each stakes tier,
+    under a stated, versioned and — today — uncalibrated policy. Not a
+    recommended action."""
+
+    policy_version: str
+    calibration_status: str
+    tiers: list[TierVerdictResponse]
+    caveats: list[InadequacyResponse]
+    statement: str
 
 
 class ObservationPoint(BaseModel):
@@ -114,7 +160,7 @@ class ReportComparisonContext(BaseModel):
     previous_overall_score: float | None = None
     # RiskFactor.value (e.g. "drought_risk") -> that factor's score on the
     # prior assessment. Only populated when has_previous_assessment is True.
-    previous_factor_scores: dict[str, float] = Field(default_factory=dict)
+    previous_factor_scores: dict[str, float | None] = Field(default_factory=dict)
 
 
 class ReportAuditContext(BaseModel):
@@ -135,9 +181,16 @@ class ReportResponse(BaseModel):
     farm_id: UUID
     farm_area_ha: float
     village_id: UUID
-    overall_score: float
-    overall_band: RiskBand
+    # Null when no composite could be estimated (rule-engine-v2 onward).
+    overall_score: float | None
+    overall_band: RiskBand | None
+    # LEGACY NAME: optical data completeness (share of expected monthly
+    # Sentinel-2 composites that were usable). Not model confidence and not
+    # decision sufficiency — see the two fields below.
     confidence: float
+    # Null for assessments computed before these were introduced.
+    model_confidence: ModelConfidenceResponse | None = None
+    decision_sufficiency: DecisionSufficiencyResponse | None = None
     model_version: str
     computed_at: datetime
     factors: list[FactorScoreResponse]

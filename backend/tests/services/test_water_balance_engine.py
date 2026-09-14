@@ -21,7 +21,6 @@ from app.models.enums import CalibrationStatus, StorageChangeBand
 from app.services.hydrology.engine import (
     _CURVE_NUMBER,
     _INITIAL_ABSTRACTION_RATIO,
-    _NEUTRAL_STORAGE_CHANGE_BAND,
     _band_for_storage_change,
     _event_runoff_mm,
     _series_completeness,
@@ -29,7 +28,7 @@ from app.services.hydrology.engine import (
     _total_runoff_mm,
     WaterBalanceEngine,
 )
-from app.services.hydrology.models import WaterBalanceBundle, WaterBalanceConfig
+from app.services.hydrology.models import InsufficientEvidenceError, WaterBalanceBundle, WaterBalanceConfig
 from app.services.risk.models import MonthlyValue
 
 
@@ -296,33 +295,28 @@ class TestMixedMissingMonths:
         assert result.runoff_mm == pytest.approx(expected_runoff)
         assert result.storage_change_mm == pytest.approx(200.0 - 60.0 - expected_runoff)
 
-    def test_empty_monthly_series_is_valid_input_producing_a_none_residual(self):
-        """Missing months are a real, expected data-availability gap
-        (mirrors RiskEngine's "missing months are missing, never zero"
-        convention) — an empty series is valid input, not an error, and
-        produces None for every mm field (nothing to sum), not a
-        fabricated 0.0."""
-        engine = WaterBalanceEngine()
-        bundle = _bundle(rainfall_monthly=[], et_monthly=[])
+    def test_empty_series_cannot_produce_a_water_balance(self):
+        """REPLACES a test asserting that empty series produced a result with
+        every term None — and, through the neutral band, a "Normal" storage
+        headline. Nothing was measured; there is no result to report."""
+        with pytest.raises(InsufficientEvidenceError, match="rainfall, evapotranspiration or runoff"):
+            WaterBalanceEngine().compute(_bundle(rainfall_monthly=[], et_monthly=[]), _config())
 
-        result = engine.compute(bundle, _config())
-
-        assert result.rainfall_mm is None
-        assert result.et_mm is None
-        assert result.runoff_mm is None
-        assert result.storage_change_mm is None
-        assert result.data_completeness == 0.0
-
-    def test_all_months_missing_falls_back_to_the_neutral_band(self):
-        """storage_change_band is not Optional — when the residual can't
-        be computed at all, the engine returns the documented neutral
-        fallback (mirrors RiskEngine's _NEUTRAL_SCORE convention), never
-        raises, never guesses a real band from nothing."""
+    def test_all_months_missing_raises_instead_of_reporting_a_normal_band(self):
+        """REPLACES a test asserting a NORMAL band here. The band was the
+        report's headline, so an unmeasured catchment reported normal
+        storage."""
         bundle = _bundle(rainfall_monthly=_series([None, None], 2), et_monthly=_series([None, None], 2))
-        result = WaterBalanceEngine().compute(bundle, _config())
+        with pytest.raises(InsufficientEvidenceError) as raised:
+            WaterBalanceEngine().compute(bundle, _config())
+        # The message is shown to the person who requested the report.
+        assert "could not be computed" in str(raised.value)
+        assert "Traceback" not in str(raised.value)
 
-        assert result.storage_change_band == _NEUTRAL_STORAGE_CHANGE_BAND
-        assert result.storage_change_band == StorageChangeBand.NORMAL
+    def test_missing_et_alone_is_named_in_the_reason(self):
+        bundle = _bundle(et_monthly=_series([None, None], 2), rainfall_monthly=_series([100.0, 100.0], 2))
+        with pytest.raises(InsufficientEvidenceError, match="no usable evapotranspiration data"):
+            WaterBalanceEngine().compute(bundle, _config())
 
 
 class TestSeriesCompleteness:
@@ -332,7 +326,9 @@ class TestSeriesCompleteness:
         (CHIRPS) is not, and is excluded — a rainfall gap must not move
         data_completeness at all."""
         bundle = _bundle(
-            rainfall_monthly=_series([None, None, None], 3),  # fully missing, irrelevant to completeness
+            # A rainfall gap, irrelevant to completeness. Not a FULLY missing
+            # series: that no longer yields a result at all (Phase C).
+            rainfall_monthly=_series([100.0, None, None], 3),
             et_monthly=_series([30.0, 30.0, None], 3),
         )
         result = WaterBalanceEngine().compute(bundle, _config())
@@ -345,9 +341,9 @@ class TestSeriesCompleteness:
         assert result.data_completeness == pytest.approx(100.0)
 
     def test_fully_missing_et_series_is_zero_percent(self):
-        bundle = _bundle(et_monthly=_series([None, None], 2), rainfall_monthly=_series([100.0, 100.0], 2))
-        result = WaterBalanceEngine().compute(bundle, _config())
-        assert result.data_completeness == 0.0
+        """Checked on the completeness function directly: a fully missing ET
+        series no longer produces an engine result to read it from."""
+        assert _series_completeness(_series([None, None], 2)) == 0.0
 
 
 class TestResolutionFlagsPassthrough:

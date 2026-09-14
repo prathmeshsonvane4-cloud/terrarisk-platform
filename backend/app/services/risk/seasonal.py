@@ -41,15 +41,21 @@ and, more importantly, valid.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+from datetime import date
+
 from app.services.risk.models import MonthlyValue
 
 __all__ = [
     "BASELINE_YEARS",
     "MIN_BASELINE_SAMPLES",
+    "SeasonalDetail",
     "latest_valid_observation",
     "same_calendar_month_values",
+    "seasonal_percentile_detail",
     "seasonal_percentile_rank",
     "seasonal_vci",
+    "seasonal_vci_detail",
 ]
 
 # Bounded by Sentinel-2 L2A global availability (~2017), not chosen.
@@ -146,3 +152,87 @@ def seasonal_percentile_rank(current: list[MonthlyValue], baseline: list[Monthly
     below = sum(1 for value in history if value < latest.value)
     equal = sum(1 for value in history if value == latest.value)
     return ((below + equal / 2.0) / len(history)) * 100.0
+
+
+# ---------------------------------------------------------------------
+# Detail variants (evidence-aware roadmap, Phase C)
+#
+# The functions above answer with a number or None. A None is not enough
+# once confidence and sufficiency are reported separately: the report has
+# to say WHY a factor could not be computed ("3 baseline samples for July,
+# 5 needed" reads very differently from "no reading since March"), and a
+# statistical interval needs the sample count behind the estimate. These
+# return that detail. The originals above are kept unchanged, so existing
+# callers are unaffected.
+# ---------------------------------------------------------------------
+
+# Why a seasonal statistic could not be computed. Stable strings: they are
+# persisted and read by the sufficiency evaluator.
+NO_CURRENT_READING = "no_current_reading"
+BASELINE_TOO_SHORT = "baseline_samples_below_minimum"
+DEGENERATE_RANGE = "degenerate_baseline_range"
+
+
+@dataclass(frozen=True)
+class SeasonalDetail:
+    """A seasonal statistic with the evidence behind it.
+
+    `value` is None exactly when `missing_reason` is set. `samples` is the
+    number of baseline observations for the reading's calendar month, and
+    `favourable_share` is the share of those at or below the reading (ties
+    counted half) — the binomial proportion a percentile interval is built
+    from. `reading_month` is the period of the reading that was ranked.
+    """
+
+    value: float | None
+    samples: int
+    missing_reason: str | None = None
+    favourable_share: float | None = None
+    reading_period: date | None = None
+
+
+def seasonal_percentile_detail(current: list[MonthlyValue], baseline: list[MonthlyValue]) -> SeasonalDetail:
+    """`seasonal_percentile_rank`, with its sample count and the reason when
+    it cannot be computed."""
+    latest = latest_valid_observation(current)
+    if latest is None:
+        return SeasonalDetail(value=None, samples=0, missing_reason=NO_CURRENT_READING)
+
+    history = same_calendar_month_values(baseline, latest.period_start.month)
+    if len(history) < MIN_BASELINE_SAMPLES:
+        return SeasonalDetail(
+            value=None, samples=len(history), missing_reason=BASELINE_TOO_SHORT, reading_period=latest.period_start
+        )
+
+    below = sum(1 for value in history if value < latest.value)
+    equal = sum(1 for value in history if value == latest.value)
+    share = (below + equal / 2.0) / len(history)
+    return SeasonalDetail(
+        value=share * 100.0, samples=len(history), favourable_share=share, reading_period=latest.period_start
+    )
+
+
+def seasonal_vci_detail(current: list[MonthlyValue], baseline: list[MonthlyValue]) -> SeasonalDetail:
+    """`seasonal_vci`, with its sample count and the reason when it cannot
+    be computed. No `favourable_share`: VCI is a min-max position, not a
+    rank, and has no binomial interval."""
+    latest = latest_valid_observation(current)
+    if latest is None:
+        return SeasonalDetail(value=None, samples=0, missing_reason=NO_CURRENT_READING)
+
+    history = same_calendar_month_values(baseline, latest.period_start.month)
+    if len(history) < MIN_BASELINE_SAMPLES:
+        return SeasonalDetail(
+            value=None, samples=len(history), missing_reason=BASELINE_TOO_SHORT, reading_period=latest.period_start
+        )
+
+    lowest, highest = min(history), max(history)
+    if highest <= lowest:
+        return SeasonalDetail(
+            value=None, samples=len(history), missing_reason=DEGENERATE_RANGE, reading_period=latest.period_start
+        )
+    return SeasonalDetail(
+        value=((latest.value - lowest) / (highest - lowest)) * 100.0,
+        samples=len(history),
+        reading_period=latest.period_start,
+    )

@@ -111,7 +111,10 @@ class TestVegetationStability:
         assert veg.score == pytest.approx(93.75)
         assert veg.band == RiskBand.VERY_HIGH
 
-    def test_insufficient_history_falls_back_to_neutral_score(self):
+    def test_insufficient_history_is_not_computed_and_says_why(self):
+        """REPLACES a test that asserted a neutral 50 here. That 50 was
+        averaged into the overall score as though measured; the only Service 1
+        assessment in production was three-quarters made of it."""
         bundle = ObservationBundle(
             ndvi_monthly=[MonthlyValue(date(2026, 1, 1), 0.5)],
             mndwi_monthly=[],
@@ -122,9 +125,11 @@ class TestVegetationStability:
         )
         result = RiskEngine().compute(bundle, _config())
         veg = next(f for f in result.factors if f.factor == RiskFactor.VEGETATION_STABILITY)
-        assert veg.score == 50.0
+        assert veg.score is None and veg.band is None and not veg.computed
+        assert veg.sub_signals[0].missing_reason == "baseline_samples_below_minimum"
 
-    def test_all_months_missing_falls_back_to_neutral_and_zero_confidence(self):
+    def test_all_months_missing_leaves_factor_uncomputed_and_zero_completeness(self):
+        """REPLACES a test that asserted a neutral 50 here."""
         months = _months()
         bundle = ObservationBundle(
             ndvi_monthly=[MonthlyValue(m, None) for m in months],
@@ -137,7 +142,8 @@ class TestVegetationStability:
         result = RiskEngine().compute(bundle, _config())
         assert result.confidence == 0.0
         veg = next(f for f in result.factors if f.factor == RiskFactor.VEGETATION_STABILITY)
-        assert veg.score == 50.0
+        assert veg.score is None
+        assert veg.sub_signals[0].missing_reason == "no_current_reading"
 
 
 class TestDroughtRisk:
@@ -300,3 +306,150 @@ class TestOverallScoreWeighting:
             weights[f.factor] for f in others
         )
         assert result.overall_score == pytest.approx(expected)
+
+
+# =====================================================================
+# Phase C — no invented scores; model confidence as its own field
+# =====================================================================
+
+from app.services.risk.confidence import percentile_risk_interval, wilson_interval  # noqa: E402
+
+
+def _production_shera_bundle() -> ObservationBundle:
+    """The only Service 1 assessment in production (26 Aug 2026), rebuilt
+    from its stored inputs: a 0.25 ha plot whose seasonal baseline had been
+    truncated to three years by a cache defect, and whose rainfall was null
+    at CHIRPS scale. It was reported as Moderate (37.5) at 83% confidence.
+    The one measured value was JRC occurrence 0.0."""
+    months = _months(36)
+    three_years = [MonthlyValue(m, 0.5) for m in months]
+    return ObservationBundle(
+        ndvi_monthly=[MonthlyValue(m, 0.5) for m in months[:-1]] + [MonthlyValue(months[-1], None)],
+        mndwi_monthly=[MonthlyValue(m, -0.4) for m in months],
+        ndmi_monthly=[MonthlyValue(m, 0.3) for m in months],
+        rainfall_monthly=[MonthlyValue(m, None) for m in months],
+        rainfall_normal_by_month={},
+        jrc_water_occurrence_percent=0.0,
+        ndvi_baseline=three_years,
+        mndwi_baseline=three_years,
+        ndmi_baseline=three_years,
+    )
+
+
+class TestNoInventedScores:
+    def test_the_production_assessment_no_longer_produces_a_composite(self):
+        """Previously Moderate 37.5 from (50 + 50 + 50 + 0) / 4. Re-averaging
+        only what survived would give Low 0 from one number — equally
+        unjustified. The honest answer is that no composite exists."""
+        result = RiskEngine().compute(_production_shera_bundle(), _config())
+        computed = [f.factor for f in result.factors if f.computed]
+        assert computed == [RiskFactor.FLOOD_EXPOSURE]
+        assert result.overall_score is None
+        assert result.overall_band is None
+        assert result.weighted_average_score is None
+        assert result.model_confidence.overall_estimable is False
+        assert "1 of 4 factors computed" in result.model_confidence.statement
+
+    def test_data_completeness_stays_high_while_the_composite_is_unavailable(self):
+        """The exact conflation Phase C removes: plenty of optical months, and
+        almost nothing measurable from them."""
+        result = RiskEngine().compute(_production_shera_bundle(), _config())
+        assert result.confidence > 80.0
+        assert result.overall_score is None
+
+    def test_an_uncomputed_factor_is_excluded_from_the_average_not_scored_fifty(self):
+        """Two computed factors at half the weight: the composite is their
+        average alone."""
+        months = _months()
+        bundle = ObservationBundle(
+            ndvi_monthly=[MonthlyValue(m, 0.5) for m in months],
+            mndwi_monthly=[MonthlyValue(m, None) for m in months],
+            ndmi_monthly=[MonthlyValue(m, None) for m in months],
+            rainfall_monthly=[MonthlyValue(m, None) for m in months],
+            rainfall_normal_by_month={},
+            jrc_water_occurrence_percent=30.0,
+            ndvi_baseline=_baseline(0.5),
+        )
+        result = RiskEngine().compute(bundle, _config(floor_threshold=999.0))
+        by_factor = {f.factor: f for f in result.factors}
+        # Water: no index reading, no rainfall. Drought: VCI undefined on a
+        # flat baseline, no rainfall. Two of four remain, at exactly the
+        # minimum weight share for a composite.
+        assert not by_factor[RiskFactor.WATER_AVAILABILITY].computed
+        assert not by_factor[RiskFactor.DROUGHT_RISK].computed
+        expected = (by_factor[RiskFactor.VEGETATION_STABILITY].score + by_factor[RiskFactor.FLOOD_EXPOSURE].score) / 2
+        assert result.overall_score == pytest.approx(expected)
+        assert result.model_confidence.weight_coverage == pytest.approx(0.5)
+
+    def test_a_factor_built_from_fewer_sub_signals_records_how_many(self):
+        months = _months()
+        bundle = ObservationBundle(
+            ndvi_monthly=[MonthlyValue(m, 0.5) for m in months],
+            mndwi_monthly=[MonthlyValue(m, None) for m in months],
+            ndmi_monthly=[MonthlyValue(m, None) for m in months],
+            rainfall_monthly=[MonthlyValue(m, 80.0) for m in months],
+            rainfall_normal_by_month={i: 80.0 for i in range(1, 13)},
+            jrc_water_occurrence_percent=0.0,
+        )
+        water = next(f for f in RiskEngine().compute(bundle, _config()).factors if f.factor == RiskFactor.WATER_AVAILABILITY)
+        assert water.computed
+        assert (water.raw_inputs["sub_signals_computed"], water.raw_inputs["sub_signals_total"]) == (1, 3)
+        assert {s.name: s.missing_reason for s in water.sub_signals}["mndwi_percentile"] == "no_current_reading"
+
+    def test_a_severe_computed_factor_still_triggers_the_floor(self):
+        """Excluding uncomputed factors must not weaken the floor rule. Here
+        the computed average is low (vegetation near its best, VCI at its
+        top), but flood exposure — JRC alone, with rainfall unavailable — is
+        severe, so the composite is still forced to at least High."""
+        months = _months(BASELINE_MONTHS)
+        rising = [MonthlyValue(m, 0.2 + (i * 0.01)) for i, m in enumerate(months)]
+        bundle = ObservationBundle(
+            ndvi_monthly=rising,
+            ndvi_baseline=rising,
+            mndwi_monthly=[MonthlyValue(m, None) for m in months],
+            ndmi_monthly=[MonthlyValue(m, None) for m in months],
+            rainfall_monthly=[MonthlyValue(m, None) for m in months],
+            rainfall_normal_by_month={},
+            jrc_water_occurrence_percent=95.0,
+        )
+        result = RiskEngine().compute(bundle, _config(floor_threshold=80.0))
+        assert result.weighted_average_score < 50.0
+        assert result.overall_band in (RiskBand.HIGH, RiskBand.VERY_HIGH)
+
+    def test_the_model_version_marks_the_changed_semantics(self):
+        assert RiskEngine().compute(_uniform_bundle(), _config()).model_version == "rule-engine-v2"
+
+
+class TestModelConfidence:
+    def test_wilson_interval_matches_the_closed_form_at_n_8(self):
+        """p = 0.5, n = 8, z = 1.645: hand-computed 0.2486 to 0.7514."""
+        low, high = wilson_interval(0.5, 8)
+        assert low == pytest.approx(0.2486, abs=5e-4)
+        assert high == pytest.approx(0.7514, abs=5e-4)
+
+    def test_the_interval_narrows_as_the_baseline_lengthens(self):
+        narrow = percentile_risk_interval(0.5, 30)
+        wide = percentile_risk_interval(0.5, 8)
+        assert (narrow[1] - narrow[0]) < (wide[1] - wide[0])
+
+    def test_a_percentile_factor_carries_an_interval_and_vci_does_not(self):
+        result = RiskEngine().compute(_uniform_bundle(), _config())
+        by_factor = {f.factor: f for f in result.factors}
+        assert by_factor[RiskFactor.VEGETATION_STABILITY].interval is not None
+        assert by_factor[RiskFactor.DROUGHT_RISK].interval is None
+
+    def test_overall_interval_is_labelled_partial_and_says_what_is_missing(self):
+        """Drought and flood have no uncertainty model, so the overall
+        interval can only be a lower bound — and must say so."""
+        mc = RiskEngine().compute(_uniform_bundle(), _config()).model_confidence
+        assert mc.overall_estimable
+        assert mc.interval_coverage == "partial"
+        low, high = mc.overall_interval
+        assert low <= high
+        assert "No uncertainty model for" in mc.statement
+        assert "true uncertainty is wider" in mc.statement
+
+    def test_the_interval_contains_the_point_estimate(self):
+        result = RiskEngine().compute(_uniform_bundle(), _config(floor_threshold=999.0))
+        low, high = result.model_confidence.overall_interval
+        assert low <= result.overall_score <= high

@@ -38,8 +38,8 @@ from datetime import date
 from app.models.enums import EvidenceKind, EvidenceValidation
 from app.services.hydrology import engine as water_balance_engine
 from app.services.hydrology import gee_hydrology_provider as hydro
-from app.services.hydrology import recharge_stress
 from app.services.risk import engine as risk_engine
+from app.services.risk.confidence import CONFIDENCE_LEVEL
 from app.services.risk.models import MonthlyValue
 from app.services.risk.seasonal import BASELINE_YEARS, MIN_BASELINE_SAMPLES
 from app.services.satellite import _gee_common
@@ -241,7 +241,7 @@ def _rainfall_monthly_evidence(
         collection_id=gee._CHIRPS_COLLECTION,
         band="precipitation",
         requested_scale_m=gee._CHIRPS_SCALE_METERS,
-        reducer="mean over polygon of the monthly total",
+        reducer="mean over polygon of the monthly total; if that is null (polygon too small), the CHIRPS cell containing its centroid",
         temporal_aggregation="Sum of daily images per calendar month; no negative-value filter on this path.",
         period_start=start,
         period_end=end,
@@ -269,7 +269,7 @@ def _climatology_evidence(normals: dict[int, float], satellite_provider: object,
         collection_id=gee._CHIRPS_COLLECTION,
         band="precipitation",
         requested_scale_m=gee._CHIRPS_SCALE_METERS,
-        reducer="mean over polygon of each year's monthly total",
+        reducer="mean over polygon of each year's monthly total; if that is null (polygon too small), the CHIRPS cell containing its centroid",
         temporal_aggregation=(
             f"Climatological normal: for each calendar month, the mean of that month's total across "
             f"{gee._CLIMATOLOGY_WINDOW_YEARS} years ({start_year}-{end_year})."
@@ -315,7 +315,7 @@ def water_balance_evidence(
                 collection_id=gee._CHIRPS_COLLECTION,
                 band="precipitation",
                 requested_scale_m=gee._CHIRPS_SCALE_METERS,
-                reducer="mean over polygon of each daily image",
+                reducer="mean over polygon of each daily image; if that is null (polygon too small), the CHIRPS cell containing its centroid",
                 temporal_aggregation=(
                     "One value per published day; negative values dropped as no-data. Used only for the "
                     "runoff term, one SCS-CN storm event per rainy day."
@@ -497,14 +497,14 @@ def recharge_stress_evidence(
                 ],
             ),
             _parameter(
-                "neutral_score_when_uncomputable",
+                "uncomputed_factor_handling",
                 source,
-                "score (0-100)",
-                float(recharge_stress._NEUTRAL_SCORE),
+                "rule",
+                None,
                 [
-                    "A factor that cannot be computed (missing data, too few baseline samples) is scored "
-                    f"{recharge_stress._NEUTRAL_SCORE:g} and averaged in at full weight, as if it were a "
-                    "measurement. Known defect, scheduled for the confidence/sufficiency work."
+                    "A factor that cannot be computed is excluded from the weighted average, and recorded as "
+                    "not computed. If no factor can be computed, no report is produced. (Before Phase C such a "
+                    "factor was scored a neutral 50 and averaged in as if measured.)"
                 ],
             ),
             _parameter(
@@ -560,6 +560,7 @@ def risk_score_evidence(
     floor_threshold: float,
     computed_in_year: int,
     satellite_provider: object,
+    farm_area_ha: float | None = None,
 ) -> list[EvidenceItem]:
     """Lineage for one Service 1 `RiskScore`.
 
@@ -567,6 +568,14 @@ def risk_score_evidence(
     to (raw observations with scene dates, the aligned monthly series,
     "fetched" | "cache").
     """
+    rainfall_scope = (
+        [
+            f"This {farm_area_ha:g} ha farm is far smaller than one ~3,000 ha CHIRPS cell: its rainfall is that "
+            "cell's regional value, not a measurement of the farm."
+        ]
+        if farm_area_ha is not None and farm_area_ha < 3000
+        else []
+    )
     items: list[EvidenceItem] = []
     for index, (observations, monthly, retrieval) in index_observations.items():
         items.append(
@@ -581,8 +590,11 @@ def risk_score_evidence(
         )
         items.append(EvidenceItem(**{**item.__dict__, "quantity": f"{index.value}_baseline"}))
 
-    items.append(_rainfall_monthly_evidence(rainfall_monthly, start, end, rainfall_retrieval, satellite_provider))
-    items.append(_climatology_evidence(rainfall_normals, satellite_provider, computed_in_year))
+    for rain in (
+        _rainfall_monthly_evidence(rainfall_monthly, start, end, rainfall_retrieval, satellite_provider),
+        _climatology_evidence(rainfall_normals, satellite_provider, computed_in_year),
+    ):
+        items.append(EvidenceItem(**{**rain.__dict__, "known_limitations": [*rain.known_limitations, *rainfall_scope]}))
 
     if isinstance(satellite_provider, gee.GeeProvider):
         jrc_start, jrc_end = jrc_period
@@ -643,15 +655,25 @@ def risk_score_evidence(
                 ],
             ),
             _parameter(
-                "neutral_score_when_uncomputable",
+                "composite_min_weight_coverage",
                 source,
-                "score (0-100)",
-                float(risk_engine._NEUTRAL_SCORE),
+                "share of configured weight",
+                risk_engine._MIN_WEIGHT_COVERAGE,
                 [
-                    "A factor that cannot be computed is scored "
-                    f"{risk_engine._NEUTRAL_SCORE:g} and averaged in at full weight, as if measured, while "
-                    "confidence measures only optical series completeness and does not see it. Known defect, "
-                    "scheduled for the confidence/sufficiency work."
+                    "An overall score is produced only when computed factors carry at least this share of the "
+                    f"weight and at least {risk_engine._MIN_FACTORS_FOR_COMPOSITE} factors are computed; otherwise "
+                    "there is no overall score. Uncomputed factors are excluded, never scored neutral. A model "
+                    "judgement, not calibrated against outcomes."
+                ],
+            ),
+            _parameter(
+                "confidence_level",
+                "app/services/risk/confidence.py",
+                "probability",
+                CONFIDENCE_LEVEL,
+                [
+                    "Two-sided level of the Wilson intervals on percentile signals. A reporting convention, not "
+                    "calibrated. Intervals cover baseline sampling only and understate the true uncertainty."
                 ],
             ),
             _parameter(

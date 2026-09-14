@@ -15,6 +15,7 @@ import { FACTOR_ORDER } from "@/features/report/factor-order";
 import { FactorCard } from "@/features/report/factor-card";
 import { MethodTab } from "@/features/report/method-tab";
 import { reportNarrative } from "@/features/report/narrative";
+import { SufficiencyPanel } from "@/features/report/sufficiency-panel";
 import { RecommendationBlock } from "@/features/report/recommendation-block";
 import { ReportMap } from "@/features/report/report-map";
 import { useReport } from "@/features/report/use-report";
@@ -61,7 +62,8 @@ export default function ReportPage() {
     );
   }
 
-  const band = RISK_BANDS[report.overall_band];
+  // Null when no composite could be estimated (rule-engine-v2 onward).
+  const band = report.overall_band ? RISK_BANDS[report.overall_band] : null;
   const factors = FACTOR_ORDER.map((name) => report.factors.find((f) => f.factor === name)).filter(
     (f) => f !== undefined,
   );
@@ -117,14 +119,19 @@ export default function ReportPage() {
             <section className="flex flex-col gap-3 rounded-lg border p-5 print:break-inside-avoid">
               <div>
                 <p className="text-xs text-muted-foreground">Overall climate risk</p>
-                <p className={`text-4xl font-semibold ${band.textClass}`}>{band.label}</p>
+                {band ? (
+                  <p className={`text-4xl font-semibold ${band.textClass}`}>{band.label}</p>
+                ) : (
+                  <p className="text-4xl font-semibold text-muted-foreground">Not estimable</p>
+                )}
                 <p className="mt-1 text-sm text-muted-foreground tabular-nums">
-                  Score {Math.round(report.overall_score)} / 100 ·{" "}
+                  {report.overall_score === null ? "No overall score" : `Score ${Math.round(report.overall_score)} / 100`}{" "}
+                  ·{" "}
                   <span
                     className="rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-foreground"
-                    title="Reflects how many usable satellite observations were available — data quality, not risk."
+                    title="The share of expected monthly satellite observations that were usable — data quality, not confidence in the score and not risk."
                   >
-                    Confidence {Math.round(report.confidence)}%
+                    Data completeness {Math.round(report.confidence)}%
                   </span>
                 </p>
               </div>
@@ -141,6 +148,8 @@ export default function ReportPage() {
               <ReportMap geometry={report.farm.geometry} className="absolute inset-0" />
             </section>
           </div>
+
+          <SufficiencyPanel report={report} />
 
           <RecommendationBlock report={report} />
 

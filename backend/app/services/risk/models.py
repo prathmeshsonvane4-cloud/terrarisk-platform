@@ -83,24 +83,96 @@ class RiskEngineConfig:
 
 
 @dataclass(frozen=True)
+class SubSignal:
+    """One input to a factor's score, and whether it could be computed.
+
+    A factor is an average of sub-signals (water availability averages
+    MNDWI, NDMI and rainfall). Before Phase C, a sub-signal that could not
+    be computed simply dropped out of that average, so a factor built from
+    one of its three signals looked identical to one built from all three.
+    Recording each one is what lets confidence and sufficiency see the gap.
+    """
+
+    name: str
+    # 0-100 risk contribution. None when not computable.
+    risk: float | None
+    missing_reason: str | None = None
+    # A statistical interval on `risk`, where the method supports one — see
+    # app/services/risk/confidence.py. None means not estimated, not zero.
+    interval: tuple[float, float] | None = None
+    # Baseline samples behind a seasonal statistic; None where not applicable.
+    samples: int | None = None
+    # The monthly period of the reading a seasonal statistic ranked, so a
+    # shortfall can be stated as "3 years of July imagery", not "3 samples".
+    reading_period: date | None = None
+
+
+@dataclass(frozen=True)
 class FactorResult:
     factor: RiskFactor
-    score: float
-    band: RiskBand
-    raw_inputs: dict[str, float | int | None] = field(default_factory=dict)
+    # None when no sub-signal could be computed. Before Phase C this was a
+    # neutral 50, averaged into the overall score at full weight as though it
+    # had been measured — the single production assessment was three-quarters
+    # made of those. A factor that was not measured now says so.
+    score: float | None
+    band: RiskBand | None
+    raw_inputs: dict[str, float | int | str | None] = field(default_factory=dict)
+    sub_signals: list[SubSignal] = field(default_factory=list)
+    # Interval on `score` built from the sub-signals that have one. See
+    # ModelConfidence.interval_coverage for how complete it is.
+    interval: tuple[float, float] | None = None
+
+    @property
+    def computed(self) -> bool:
+        return self.score is not None
+
+
+@dataclass(frozen=True)
+class ModelConfidence:
+    """A statistical property of the estimate — how well determined it is by
+    the data it used. Deliberately says nothing about whether that is enough
+    for any particular decision; that is `decision_sufficiency`, computed
+    separately against a stated policy.
+
+    Only baseline-sampling uncertainty in the seasonal percentile signals is
+    quantified today. VCI, rainfall anomaly and JRC occurrence have no
+    uncertainty model, and no measurement error from any product is included.
+    `interval_coverage` and `statement` say so on every result.
+    """
+
+    factors_computed: int
+    factors_total: int
+    # Share of the configured factor weight carried by computed factors, 0-1.
+    weight_coverage: float
+    # Whether a composite score is statistically meaningful at all. When
+    # False, the overall score is None rather than an average of whatever
+    # happened to be computable.
+    overall_estimable: bool
+    overall_interval: tuple[float, float] | None
+    # "full": every computed factor has an interval. "partial": some do, and
+    # the interval understates the true uncertainty. "none": no interval.
+    interval_coverage: str
+    confidence_level: float
+    statement: str
 
 
 @dataclass(frozen=True)
 class RiskResult:
-    overall_score: float
-    overall_band: RiskBand
+    # None when the composite cannot be estimated. See ModelConfidence.
+    overall_score: float | None
+    overall_band: RiskBand | None
+    # LEGACY NAME: this is optical data completeness — the share of expected
+    # monthly Sentinel-2 composites that were usable — not model confidence
+    # and not decision sufficiency. Kept under this name because the API,
+    # database and every report read it; see `model_confidence` for the
+    # statistical property and the sufficiency evaluator for the other.
     confidence: float
     factors: list[FactorResult]
     model_version: str
     weights_version_id: str
-    # The plain weighted average of factor scores, BEFORE the floor rule
-    # (Blueprint §07) can raise it — persisted so the Method tab can show
-    # honest score anatomy (M2B P9): when this differs from overall_score,
-    # the floor rule fired, and the UI must say so rather than implying
-    # the four contribution bars simply sum to the composite.
-    weighted_average_score: float
+    # The plain weighted average of computed factor scores, BEFORE the floor
+    # rule (Blueprint §07) can raise it — persisted so the Method tab can
+    # show honest score anatomy (M2B P9): when this differs from
+    # overall_score, the floor rule fired. None when not estimable.
+    weighted_average_score: float | None
+    model_confidence: ModelConfidence | None = None

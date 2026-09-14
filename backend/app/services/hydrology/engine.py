@@ -48,6 +48,7 @@ from datetime import date
 from app.models.enums import CalibrationStatus, StorageChangeBand
 from app.services.hydrology.models import (
     AnnualWaterBalance,
+    InsufficientEvidenceError,
     WaterBalanceBundle,
     WaterBalanceConfig,
     WaterBalanceEngineResult,
@@ -134,15 +135,13 @@ _STORAGE_CHANGE_BAND_THRESHOLDS: tuple[tuple[float, StorageChangeBand], ...] = (
     (150.0, StorageChangeBand.ABOVE_NORMAL),
 )
 
-# Mirrors RiskEngine's `_NEUTRAL_SCORE` fallback-when-no-data convention:
-# when storage_change_mm cannot be computed at all (every rainfall/ET
-# month is missing), the engine still returns a deterministic band rather
-# than raising or leaving the field unset — `storage_change_band` is not
-# `Optional` on WaterBalanceEngineResult. `data_completeness` (which will
-# be at or near 0 in this case) is what tells a caller/report layer not
-# to trust the band — the same separation of concerns RiskEngine already
-# relies on, not a new pattern invented here.
-_NEUTRAL_STORAGE_CHANGE_BAND = StorageChangeBand.NORMAL
+# PHASE C: there is no neutral band. When storage change could not be
+# computed at all, this engine used to return NORMAL — so a catchment with no
+# rainfall or ET data reported "Normal" storage as its headline, on the
+# grounds that data_completeness near zero would tell a reader not to trust
+# it. A headline that has to be disbelieved from a second number is not a
+# finding. compute() now raises InsufficientEvidenceError instead: no report,
+# and a reason.
 
 
 def _valid_values(series: list[MonthlyValue]) -> list[float]:
@@ -352,11 +351,18 @@ class WaterBalanceEngine:
         if rainfall_mm is not None and et_mm is not None and runoff_mm is not None:
             storage_change_mm = rainfall_mm - et_mm - runoff_mm
 
-        storage_change_band = (
-            _band_for_storage_change(storage_change_mm)
-            if storage_change_mm is not None
-            else _NEUTRAL_STORAGE_CHANGE_BAND
-        )
+        if storage_change_mm is None:
+            missing = [
+                name
+                for name, value in (("rainfall", rainfall_mm), ("evapotranspiration", et_mm), ("runoff", runoff_mm))
+                if value is None
+            ]
+            named = missing[0] if len(missing) == 1 else f"{', '.join(missing[:-1])} or {missing[-1]}"
+            raise InsufficientEvidenceError(
+                f"The water balance could not be computed: no usable {named} data for this catchment across the "
+                "whole period."
+            )
+        storage_change_band = _band_for_storage_change(storage_change_mm)
 
         # Mirrors RiskEngine._compute_confidence()'s exact reasoning:
         # ET (MODIS, fill/QC-masked — see gee_hydrology_provider.py)

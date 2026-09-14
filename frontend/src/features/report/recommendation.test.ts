@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { components } from "@/lib/api/schema";
 
 import type { FactorScore } from "./drivers";
-import { buildRecommendation, RECOMMENDATION_CONFIDENCE_THRESHOLD } from "./recommendation";
+import { buildRecommendation, NO_OVERALL_SCORE_ACTION, RECOMMENDATION_CONFIDENCE_THRESHOLD } from "./recommendation";
 
 type ReportResponse = components["schemas"]["ReportResponse"];
 
@@ -13,7 +13,7 @@ function factor(
   band: FactorScore["band"],
   raw: Record<string, unknown> = {},
 ): FactorScore {
-  return { factor: name, value, band, raw_inputs: raw };
+  return { factor: name, value, band, computed: true, raw_inputs: raw };
 }
 
 function report(overrides: Partial<ReportResponse> = {}): ReportResponse {
@@ -99,11 +99,29 @@ describe("buildRecommendation", () => {
 
     const sparse = buildRecommendation(report({ confidence: RECOMMENDATION_CONFIDENCE_THRESHOLD - 1 }));
     expect(sparse.isIndicativeOnly).toBe(true);
-    expect(sparse.action).toContain("Indicative only — limited satellite data available (confidence 69%)");
+    expect(sparse.action).toContain("Indicative only — limited satellite data available (data completeness 69%)");
   });
 
   it("never invents advice beyond the fixed template — action is always one of the four postures", () => {
     const rec = buildRecommendation(report({ overall_band: "very_high", confidence: 50 }));
     expect(rec.action).toContain("Refer to branch manager. Recommend independent field verification");
+  });
+});
+
+
+describe("an assessment with no overall score (rule-engine-v2)", () => {
+  it("gives no band posture and says not to rely on the report", () => {
+    const recommendation = buildRecommendation(report({ overall_score: null, overall_band: null }));
+    expect(recommendation.action).toBe(NO_OVERALL_SCORE_ACTION);
+    expect(recommendation.isIndicativeOnly).toBe(true);
+    expect(recommendation.summary).toContain("No overall climate risk score could be estimated");
+  });
+
+  it("never lists an uncomputed factor as a primary driver", () => {
+    const base = report();
+    const uncomputed = report({
+      factors: base.factors.map((f) => ({ ...f, value: null, band: null, computed: false })),
+    });
+    expect(buildRecommendation(uncomputed).primaryDrivers).toEqual([]);
   });
 });

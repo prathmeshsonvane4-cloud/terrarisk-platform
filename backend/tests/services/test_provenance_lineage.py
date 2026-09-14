@@ -125,11 +125,23 @@ class TestNothingIsLabelledValidated:
         for item in [*_water_balance().values(), *_risk(), *_stress()]:
             assert item.validation_status is EvidenceValidation.UNVALIDATED, item.quantity
 
-    def test_known_defects_are_carried_into_the_lineage_of_the_result_they_affect(self):
-        """The neutral-score fallback is a real, open defect. The lineage of
-        a score it can distort says so."""
-        neutral = _by_quantity(_risk())["neutral_score_when_uncomputable"]
-        assert "as if measured" in neutral.known_limitations[0]
+    def test_the_composite_rule_that_replaced_the_neutral_score_is_recorded(self):
+        """Phase C removed the neutral-50 fallback. The lineage of a score
+        records the rule that replaced it, with its values imported from the
+        engine."""
+        from app.services.risk import engine as risk_engine
+
+        items = _by_quantity(_risk())
+        assert "neutral_score_when_uncomputable" not in items
+        rule = items["composite_min_weight_coverage"]
+        assert rule.value == risk_engine._MIN_WEIGHT_COVERAGE
+        assert "never scored neutral" in rule.known_limitations[0]
+        assert items["confidence_level"].value == pytest.approx(0.90)
+
+    def test_a_small_farm_is_told_its_rainfall_is_regional(self):
+        items = _by_quantity(_risk(farm_area_ha=0.25))
+        assert any("0.25 ha farm" in lim for lim in items["rainfall_monthly_mm"].known_limitations)
+        assert "centroid" in items["rainfall_monthly_mm"].reducer
 
 
 class TestUndescribedProviders:

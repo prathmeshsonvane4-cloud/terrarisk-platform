@@ -21,7 +21,27 @@ from datetime import date
 from app.models.enums import CalibrationStatus, StorageChangeBand
 from app.services.risk.models import MonthlyValue
 
-__all__ = ["AnnualWaterBalance", "WaterBalanceBundle", "WaterBalanceConfig", "WaterBalanceEngineResult"]
+__all__ = [
+    "AnnualWaterBalance",
+    "InsufficientEvidenceError",
+    "WaterBalanceBundle",
+    "WaterBalanceConfig",
+    "WaterBalanceEngineResult",
+]
+
+
+class InsufficientEvidenceError(ValueError):
+    """Raised when the evidence cannot support a result at all.
+
+    Replaces the neutral stand-ins both Water Intelligence engines used to
+    return — a "Normal" storage band when storage change could not be
+    computed, a stress score of 50 when no factor could — which presented
+    "nothing was measured" as a finding. Failing the report loudly is the
+    honest outcome: no report, and a reason.
+
+    The message is written for the person who requested the report and is
+    safe to show them. It must never contain internal detail.
+    """
 
 
 @dataclass(frozen=True)

@@ -90,10 +90,11 @@ class Trend:
     previous_value: float | None = None
 
 
-def trend(current: float, previous: float | None) -> Trend:
+def trend(current: float | None, previous: float | None) -> Trend:
     """`previous=None` means this farm has no earlier assessment — the
-    honest answer is "no trend available," never an assumed baseline."""
-    if previous is None:
+    honest answer is "no trend available," never an assumed baseline. The
+    same holds when either side was not computed."""
+    if current is None or previous is None:
         return Trend(available=False)
 
     delta = current - previous
@@ -111,11 +112,13 @@ def assessment_quality_label(confidence: float) -> str:
     return "Limited"
 
 
-def monitoring_cadence(overall_band: RiskBand, confidence: float, confidence_threshold: float) -> str:
+def monitoring_cadence(overall_band: RiskBand | None, confidence: float, confidence_threshold: float) -> str:
     """How often this farm should be reassessed — directly answers "how
     often should this farm be monitored?" Low confidence overrides a
     favorable band: a Low-risk score built on sparse data still warrants
     closer monitoring than a Low-risk score with strong data behind it."""
-    if confidence < confidence_threshold:
+    # No overall score is treated like low confidence: nothing supports a
+    # relaxed cadence.
+    if overall_band is None or confidence < confidence_threshold:
         return _MONITORING_CADENCE_BY_BAND[RiskBand.VERY_HIGH]
     return _MONITORING_CADENCE_BY_BAND[overall_band]

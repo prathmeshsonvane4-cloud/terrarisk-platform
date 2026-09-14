@@ -5,10 +5,12 @@ so Alembic (and the offline DDL-compile tests) see the complete schema.
 from app.models.admin import AdminBoundary, Branch, VillageBranchLookup
 from app.models.catchment import Catchment
 from app.models.cgwb import CgwbGroundwaterObservation
+from app.models.decision_policy import DecisionPolicy
 from app.models.evidence import EvidenceRecord, ValidationFinding, ValidationRun
 from app.models.farm import FarmPolygon
 from app.models.job import Job
 from app.models.loan import FarmerIdentity, Loan
+from app.models.observation_fetch import ObservationFetch
 from app.models.organization import Organization
 from app.models.risk import ConfigWeight, RiskFactorScore, RiskRollup, RiskScore
 from app.models.satellite import SatelliteObservation
@@ -21,12 +23,14 @@ __all__ = [
     "VillageBranchLookup",
     "Catchment",
     "CgwbGroundwaterObservation",
+    "DecisionPolicy",
     "EvidenceRecord",
     "ValidationRun",
     "ValidationFinding",
     "FarmPolygon",
     "FarmerIdentity",
     "Loan",
+    "ObservationFetch",
     "Organization",
     "SatelliteObservation",
     "ConfigWeight",

@@ -23,8 +23,10 @@ class AssessmentSummary(BaseModel):
     the full report stays behind GET /reports/{id}."""
 
     risk_score_id: UUID
-    overall_score: float
-    overall_band: RiskBand
+    # Null when no composite could be estimated.
+    overall_score: float | None
+    overall_band: RiskBand | None
+    # Legacy name: optical data completeness.
     confidence: float
     computed_at: datetime
     model_version: str
@@ -97,8 +99,10 @@ class ReportListItem(BaseModel):
     district_name: str
     area_ha: float
     officer_name: str
-    overall_score: float
-    overall_band: RiskBand
+    # Null when no composite could be estimated.
+    overall_score: float | None
+    overall_band: RiskBand | None
+    # Legacy name: optical data completeness.
     confidence: float
     computed_at: datetime
     model_version: str

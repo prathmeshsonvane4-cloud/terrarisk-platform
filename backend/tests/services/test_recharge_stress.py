@@ -11,6 +11,7 @@ from datetime import date
 import pytest
 
 from app.models.enums import BaselineWindow, StressBand
+from app.services.hydrology.models import InsufficientEvidenceError
 from app.services.hydrology import recharge_stress as recharge_stress_module
 from app.services.hydrology.recharge_stress import (
     RechargeStressBundle,
@@ -146,15 +147,17 @@ class TestRainfallAnomalyScoring:
         )
         assert stress == 0.0
 
-    def test_missing_rainfall_data_falls_back_to_neutral(self):
+    def test_missing_rainfall_data_is_not_computed(self):
+        """REPLACES a neutral-50 assertion (Phase C)."""
         stress, ratio = recharge_stress_module._score_rainfall_anomaly(_series([None, None, None]), {m: 80.0 for m in range(1, 13)})
         assert ratio is None
-        assert stress == 50.0
+        assert stress is None
 
-    def test_empty_normal_by_month_falls_back_to_neutral(self):
+    def test_empty_normal_by_month_is_not_computed(self):
+        """REPLACES a neutral-50 assertion (Phase C)."""
         stress, ratio = recharge_stress_module._score_rainfall_anomaly(_series([80.0, 80.0, 80.0]), {})
         assert ratio is None
-        assert stress == 50.0
+        assert stress is None
 
 
 def _same_month_across_years(values: list[float | None], month: int = 7) -> list[MonthlyValue]:
@@ -197,8 +200,8 @@ class TestVegetationConditionScoring:
         old all-months-mixed comparison scored it VCI=0 / stress=100 —
         "severe stress" for a perfectly normal year, purely because of
         WHEN the report was run. With no other April on record it is now
-        correctly reported as not computable, falling back to neutral
-        rather than inventing an alarming number.
+        correctly reported as not computable rather than inventing an
+        alarming number — and, since Phase C, not a neutral one either.
         """
         seasonal = [
             MonthlyValue(period_start=date(2024, 7, 1), value=0.8),
@@ -207,21 +210,22 @@ class TestVegetationConditionScoring:
         ]
         stress, vci = recharge_stress_module._score_vegetation_condition(seasonal, seasonal)
         assert vci is None
-        assert stress == 50.0
+        assert stress is None
 
-    def test_no_valid_observations_falls_back_to_neutral(self):
+    def test_no_valid_observations_is_not_computed(self):
+        """REPLACES a neutral-50 assertion (Phase C)."""
         empty = _series([None, None, None])
         stress, vci = recharge_stress_module._score_vegetation_condition(empty, empty)
         assert vci is None
-        assert stress == 50.0
+        assert stress is None
 
-    def test_degenerate_flat_history_falls_back_to_neutral(self):
+    def test_degenerate_flat_history_is_not_computed(self):
         """max == min: VCI's denominator would be zero — must not raise
-        ZeroDivisionError, falls back to neutral instead."""
+        ZeroDivisionError, and must not stand in a neutral score either."""
         flat = _same_month_across_years([0.5, 0.5, 0.5, 0.5, 0.5])
         stress, vci = recharge_stress_module._score_vegetation_condition(flat, flat)
         assert vci is None
-        assert stress == 50.0
+        assert stress is None
 
 
 class TestSurfaceWaterTrendScoring:
@@ -264,20 +268,21 @@ class TestSurfaceWaterTrendScoring:
         assert trend == pytest.approx(50.0)
         assert stress == pytest.approx(50.0)
 
-    def test_no_valid_observations_falls_back_to_neutral(self):
+    def test_no_valid_observations_is_not_computed(self):
+        """REPLACES a neutral-50 assertion (Phase C)."""
         empty = _series([None, None, None])
         stress, trend = recharge_stress_module._score_surface_water_trend(empty, empty)
         assert trend is None
-        assert stress == 50.0
+        assert stress is None
 
-    def test_too_few_baseline_samples_falls_back_to_neutral(self):
+    def test_too_few_baseline_samples_is_not_computed(self):
         """Below MIN_BASELINE_SAMPLES the rank carries no information, so
         the factor reports not-computable rather than a number derived
         from a handful of points."""
         julys = _same_month_across_years([10.0, 20.0])
         stress, trend = recharge_stress_module._score_surface_water_trend(julys, julys)
         assert trend is None
-        assert stress == 50.0
+        assert stress is None
 
 
 class TestWeightedComposite:
@@ -298,14 +303,34 @@ class TestWeightedComposite:
         assert result.stress_score == pytest.approx(64.0)
         assert result.stress_band == StressBand.HIGH
 
-    def test_zero_total_weight_falls_back_to_neutral_score(self):
+    def test_zero_total_weight_is_a_configuration_error_not_a_neutral_score(self):
+        """REPLACES a neutral-50 assertion. All-zero weights are a broken
+        configuration, and are reported as one — not as missing evidence,
+        and not as a stress score."""
         zero_weights = {
             RechargeStressFactor.RAINFALL_ANOMALY: 0.0,
             RechargeStressFactor.VEGETATION_CONDITION: 0.0,
             RechargeStressFactor.SURFACE_WATER_TREND: 0.0,
         }
-        result = RechargeStressEngine().compute(_bundle(), _config(weights=zero_weights))
-        assert result.stress_score == 50.0
+        with pytest.raises(ValueError, match="no weight") as raised:
+            RechargeStressEngine().compute(_bundle(), _config(weights=zero_weights))
+        assert not isinstance(raised.value, InsufficientEvidenceError)
+
+    def test_an_uncomputed_factor_is_excluded_from_the_composite(self, monkeypatch):
+        """Phase C: rainfall 80 (w=0.5) and surface water 60 (w=0.2) computed,
+        vegetation not. The composite is (80*0.5 + 60*0.2) / 0.7, not a
+        three-way average with a stand-in 50 for vegetation."""
+        monkeypatch.setattr(recharge_stress_module, "_score_rainfall_anomaly", lambda *a: (80.0, 0.5))
+        monkeypatch.setattr(recharge_stress_module, "_score_vegetation_condition", lambda *a: (None, None))
+        monkeypatch.setattr(recharge_stress_module, "_score_surface_water_trend", lambda *a: (60.0, 70.0))
+        weights = {
+            RechargeStressFactor.RAINFALL_ANOMALY: 0.5,
+            RechargeStressFactor.VEGETATION_CONDITION: 0.3,
+            RechargeStressFactor.SURFACE_WATER_TREND: 0.2,
+        }
+        result = RechargeStressEngine().compute(_bundle(), _config(weights=weights))
+        assert result.stress_score == pytest.approx((80.0 * 0.5 + 60.0 * 0.2) / 0.7)
+        assert result.raw_inputs["factors_not_computed"] == ["vegetation_condition"]
 
     def test_missing_weight_for_a_factor_defaults_to_zero_contribution(self, monkeypatch):
         """A factor absent from the weights dict contributes 0 weight —
@@ -348,8 +373,10 @@ class TestConfidence:
         all-weather) are not, and are excluded."""
         bundle = _bundle(
             ndvi_monthly=_series([0.3, 0.5, None]),  # 2/3 valid
-            rainfall_monthly=_series([None, None, None]),  # fully missing, irrelevant
-            surface_water_monthly=_series([None, None, None]),  # fully missing, irrelevant
+            # Surface water fully missing, irrelevant to completeness. Rainfall
+            # stays present: with nothing computable at all there is no result
+            # to read completeness from (Phase C).
+            surface_water_monthly=_series([None, None, None]),
         )
         result = RechargeStressEngine().compute(bundle, _config())
         assert result.confidence == pytest.approx((2 / 3) * 100.0)
@@ -366,30 +393,24 @@ class TestConfidence:
 
 
 class TestMissingData:
-    def test_all_series_missing_does_not_raise_and_falls_back_to_neutral(self):
+    def test_all_series_missing_fails_loudly_instead_of_reporting_moderate_stress(self):
+        """REPLACES a test asserting a neutral 50 / MODERATE band here: a
+        catchment with no usable data reported "Moderate" recharge stress."""
         bundle = _bundle(
             rainfall_monthly=_series([None, None, None]),
             ndvi_monthly=_series([None, None, None]),
             surface_water_monthly=_series([None, None, None]),
         )
-        result = RechargeStressEngine().compute(bundle, _config())
+        with pytest.raises(InsufficientEvidenceError) as raised:
+            RechargeStressEngine().compute(bundle, _config())
+        message = str(raised.value)
+        assert "rainfall anomaly" in message and "surface water trend" in message
 
-        assert result.rainfall_anomaly_ratio is None
-        assert result.vci is None
-        assert result.surface_water_trend is None
-        # pytest.approx, not ==: the default _config() fixture uses 1/3
-        # weights per factor, and 50*(1/3+1/3+1/3) is not exactly 50.0 in
-        # binary floating point — a fixture-precision fact, not an engine
-        # bug (mirrors why test_water_balance_engine.py uses approx for
-        # any arithmetic that isn't provably exact).
-        assert result.stress_score == pytest.approx(50.0)
-        assert result.stress_band == StressBand.MODERATE
-        assert result.confidence == 0.0
-
-    def test_empty_series_are_valid_input_not_an_error(self):
+    def test_empty_series_are_insufficient_evidence(self):
+        """REPLACES a neutral-50 assertion (Phase C)."""
         bundle = _bundle(rainfall_monthly=[], ndvi_monthly=[], surface_water_monthly=[])
-        result = RechargeStressEngine().compute(bundle, _config())
-        assert result.stress_score == pytest.approx(50.0)
+        with pytest.raises(InsufficientEvidenceError):
+            RechargeStressEngine().compute(bundle, _config())
 
 
 class TestBaselineWindow:
@@ -409,7 +430,8 @@ class TestBaselineWindow:
 
 class TestModelVersion:
     def test_engine_has_a_model_version_class_constant(self):
-        assert RechargeStressEngine.MODEL_VERSION == "recharge-stress-engine-v1"
+        # v2 (Phase C): uncomputed factors are excluded, not scored neutral.
+        assert RechargeStressEngine.MODEL_VERSION == "recharge-stress-engine-v2"
 
     def test_result_is_stamped_with_the_engines_own_model_version(self):
         result = RechargeStressEngine().compute(_bundle(), _config())

@@ -577,3 +577,20 @@ async def test_a_report_from_before_lineage_says_provenance_was_not_recorded(api
     assert body["provenance_recorded"] is False
     assert "cannot be recovered" in body["provenance_note"]
     assert body["evidence"] == []
+
+
+@pytest.mark.asyncio
+async def test_report_series_stay_within_the_reports_own_window(api_client, scenario):
+    """Since Phase C the cache also holds the eight-year seasonal baseline.
+    An unbounded read charted all of it — 132 months — as though the report
+    covered them. The series must be exactly this report's window."""
+    token = await _login(api_client, scenario["officer"].email)
+    risk_score_id = await _completed_report(api_client, token, scenario["village"].id)
+
+    report = (await api_client.get(f"/api/v1/reports/{risk_score_id}", headers={"Authorization": f"Bearer {token}"})).json()
+
+    window_start = report["evidence"]["observation_window_start"]
+    window_end = report["evidence"]["observation_window_end"]
+    for series in report["series"].values():
+        assert all(window_start <= point["period_start"] < window_end for point in series)
+    assert len(report["series"]["ndvi"]) <= 36

@@ -117,7 +117,7 @@ def test_adds_the_indicative_only_qualifier_only_below_the_confidence_threshold(
 
     sparse = build_recommendation(_report(confidence=RECOMMENDATION_CONFIDENCE_THRESHOLD - 1))
     assert sparse.is_indicative_only is True
-    assert "Indicative only — limited satellite data available (confidence 69%)" in sparse.action
+    assert "Indicative only — limited satellite data available (data completeness 69%)" in sparse.action
 
 
 def test_never_invents_advice_beyond_the_fixed_template_action_is_always_one_of_the_four_postures():
@@ -149,7 +149,7 @@ def test_why_bullets_capped_at_five_and_always_end_with_the_standing_disclaimer(
     bullets = recommendation_why_bullets(report, rec)
     assert len(bullets) <= 5
     assert bullets[-1] == "Decision support only — the credit decision remains with the bank."
-    assert any("Confidence is 50%" in b for b in bullets)
+    assert any("Data completeness is 50%" in b for b in bullets)
 
 
 def test_why_bullets_never_empty_even_with_no_primary_drivers():

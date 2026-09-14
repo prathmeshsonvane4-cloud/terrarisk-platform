@@ -44,9 +44,11 @@ EXPECTED_TABLES = {
     "farm_polygon",
     "farmer_identity",
     "loan",
+    "observation_fetch",
     "satellite_observation",
     "organization",
     "config_weight",
+    "decision_policy",
     "cgwb_groundwater_observation",
     "evidence_record",
     "recharge_stress_score",
@@ -239,3 +241,36 @@ def test_the_migration_constraints_match_the_model_constraints():
             model_values = set(re.findall(r"'([^']+)'", str(constraint.sqltext)))
             for value in model_values:
                 assert f"'{value}'" in migration, f"{constraint.name}: '{value}' missing from migration 0012"
+
+
+def test_the_seeded_decision_policy_is_the_code_default():
+    """Migration 0013 writes sufficiency-v1 out literally so it stays a fixed
+    record. If the code default changes without a new policy version, a fresh
+    database and the code would disagree about what the rules are."""
+    import importlib.util
+    from pathlib import Path
+
+    from app.services.sufficiency import DEFAULT_POLICY
+
+    path = Path(__file__).parents[1] / "alembic" / "versions" / "0013_confidence_and_sufficiency.py"
+    spec = importlib.util.spec_from_file_location("migration_0013", path)
+    migration = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(migration)
+    assert migration.SUFFICIENCY_V1 == DEFAULT_POLICY.model_dump(mode="json")
+
+
+def test_a_factor_score_cannot_be_computed_without_a_value_or_carry_one_without_being_computed():
+    """The database's half of 'no invented scores': a stored factor is either
+    computed with a value and band, or not computed with neither."""
+    table = Base.metadata.tables["risk_factor_score"]
+    constraint = next(
+        c for c in table.constraints if isinstance(c, CheckConstraint) and c.name == "ck_risk_factor_score_computed_has_value"
+    )
+    text = str(constraint.sqltext)
+    assert "NOT computed AND value IS NULL AND band IS NULL" in text
+
+
+def test_overall_and_factor_scores_are_nullable():
+    assert Base.metadata.tables["risk_score"].c.overall_score.nullable
+    assert Base.metadata.tables["risk_score"].c.overall_band.nullable
+    assert Base.metadata.tables["risk_factor_score"].c.value.nullable

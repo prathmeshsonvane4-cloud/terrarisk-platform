@@ -12,7 +12,7 @@ function factor(
   value: number,
   raw: Record<string, unknown>,
 ): FactorScore {
-  return { factor: name, value, band: "moderate", raw_inputs: raw };
+  return { factor: name, value, band: "moderate", computed: true, raw_inputs: raw };
 }
 
 const FULL_FACTORS: FactorScore[] = [
@@ -29,7 +29,7 @@ const FULL_FACTORS: FactorScore[] = [
 describe("factorDriverText", () => {
   it("states real numbers from raw_inputs, no invented causes", () => {
     expect(factorDriverText(FULL_FACTORS[0])).toBe(
-      "Current NDVI 0.42 sits at the 70th percentile of this farm's own 3-year range.",
+      "Current NDVI 0.42 sits at the 70th percentile of the same calendar month across the baseline years.",
     );
     expect(factorDriverText(FULL_FACTORS[2])).toContain("Vegetation Condition Index at 41");
     expect(factorDriverText(FULL_FACTORS[2])).toContain("87% of the seasonal normal");
@@ -52,7 +52,7 @@ describe("factorDriverText", () => {
       ndvi_percentile: null,
       history_months: 0,
     });
-    expect(factorDriverText(sparse)).toContain("neutral score was applied");
+    expect(factorDriverText(sparse)).toContain("neutral score of 50 was applied by the previous engine version");
   });
 
   it("mentions only the sub-signals actually present", () => {
@@ -91,7 +91,7 @@ describe("reportNarrative", () => {
     expect(text).toContain("highest-scoring factor is drought risk at 62/100");
     expect(text).toContain("recent seasonal rainfall was 87% of the long-term normal");
     expect(text).toContain("Flood exposure scores lowest at 12/100");
-    expect(text).toContain("confidence is 94%");
+    expect(text).toContain("Data completeness is 94%");
   });
 
   it("omits the rainfall clause when the engine had no ratio", () => {

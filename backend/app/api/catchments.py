@@ -142,6 +142,7 @@ from app.schemas.water_report import (
 )
 from app.services.boundary_parser import BoundaryParseError, parse_boundary_file
 from app.services.hydrology.engine import WaterBalanceEngine
+from app.services.hydrology.models import InsufficientEvidenceError
 from app.services.hydrology.gee_hydrology_provider import GEEHydrologyProvider
 from app.services.hydrology.recharge_stress import RechargeStressEngine
 from app.services.hydrology.water_report_generator import generate_water_report
@@ -426,6 +427,18 @@ async def _run_water_report_job_exclusively(job_id: UUID, catchment_id: UUID) ->
                 water_balance_engine=WaterBalanceEngine(),
                 recharge_stress_engine=RechargeStressEngine(),
             )
+        except InsufficientEvidenceError as error:
+            # Not a malfunction: the evidence cannot support a report. Its
+            # message is written for the requester and is safe to show, so
+            # it replaces the generic "please retry" — a retry would fail
+            # the same way, and telling someone to retry would be wrong.
+            logger.warning(
+                "water_report_insufficient_evidence",
+                extra={"job_id": str(job_id), "catchment_id": str(catchment_id), "reason": str(error)},
+            )
+            await db.rollback()
+            await _fail_water_report_job(job_id, str(error), db=db)
+            return
         except Exception:
             # Full detail goes to the server log only; the job row (and
             # therefore the API) only ever exposes the same generic

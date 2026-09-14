@@ -4,7 +4,7 @@ import { FACTOR_LABELS, type FactorScore } from "./drivers";
 
 type ReportResponse = components["schemas"]["ReportResponse"];
 
-const BAND_PHRASE: Record<ReportResponse["overall_band"], string> = {
+const BAND_PHRASE: Record<NonNullable<ReportResponse["overall_band"]>, string> = {
   low: "low",
   moderate: "moderate",
   high: "high",
@@ -32,13 +32,21 @@ function rainfallClause(factors: FactorScore[]): string | null {
  * compute.
  */
 export function reportNarrative(report: ReportResponse): string {
-  const sorted = [...report.factors].sort((a, b) => b.value - a.value);
+  const computed = report.factors.filter(
+    (f): f is FactorScore & { value: number } => f.value !== null,
+  );
+  const sorted = [...computed].sort((a, b) => b.value - a.value);
   const highest = sorted[0];
   const lowest = sorted[sorted.length - 1];
 
-  const sentences: string[] = [
-    `This farm shows ${BAND_PHRASE[report.overall_band]} overall climate risk (score ${Math.round(report.overall_score)}/100).`,
-  ];
+  const sentences: string[] =
+    report.overall_score === null || report.overall_band === null
+      ? [
+          `No overall climate risk score could be estimated for this farm: ${computed.length} of ${report.factors.length} risk factors had enough usable evidence to compute.`,
+        ]
+      : [
+          `This farm shows ${BAND_PHRASE[report.overall_band]} overall climate risk (score ${Math.round(report.overall_score)}/100).`,
+        ];
 
   if (highest && lowest && highest.factor !== lowest.factor) {
     const clauses = [
@@ -52,8 +60,9 @@ export function reportNarrative(report: ReportResponse): string {
     );
   }
 
+  // Data completeness under its legacy field name, stated as what it is.
   sentences.push(
-    `Assessment confidence is ${Math.round(report.confidence)}%, reflecting how many usable satellite observations were available.`,
+    `Data completeness is ${Math.round(report.confidence)}% — the share of expected monthly satellite observations that were usable, not a measure of confidence in the score.`,
   );
 
   return sentences.join(" ");

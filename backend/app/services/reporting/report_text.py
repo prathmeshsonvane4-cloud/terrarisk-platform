@@ -76,17 +76,40 @@ def ordinal(n: int) -> str:
     return f"{n}{suffix}"
 
 
+# Stated when a factor could not be computed (rule-engine-v2 onward). The
+# reasons behind it are in raw_inputs["sub_signals"] and in the report's
+# decision sufficiency, which names each missing signal.
+_NOT_COMPUTED_TEXT = {
+    RiskFactor.VEGETATION_STABILITY: (
+        "Not computed — too little same-month satellite history to rank the current vegetation reading."
+    ),
+    RiskFactor.WATER_AVAILABILITY: (
+        "Not computed — no usable surface-water, crop-moisture or rainfall signal for this farm and period."
+    ),
+    RiskFactor.DROUGHT_RISK: (
+        "Not computed — neither the Vegetation Condition Index nor the rainfall anomaly could be derived."
+    ),
+    RiskFactor.FLOOD_EXPOSURE: "Not computed — no usable surface-water history or rainfall anomaly.",
+}
+
+# Assessments computed by rule-engine-v1 stored a neutral 50 for a factor it
+# could not compute. For those rows that statement is true, and it says so.
+_LEGACY_NEUTRAL = "a neutral score of 50 was applied by the previous engine version"
+
+
 def factor_driver_text(factor: FactorScoreResponse) -> str:
     raw = factor.raw_inputs
+    if factor.value is None:
+        return _NOT_COMPUTED_TEXT[factor.factor]
 
     if factor.factor == RiskFactor.VEGETATION_STABILITY:
         percentile = _as_number(raw.get("ndvi_percentile"))
         current = _as_number(raw.get("current_ndvi"))
         if percentile is None or current is None:
-            return "Not enough usable satellite history for a vegetation comparison — a neutral score was applied."
+            return f"Not enough usable satellite history for a vegetation comparison — {_LEGACY_NEUTRAL}."
         return (
             f"Current NDVI {current:.2f} sits at the {ordinal(js_round(percentile))} percentile "
-            "of this farm's own 3-year range."
+            "of the same calendar month across the baseline years."
         )
 
     if factor.factor == RiskFactor.WATER_AVAILABILITY:
@@ -102,7 +125,7 @@ def factor_driver_text(factor: FactorScoreResponse) -> str:
         if ratio is not None:
             parts.append(f"recent rainfall at {_percent_of_normal(ratio)}")
         if not parts:
-            return "Not enough usable data for the water sub-signals — a neutral score was applied."
+            return f"Not enough usable data for the water sub-signals — {_LEGACY_NEUTRAL}."
         return f"{'; '.join(parts)}."
 
     if factor.factor == RiskFactor.DROUGHT_RISK:
@@ -114,7 +137,7 @@ def factor_driver_text(factor: FactorScoreResponse) -> str:
         if ratio is not None:
             parts.append(f"recent rainfall at {_percent_of_normal(ratio)}")
         if not parts:
-            return "Not enough usable data for the drought sub-signals — a neutral score was applied."
+            return f"Not enough usable data for the drought sub-signals — {_LEGACY_NEUTRAL}."
         return f"{'; '.join(parts)}."
 
     # flood_exposure
@@ -128,7 +151,7 @@ def factor_driver_text(factor: FactorScoreResponse) -> str:
     if ratio is not None:
         parts.append(f"recent rainfall at {_percent_of_normal(ratio)}")
     if not parts:
-        return "Not enough usable data for the flood sub-signals — a neutral score was applied."
+        return f"Not enough usable data for the flood sub-signals — {_LEGACY_NEUTRAL}."
     return f"{'; '.join(parts)}."
 
 
@@ -146,14 +169,21 @@ def _rainfall_clause(factors: list[FactorScoreResponse]) -> str | None:
 
 
 def report_narrative(report: ReportResponse) -> str:
-    sorted_factors = sorted(report.factors, key=lambda f: f.value, reverse=True)
+    computed = [f for f in report.factors if f.value is not None]
+    sorted_factors = sorted(computed, key=lambda f: f.value, reverse=True)
     highest = sorted_factors[0] if sorted_factors else None
     lowest = sorted_factors[-1] if sorted_factors else None
 
-    sentences = [
-        f"This farm shows {_BAND_PHRASE[report.overall_band]} overall climate risk "
-        f"(score {js_round(report.overall_score)}/100)."
-    ]
+    if report.overall_score is None or report.overall_band is None:
+        sentences = [
+            f"No overall climate risk score could be estimated for this farm: {len(computed)} of "
+            f"{len(report.factors)} risk factors had enough usable evidence to compute."
+        ]
+    else:
+        sentences = [
+            f"This farm shows {_BAND_PHRASE[report.overall_band]} overall climate risk "
+            f"(score {js_round(report.overall_score)}/100)."
+        ]
 
     if highest and lowest and highest.factor != lowest.factor:
         clauses = [
@@ -166,9 +196,11 @@ def report_narrative(report: ReportResponse) -> str:
         sentences.append(f"{'; '.join(clauses)}.")
         sentences.append(f"{FACTOR_LABELS[lowest.factor]} scores lowest at {js_round(lowest.value)}/100.")
 
+    # Data completeness under its legacy field name. Stated as what it is:
+    # calling it "confidence" is the conflation Phase C removed.
     sentences.append(
-        f"Assessment confidence is {js_round(report.confidence)}%, "
-        "reflecting how many usable satellite observations were available."
+        f"Data completeness is {js_round(report.confidence)}% — the share of expected monthly satellite "
+        "observations that were usable, not a measure of confidence in the score."
     )
 
     return " ".join(sentences)

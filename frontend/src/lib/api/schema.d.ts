@@ -753,8 +753,8 @@ export interface components {
              */
             risk_score_id: string;
             /** Overall Score */
-            overall_score: number;
-            overall_band: components["schemas"]["RiskBand"];
+            overall_score: number | null;
+            overall_band: components["schemas"]["RiskBand"] | null;
             /** Confidence */
             confidence: number;
             /**
@@ -916,6 +916,24 @@ export interface components {
             created_at: string;
         };
         /**
+         * DecisionSufficiencyResponse
+         * @description Whether the evidence is adequate for a decision at each stakes tier,
+         *     under a stated, versioned and — today — uncalibrated policy. Not a
+         *     recommended action.
+         */
+        DecisionSufficiencyResponse: {
+            /** Policy Version */
+            policy_version: string;
+            /** Calibration Status */
+            calibration_status: string;
+            /** Tiers */
+            tiers: components["schemas"]["TierVerdictResponse"][];
+            /** Caveats */
+            caveats: components["schemas"]["InadequacyResponse"][];
+            /** Statement */
+            statement: string;
+        };
+        /**
          * DelineationMethod
          * @description How a catchment's boundary was obtained (Blueprint v2 Part 5).
          *
@@ -974,8 +992,17 @@ export interface components {
         FactorScoreResponse: {
             factor: components["schemas"]["RiskFactor"];
             /** Value */
-            value: number;
-            band: components["schemas"]["RiskBand"];
+            value: number | null;
+            band: components["schemas"]["RiskBand"] | null;
+            /**
+             * Computed
+             * @default true
+             */
+            computed: boolean;
+            /** Interval Low */
+            interval_low?: number | null;
+            /** Interval High */
+            interval_high?: number | null;
             /** Raw Inputs */
             raw_inputs: {
                 [key: string]: unknown;
@@ -1131,6 +1158,15 @@ export interface components {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
         };
+        /** InadequacyResponse */
+        InadequacyResponse: {
+            /** Code */
+            code: string;
+            /** Statement */
+            statement: string;
+            /** Factor */
+            factor?: string | null;
+        };
         /** JobProgress */
         JobProgress: {
             /** Stages */
@@ -1195,6 +1231,30 @@ export interface components {
             expires_in: number;
             /** Full Name */
             full_name: string;
+        };
+        /**
+         * ModelConfidenceResponse
+         * @description A statistical property of the estimate, independent of any decision.
+         *     Only baseline-sampling uncertainty in the seasonal percentile signals is
+         *     quantified; `interval_coverage` and `statement` say what is not.
+         */
+        ModelConfidenceResponse: {
+            /** Factors Computed */
+            factors_computed: number;
+            /** Factors Total */
+            factors_total: number;
+            /** Weight Coverage */
+            weight_coverage: number;
+            /** Overall Estimable */
+            overall_estimable: boolean;
+            /** Overall Interval */
+            overall_interval: number[] | null;
+            /** Interval Coverage */
+            interval_coverage: string;
+            /** Confidence Level */
+            confidence_level: number;
+            /** Statement */
+            statement: string;
         };
         /**
          * ObservationPoint
@@ -1311,7 +1371,7 @@ export interface components {
             previous_overall_score?: number | null;
             /** Previous Factor Scores */
             previous_factor_scores?: {
-                [key: string]: number;
+                [key: string]: number | null;
             };
         };
         /**
@@ -1382,8 +1442,8 @@ export interface components {
             /** Officer Name */
             officer_name: string;
             /** Overall Score */
-            overall_score: number;
-            overall_band: components["schemas"]["RiskBand"];
+            overall_score: number | null;
+            overall_band: components["schemas"]["RiskBand"] | null;
             /** Confidence */
             confidence: number;
             /**
@@ -1449,10 +1509,12 @@ export interface components {
              */
             village_id: string;
             /** Overall Score */
-            overall_score: number;
-            overall_band: components["schemas"]["RiskBand"];
+            overall_score: number | null;
+            overall_band: components["schemas"]["RiskBand"] | null;
             /** Confidence */
             confidence: number;
+            model_confidence?: components["schemas"]["ModelConfidenceResponse"] | null;
+            decision_sufficiency?: components["schemas"]["DecisionSufficiencyResponse"] | null;
             /** Model Version */
             model_version: string;
             /**
@@ -1567,6 +1629,17 @@ export interface components {
          * @enum {string}
          */
         StressBand: "low" | "moderate" | "high" | "very_high";
+        /** TierVerdictResponse */
+        TierVerdictResponse: {
+            /** Tier */
+            tier: string;
+            /** Sufficient */
+            sufficient: boolean;
+            /** Description */
+            description: string;
+            /** Inadequacies */
+            inadequacies: components["schemas"]["InadequacyResponse"][];
+        };
         /**
          * UserRole
          * @enum {string}

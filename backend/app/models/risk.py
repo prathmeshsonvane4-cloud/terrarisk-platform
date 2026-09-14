@@ -1,7 +1,7 @@
 import uuid
 from datetime import date, datetime
 
-from sqlalchemy import Date, DateTime, Float, ForeignKey, Uuid
+from sqlalchemy import Boolean, CheckConstraint, Date, DateTime, Float, ForeignKey, Uuid
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -46,9 +46,21 @@ class RiskScore(Base, UUIDPrimaryKeyMixin):
         pg_enum(RiskEntityType, "risk_entity_type"), nullable=False, index=True
     )
     entity_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), nullable=False, index=True)
-    overall_score: Mapped[float] = mapped_column(Float, nullable=False)
-    overall_band: Mapped[RiskBand] = mapped_column(pg_enum(RiskBand, "risk_band"), nullable=False)
+    # Nullable since migration 0013: a composite that cannot be estimated is
+    # stored as absent, never as an average of whatever happened to survive.
+    overall_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    overall_band: Mapped[RiskBand | None] = mapped_column(pg_enum(RiskBand, "risk_band"), nullable=True)
+    # LEGACY NAME: optical data completeness, not model confidence and not
+    # decision sufficiency — see model_confidence and decision_sufficiency.
     confidence: Mapped[float] = mapped_column(Float, nullable=False)
+    # A statistical property of the estimate (RiskResult.model_confidence).
+    model_confidence: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    # Whether the evidence suffices per stakes tier, with reasons, under the
+    # policy recorded in decision_policy_id.
+    decision_sufficiency: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    decision_policy_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("decision_policy.id"), nullable=True
+    )
 
     # Distinguishes rule-engine vs a future ML-sourced score — without this,
     # a historical "High Risk" row is ambiguous about which model produced
@@ -82,11 +94,23 @@ class RiskFactorScore(Base, UUIDPrimaryKeyMixin, CreatedAtMixin):
     """
 
     __tablename__ = "risk_factor_score"
+    __table_args__ = (
+        CheckConstraint(
+            "(computed AND value IS NOT NULL AND band IS NOT NULL) OR (NOT computed AND value IS NULL AND band IS NULL)",
+            name="ck_risk_factor_score_computed_has_value",
+        ),
+    )
 
     risk_score_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("risk_score.id"), nullable=False)
     factor: Mapped[RiskFactor] = mapped_column(pg_enum(RiskFactor, "risk_factor"), nullable=False)
-    value: Mapped[float] = mapped_column(Float, nullable=False)
-    band: Mapped[RiskBand] = mapped_column(pg_enum(RiskBand, "risk_factor_band"), nullable=False)
+    # Null when the factor could not be computed. Before migration 0013 this
+    # was a neutral 50 presented as a measurement.
+    value: Mapped[float | None] = mapped_column(Float, nullable=True)
+    band: Mapped[RiskBand | None] = mapped_column(pg_enum(RiskBand, "risk_factor_band"), nullable=True)
+    computed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="true")
+    # Statistical interval on `value` where the method supports one.
+    interval_low: Mapped[float | None] = mapped_column(Float, nullable=True)
+    interval_high: Mapped[float | None] = mapped_column(Float, nullable=True)
     raw_inputs: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
 
 

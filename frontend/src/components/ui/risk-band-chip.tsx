@@ -13,11 +13,15 @@ function bandRange(band: RiskBand): string {
 }
 
 interface RiskBandChipProps {
-  band: RiskBand;
+  /** Null when the score behind it could not be computed or estimated. */
+  band: RiskBand | null;
   /** When provided, renders "{label} · {score}" — omit for a band-only
    * chip (e.g. the Method tab's threshold table, which already shows the
    * numeric range in an adjacent column). */
-  score?: number;
+  score?: number | null;
+  /** Label for a null band — "Not computed" for a factor, "Not estimable"
+   * for a composite. Absence is never drawn in a band colour. */
+  absentLabel?: string;
   /** P11 contextual-help requirement: every score-bearing chip should
    * answer "how was this calculated?" at a glance. Extends the same
    * native-title pattern the P9 confidence badge already established
@@ -33,7 +37,26 @@ interface RiskBandChipProps {
  * call sites (Overview, Farms index/detail, Assessments index, Reports
  * index, FactorCard, MethodTab), each independently reconstructing the
  * same `rounded-full px-2 py-0.5 ...` markup from `RISK_BANDS`. */
-export function RiskBandChip({ band, score, showRangeHint = true, className }: RiskBandChipProps) {
+export function RiskBandChip({
+  band,
+  score,
+  showRangeHint = true,
+  absentLabel = "Not estimable",
+  className,
+}: RiskBandChipProps) {
+  if (band === null) {
+    return (
+      <span
+        className={cn(
+          "rounded-full border border-dashed px-2 py-0.5 text-xs font-medium whitespace-nowrap text-muted-foreground",
+          className,
+        )}
+        title="Not enough usable satellite evidence to compute this score."
+      >
+        {absentLabel}
+      </span>
+    );
+  }
   const style = RISK_BANDS[band];
   return (
     <span
@@ -41,7 +64,7 @@ export function RiskBandChip({ band, score, showRangeHint = true, className }: R
       title={showRangeHint ? `${style.label} = ${bandRange(band)} / 100` : undefined}
     >
       {style.label}
-      {score !== undefined && <> · {Math.round(score)}</>}
+      {score !== undefined && score !== null && <> · {Math.round(score)}</>}
     </span>
   );
 }

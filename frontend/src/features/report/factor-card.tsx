@@ -11,12 +11,16 @@ export function FactorCard({ factor }: { factor: FactorScore }) {
     <div className="flex flex-col gap-2 rounded-lg border p-4">
       <div className="flex items-start justify-between gap-2">
         <p className="text-sm font-medium">{FACTOR_LABELS[factor.factor]}</p>
-        <RiskBandChip band={factor.band} />
+        <RiskBandChip band={factor.band} absentLabel="Not computed" />
       </div>
-      <p className="text-2xl font-semibold tabular-nums">
-        {Math.round(factor.value)}
-        <span className="text-sm font-normal text-muted-foreground"> / 100</span>
-      </p>
+      {factor.value === null ? (
+        <p className="text-2xl font-semibold text-muted-foreground">—</p>
+      ) : (
+        <p className="text-2xl font-semibold tabular-nums">
+          {Math.round(factor.value)}
+          <span className="text-sm font-normal text-muted-foreground"> / 100</span>
+        </p>
+      )}
       <p className="text-xs leading-relaxed text-muted-foreground">{factorDriverText(factor)}</p>
     </div>
   );

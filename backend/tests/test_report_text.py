@@ -85,7 +85,9 @@ def _report(factors: list[FactorScoreResponse]) -> ReportResponse:
 class TestFactorDriverText:
     def test_states_real_numbers_from_raw_inputs_no_invented_causes(self):
         assert factor_driver_text(FULL_FACTORS[0]) == (
-            "Current NDVI 0.42 sits at the 70th percentile of this farm's own 3-year range."
+            # Was "of this farm's own 3-year range" — wrong since the seasonal
+            # fix, which ranks against the same calendar month across years.
+            "Current NDVI 0.42 sits at the 70th percentile of the same calendar month across the baseline years."
         )
         assert "Vegetation Condition Index at 41" in factor_driver_text(FULL_FACTORS[2])
         assert "87% of the seasonal normal" in factor_driver_text(FULL_FACTORS[2])
@@ -113,7 +115,9 @@ class TestFactorDriverText:
             50,
             {"current_ndvi": None, "ndvi_percentile": None, "history_months": 0},
         )
-        assert "neutral score was applied" in factor_driver_text(sparse)
+        # A computed factor with no percentile is a legacy rule-engine-v1 row,
+        # for which the neutral-50 statement is true — and says whose it was.
+        assert "neutral score of 50 was applied by the previous engine version" in factor_driver_text(sparse)
 
     def test_mentions_only_the_sub_signals_actually_present(self):
         rainfall_only = _factor(
@@ -131,7 +135,9 @@ class TestReportNarrative:
         assert "highest-scoring factor is drought risk at 62/100" in text
         assert "recent seasonal rainfall was 87% of the long-term normal" in text
         assert "Flood exposure scores lowest at 12/100" in text
-        assert "confidence is 94%" in text
+        # Named for what it is: data completeness, not confidence.
+        assert "Data completeness is 94%" in text
+        assert "not a measure of confidence in the score" in text
 
     def test_omits_the_rainfall_clause_when_the_engine_had_no_ratio(self):
         no_ratio = [
@@ -139,3 +145,30 @@ class TestReportNarrative:
             for f in FULL_FACTORS
         ]
         assert "long-term normal" not in report_narrative(_report(no_ratio))
+
+
+
+class TestNotComputed:
+    """Phase C: a factor the engine could not compute has no value, and the
+    text says so — never a neutral score, never a band."""
+
+    def test_an_uncomputed_factor_is_described_as_not_computed(self):
+        factor = FactorScoreResponse(
+            factor=RiskFactor.VEGETATION_STABILITY, value=None, band=None, computed=False, raw_inputs={}
+        )
+        text = factor_driver_text(factor)
+        assert text.startswith("Not computed")
+        assert "neutral" not in text
+
+    def test_a_report_with_no_overall_score_does_not_state_a_band(self):
+        """The production Shera shape: three factors uncomputed, flood alone
+        computed, no composite."""
+        factors = [
+            f.model_copy(update={"value": None, "band": None, "computed": False}) if i < 3 else f
+            for i, f in enumerate(FULL_FACTORS)
+        ]
+        report = _report(factors).model_copy(update={"overall_score": None, "overall_band": None})
+        text = report_narrative(report)
+        assert "No overall climate risk score could be estimated" in text
+        assert "1 of 4 risk factors" in text
+        assert "moderate" not in text.lower()

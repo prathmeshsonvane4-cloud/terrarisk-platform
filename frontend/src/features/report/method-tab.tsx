@@ -45,15 +45,22 @@ export function MethodTab({ report }: { report: ReportResponse }) {
     (f) => f !== undefined,
   );
 
-  const contributions = orderedFactors.map((factor) => ({
-    factor,
-    weight: method.weights[factor.factor] ?? 0,
-    contribution: factor.value * (method.weights[factor.factor] ?? 0),
-  }));
+  // Uncomputed factors are excluded from the composite (rule-engine-v2), so
+  // each computed factor's EFFECTIVE weight is its weight over the weight of
+  // the computed factors — the only arithmetic that sums to the composite.
+  const computed = orderedFactors.filter((f): f is typeof f & { value: number } => f.value !== null);
+  const notComputed = orderedFactors.filter((f) => f.value === null);
+  const computedWeight = computed.reduce((sum, f) => sum + (method.weights[f.factor] ?? 0), 0);
+  const contributions = computed.map((factor) => {
+    const weight = computedWeight > 0 ? (method.weights[factor.factor] ?? 0) / computedWeight : 0;
+    return { factor, weight, contribution: factor.value * weight };
+  });
   const maxContribution = Math.max(1, ...contributions.map((c) => c.contribution));
 
   const floorRuleApplied =
-    method.weighted_average_score !== null && Math.abs(method.weighted_average_score - report.overall_score) > 0.01;
+    report.overall_score !== null &&
+    method.weighted_average_score !== null &&
+    Math.abs(method.weighted_average_score - report.overall_score) > 0.01;
 
   return (
     <div className="flex flex-col gap-4">
@@ -83,7 +90,19 @@ export function MethodTab({ report }: { report: ReportResponse }) {
               </div>
             </div>
           ))}
+          {notComputed.map((factor) => (
+            <div key={factor.factor} className="flex items-center justify-between gap-2 text-sm text-muted-foreground">
+              <span className="sm:w-36 sm:shrink-0">{FACTOR_LABELS[factor.factor]}</span>
+              <span className="text-xs">Not computed — excluded from the composite</span>
+            </div>
+          ))}
         </div>
+        {notComputed.length > 0 && computed.length > 0 && (
+          <p className="mt-2 text-xs text-muted-foreground">
+            Weights are shown re-normalised over the computed factors ({formatWeight(computedWeight)} of the configured
+            weight).
+          </p>
+        )}
         {floorRuleApplied && (
           <>
             <div className="mt-3 flex items-center justify-between border-t pt-2 text-sm font-medium">
@@ -104,9 +123,14 @@ export function MethodTab({ report }: { report: ReportResponse }) {
         <div className="mt-3 flex items-center justify-between border-t pt-2 text-sm font-semibold">
           <span>Composite score</span>
           <span className="tabular-nums">
-            {Math.round(report.overall_score)} / 100 — {RISK_BANDS[report.overall_band].label}
+            {report.overall_score === null || report.overall_band === null
+              ? "Not estimable"
+              : `${Math.round(report.overall_score)} / 100 — ${RISK_BANDS[report.overall_band].label}`}
           </span>
         </div>
+        {report.overall_score === null && report.model_confidence && (
+          <p className="mt-2 text-xs text-muted-foreground">{report.model_confidence.statement}</p>
+        )}
       </section>
 
       <section className="rounded-lg border p-4">

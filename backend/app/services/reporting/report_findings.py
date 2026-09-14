@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from app.models.enums import RiskBand, RiskFactor
 from app.schemas.report import FactorScoreResponse
+from app.services.reporting.report_text import FACTOR_LABELS
 
 KEY_FINDING_PHRASES: dict[RiskFactor, dict[RiskBand, str]] = {
     RiskFactor.VEGETATION_STABILITY: {
@@ -70,11 +71,22 @@ RECOMMENDED_ACTION_BY_FACTOR_BAND: dict[RiskFactor, dict[RiskBand, str]] = {
 }
 
 
+_NOT_COMPUTED_FINDING = "{label} could not be computed from the available satellite evidence."
+_NOT_COMPUTED_ACTION = (
+    "Verify this in the field before relying on the report; it can be re-assessed once more satellite history "
+    "is available."
+)
+
+
 def key_finding(factor: FactorScoreResponse) -> str:
+    if factor.band is None:
+        return _NOT_COMPUTED_FINDING.format(label=FACTOR_LABELS[factor.factor])
     return KEY_FINDING_PHRASES[factor.factor][factor.band]
 
 
 def recommended_action(factor: FactorScoreResponse) -> str:
+    if factor.band is None:
+        return _NOT_COMPUTED_ACTION
     return RECOMMENDED_ACTION_BY_FACTOR_BAND[factor.factor][factor.band]
 
 

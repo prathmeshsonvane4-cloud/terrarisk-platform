@@ -41,6 +41,12 @@ ACTION_BY_BAND: dict[RiskBand, str] = {
     RiskBand.VERY_HIGH: "Refer to branch manager. Recommend independent field verification before sanction.",
 }
 
+# When no overall score could be estimated (rule-engine-v2 onward).
+NO_OVERALL_SCORE_ACTION = (
+    "No overall risk score could be estimated from the available satellite evidence. Do not rely on this report "
+    "for a credit decision; verify the farm in the field."
+)
+
 # Whether the posture itself calls for a field officer, independent of the
 # indicative-only confidence qualifier (which also implies verification is
 # warranted — see field_verification_recommended below).
@@ -80,16 +86,27 @@ def build_recommendation(report: ReportResponse) -> Recommendation:
             text=factor_driver_text(f),
         )
         for f in sorted(
-            (f for f in report.factors if f.band in (RiskBand.HIGH, RiskBand.VERY_HIGH)),
+            (f for f in report.factors if f.value is not None and f.band in (RiskBand.HIGH, RiskBand.VERY_HIGH)),
             key=lambda f: f.value,
             reverse=True,
         )
     ]
 
+    if report.overall_band is None:
+        # No composite could be estimated. There is no band posture to give,
+        # and inventing one would restore the defect Phase C removed.
+        return Recommendation(
+            summary=report_narrative(report),
+            primary_drivers=primary_drivers,
+            action=NO_OVERALL_SCORE_ACTION,
+            is_indicative_only=True,
+        )
+
     is_indicative_only = report.confidence < RECOMMENDATION_CONFIDENCE_THRESHOLD
     posture = ACTION_BY_BAND[report.overall_band]
     action = (
-        f"Indicative only — limited satellite data available (confidence {js_round(report.confidence)}%). {posture}"
+        f"Indicative only — limited satellite data available (data completeness {js_round(report.confidence)}%). "
+        f"{posture}"
         if is_indicative_only
         else posture
     )
@@ -106,7 +123,11 @@ def field_verification_recommended(report: ReportResponse, recommendation: Recom
     """Answers "should I send a field officer?" directly — real, band- and
     confidence-derived, never a separate/competing judgment from the
     posture text above."""
-    return report.overall_band in _FIELD_VERIFICATION_BANDS or recommendation.is_indicative_only
+    return (
+        report.overall_band is None
+        or report.overall_band in _FIELD_VERIFICATION_BANDS
+        or recommendation.is_indicative_only
+    )
 
 
 def recommendation_why_bullets(report: ReportResponse, recommendation: Recommendation) -> list[str]:
@@ -116,9 +137,12 @@ def recommendation_why_bullets(report: ReportResponse, recommendation: Recommend
     Every bullet is either a primary driver's own arithmetic-fact sentence
     or a fixed disclosure line — never a new causal claim."""
     bullets = [f"{driver.label}: {driver.text}" for driver in recommendation.primary_drivers]
-    if recommendation.is_indicative_only:
+    if report.overall_band is None:
+        uncomputed = [FACTOR_LABELS[f.factor] for f in report.factors if f.value is None]
+        bullets.append(f"Not computed: {', '.join(uncomputed)}." if uncomputed else "No overall score could be estimated.")
+    elif recommendation.is_indicative_only:
         bullets.append(
-            f"Confidence is {js_round(report.confidence)}%, below the "
+            f"Data completeness is {js_round(report.confidence)}%, below the "
             f"{RECOMMENDATION_CONFIDENCE_THRESHOLD}% threshold for a standard-confidence recommendation."
         )
     if not bullets:

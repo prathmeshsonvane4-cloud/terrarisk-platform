@@ -155,7 +155,9 @@ def test_page_1_executive_summary_answers_the_core_credit_questions():
     assert "Executive Climate Credit Summary" in page1
     assert "Moderate risk" in page1  # overall band
     assert "Score 42 / 100" in page1  # overall score
-    assert "Confidence 97%" in page1
+    # Named for what it measures (Phase C): data completeness, not confidence.
+    assert "Data completeness 97%" in page1
+    assert "Confidence 97%" not in page1
     assert "Assessment quality: Excellent" in page1  # quality label
     assert "Killari" in page1 and "Ausa" in page1 and "Latur" in page1
     assert "20.50 ha (50.7 acres)" in page1
@@ -320,7 +322,7 @@ def test_audit_appendix_has_real_traceable_metadata_and_no_duplicate_fields():
     assert "PROCESSING DATE" in page9
     assert "Not recorded for this assessment" in page9  # honest: no Job row in this fixture
     assert "EARTH ENGINE SDK VERSION" in page9
-    assert "CONFIDENCE" in page9 and "97%" in page9
+    assert "DATA COMPLETENESS" in page9 and "97%" in page9
     assert "0 of 36 expected months" in page9
     assert "Latur" in page9
     assert "REPORT TEMPLATE VERSION" in page9 and str(PDF_LAYOUT_VERSION) in page9
@@ -383,3 +385,63 @@ def test_snapshot_zoom_fits_the_padded_boundary():
     xs, ys = zip(*(_to_global_px(lon, lat, zoom) for lon, lat in ring))
     assert max(xs) - min(xs) <= 1200 - 2 * 80
     assert max(ys) - min(ys) <= 700 - 2 * 80
+
+
+
+def test_an_assessment_with_no_overall_score_renders_honestly():
+    """Phase C: the production Shera shape — three factors uncomputed, no
+    composite. The PDF must render without a score, a band, a gauge or a
+    radar, and must say what is missing rather than draw it as low risk."""
+    from app.schemas.report import DecisionSufficiencyResponse, ModelConfidenceResponse
+
+    report = _full_report()
+    factors = [
+        f.model_copy(update={"value": None, "band": None, "computed": False}) if i < 3 else f
+        for i, f in enumerate(report.factors)
+    ]
+    report = report.model_copy(
+        update={
+            "overall_score": None,
+            "overall_band": None,
+            "factors": factors,
+            "model_confidence": ModelConfidenceResponse(
+                factors_computed=1,
+                factors_total=4,
+                weight_coverage=0.25,
+                overall_estimable=False,
+                overall_interval=None,
+                interval_coverage="none",
+                confidence_level=0.9,
+                statement="1 of 4 factors computed (25% of the configured weight). No overall score.",
+            ),
+            "decision_sufficiency": DecisionSufficiencyResponse(
+                policy_version="sufficiency-v1",
+                calibration_status="uncalibrated",
+                tiers=[
+                    {
+                        "tier": tier,
+                        "sufficient": False,
+                        "description": f"{tier} description",
+                        "inadequacies": [{"code": "no_overall_estimate", "statement": "No overall risk score could be estimated."}],
+                    }
+                    for tier in ("low", "medium", "high")
+                ],
+                caveats=[],
+                statement="The evidence is not sufficient for a decision at any stakes tier.",
+            ),
+        }
+    )
+
+    # Whitespace-normalised: PDF text extraction breaks lines wherever the
+    # layout wraps, and these assertions are about content, not layout.
+    pages = [" ".join(page.split()) for page in _extract_pages(render_report_pdf(report, map_png=None))]
+    page1, page2 = pages[0], pages[1]
+
+    assert "Not estimable" in page1
+    assert "No overall score" in page1
+    assert "Score " not in page1.split("Credit Recommendation")[0]
+    assert "Do not rely on this report for a credit decision" in page1
+    assert "Model Confidence and Evidence Sufficiency" in page1
+    assert "not sufficient for a decision at any stakes tier" in page1
+    assert "No risk radar: only 1 of 4 factors could be computed" in page2
+    assert "Not computed" in page2

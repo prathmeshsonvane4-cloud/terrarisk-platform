@@ -37,7 +37,9 @@ from app.models.satellite import SatelliteObservation
 from app.models.user import AppUser
 from app.schemas.evidence import ResultLineageResponse
 from app.schemas.report import (
+    DecisionSufficiencyResponse,
     FactorScoreResponse,
+    ModelConfidenceResponse,
     ObservationPoint,
     ReportAuditContext,
     ReportComparisonContext,
@@ -232,14 +234,23 @@ async def _load_report_response(
     officer = await db.get(AppUser, farm.drawn_by)
     config_weight = await db.get(ConfigWeight, risk_score.weights_version_id)
 
+    # Bounded to THIS report's observation window. The cache holds every
+    # month ever fetched for the farm — the eight-year seasonal baseline since
+    # Phase C fixed its retrieval, and any earlier or later assessment's
+    # window — and an unbounded read charted all of it as though this report
+    # covered it. Legacy rows without a stored window keep the old behaviour.
+    observation_filter = [
+        SatelliteObservation.entity_type == RiskEntityType.FARM,
+        SatelliteObservation.entity_id == farm.id,
+    ]
+    if risk_score.observation_window_start and risk_score.observation_window_end:
+        observation_filter += [
+            SatelliteObservation.period_start >= risk_score.observation_window_start,
+            SatelliteObservation.period_start < risk_score.observation_window_end,
+        ]
     observation_rows = (
         await db.execute(
-            select(SatelliteObservation)
-            .where(
-                SatelliteObservation.entity_type == RiskEntityType.FARM,
-                SatelliteObservation.entity_id == farm.id,
-            )
-            .order_by(SatelliteObservation.period_start)
+            select(SatelliteObservation).where(*observation_filter).order_by(SatelliteObservation.period_start)
         )
     ).scalars().all()
     series_by_type: dict[SatelliteIndexType, list[ObservationPoint]] = {
@@ -330,6 +341,14 @@ async def _load_report_response(
         overall_score=risk_score.overall_score,
         overall_band=risk_score.overall_band,
         confidence=risk_score.confidence,
+        model_confidence=(
+            ModelConfidenceResponse.model_validate(risk_score.model_confidence) if risk_score.model_confidence else None
+        ),
+        decision_sufficiency=(
+            DecisionSufficiencyResponse.model_validate(risk_score.decision_sufficiency)
+            if risk_score.decision_sufficiency
+            else None
+        ),
         model_version=risk_score.model_version,
         computed_at=risk_score.computed_at,
         factors=[FactorScoreResponse.model_validate(f) for f in factor_rows],

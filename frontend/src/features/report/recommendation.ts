@@ -30,6 +30,11 @@ const ACTION_BY_BAND: Record<RiskBand, string> = {
   very_high: "Refer to branch manager. Recommend independent field verification before sanction.",
 };
 
+/** When no overall score could be estimated — mirrors backend
+ * recommendation.py `NO_OVERALL_SCORE_ACTION` verbatim. */
+export const NO_OVERALL_SCORE_ACTION =
+  "No overall risk score could be estimated from the available satellite evidence. Do not rely on this report for a credit decision; verify the farm in the field.";
+
 export interface PrimaryDriver {
   factor: FactorScore["factor"];
   label: string;
@@ -56,7 +61,8 @@ export interface Recommendation {
  * scores) — no new inference, no invented advice.
  */
 export function buildRecommendation(report: ReportResponse): Recommendation {
-  const primaryDrivers = [...report.factors]
+  const primaryDrivers = report.factors
+    .filter((f): f is FactorScore & { value: number } => f.value !== null)
     .filter((f) => f.band === "high" || f.band === "very_high")
     .sort((a, b) => b.value - a.value)
     .map((f) => ({
@@ -66,10 +72,15 @@ export function buildRecommendation(report: ReportResponse): Recommendation {
       text: factorDriverText(f),
     }));
 
+  if (report.overall_band === null) {
+    // No composite could be estimated: there is no band posture to give.
+    return { summary: reportNarrative(report), primaryDrivers, action: NO_OVERALL_SCORE_ACTION, isIndicativeOnly: true };
+  }
+
   const isIndicativeOnly = report.confidence < RECOMMENDATION_CONFIDENCE_THRESHOLD;
   const posture = ACTION_BY_BAND[report.overall_band];
   const action = isIndicativeOnly
-    ? `Indicative only — limited satellite data available (confidence ${Math.round(report.confidence)}%). ${posture}`
+    ? `Indicative only — limited satellite data available (data completeness ${Math.round(report.confidence)}%). ${posture}`
     : posture;
 
   return {

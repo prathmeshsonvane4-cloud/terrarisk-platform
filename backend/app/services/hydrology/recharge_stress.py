@@ -69,6 +69,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 
 from app.models.enums import BaselineWindow, StressBand
+from app.services.hydrology.models import InsufficientEvidenceError
 from app.services.risk.models import MonthlyValue
 from app.services.risk.seasonal import seasonal_percentile_rank, seasonal_vci
 
@@ -204,8 +205,14 @@ _STRESS_BAND_THRESHOLDS: tuple[tuple[float, StressBand], ...] = (
     (100.0, StressBand.VERY_HIGH),
 )
 
-_NEUTRAL_SCORE = 50.0
 _RECENT_MONTHS_FOR_RAINFALL = 3
+
+# PHASE C: there is no neutral score. A factor that cannot be computed used to
+# score 50 and enter the weighted average at full weight, so a catchment with
+# no usable data reported "Moderate" stress. Each scorer now returns None for
+# an uncomputable factor; the composite is the weighted average of computed
+# factors; and if none can be computed, InsufficientEvidenceError fails the
+# report rather than inventing a result.
 
 
 def _band_for_stress(score: float) -> StressBand:
@@ -234,15 +241,6 @@ def _series_completeness(series: list[MonthlyValue]) -> float:
     if not series:
         return 0.0
     return len(_valid_values(series)) / len(series)
-
-
-def _percentile_rank(current: float, history: list[float]) -> float:
-    """Percentage of historical values at or below `current` — identical
-    formula to `risk/engine.py::_percentile_rank`, cloned not imported."""
-    if not history:
-        return _NEUTRAL_SCORE
-    at_or_below = sum(1 for v in history if v <= current)
-    return (at_or_below / len(history)) * 100.0
 
 
 def _rainfall_ratio(rainfall_monthly: list[MonthlyValue], normal_by_month: dict[int, float], recent_months: int) -> float | None:
@@ -280,20 +278,20 @@ def _ratio_to_stress(ratio: float) -> float:
 
 def _score_rainfall_anomaly(
     rainfall_monthly: list[MonthlyValue], rainfall_normal_by_month: dict[int, float]
-) -> tuple[float, float | None]:
-    """Returns (stress_score, rainfall_anomaly_ratio). Below-normal
-    rainfall drives stress up, exactly mirroring
+) -> tuple[float | None, float | None]:
+    """Returns (stress_score, rainfall_anomaly_ratio), both None when not
+    computable. Below-normal rainfall drives stress up, exactly mirroring
     `RiskEngine._score_drought_risk()`'s `rainfall_anomaly_risk`."""
     ratio = _rainfall_ratio(rainfall_monthly, rainfall_normal_by_month, _RECENT_MONTHS_FOR_RAINFALL)
     if ratio is None:
-        return _NEUTRAL_SCORE, None
+        return None, None
     return _ratio_to_stress(ratio), ratio
 
 
 def _score_vegetation_condition(
     ndvi_monthly: list[MonthlyValue], ndvi_baseline: list[MonthlyValue]
-) -> tuple[float, float | None]:
-    """Returns (stress_score, vci). VCI (Kogan, 1995): current NDVI
+) -> tuple[float | None, float | None]:
+    """Returns (stress_score, vci), both None when not computable. VCI (Kogan, 1995): current NDVI
     positioned within the range observed for the SAME CALENDAR MONTH in
     other years.
 
@@ -306,13 +304,13 @@ def _score_vegetation_condition(
     """
     vci = seasonal_vci(ndvi_monthly, ndvi_baseline)
     if vci is None:
-        return _NEUTRAL_SCORE, None
+        return None, None
     return _clamp(100.0 - vci, 0.0, 100.0), vci
 
 
 def _score_surface_water_trend(
     surface_water_monthly: list[MonthlyValue], surface_water_baseline: list[MonthlyValue]
-) -> tuple[float, float | None]:
+) -> tuple[float | None, float | None]:
     """Returns (stress_score, surface_water_trend). "Trend" here is the
     current surface-water-extent reading's percentile position within
     its own historical series (`_percentile_rank`, the same shape
@@ -329,7 +327,7 @@ def _score_surface_water_trend(
     own historical low) -> high stress."""
     trend = seasonal_percentile_rank(surface_water_monthly, surface_water_baseline)
     if trend is None:
-        return _NEUTRAL_SCORE, None
+        return None, None
     return _clamp(100.0 - trend, 0.0, 100.0), trend
 
 
@@ -337,7 +335,7 @@ class RechargeStressEngine:
     """Stateless — safe to reuse a single instance across requests,
     exactly like `RiskEngine`/`WaterBalanceEngine`."""
 
-    MODEL_VERSION = "recharge-stress-engine-v1"
+    MODEL_VERSION = "recharge-stress-engine-v2"
 
     def compute(self, bundle: RechargeStressBundle, config: RechargeStressConfig) -> RechargeStressEngineResult:
         """Compute the recharge-stress score for one catchment/period:
@@ -357,15 +355,26 @@ class RechargeStressEngine:
             bundle.surface_water_monthly, bundle.surface_water_baseline
         )
 
-        factor_scores: dict[RechargeStressFactor, float] = {
+        factor_scores: dict[RechargeStressFactor, float | None] = {
             RechargeStressFactor.RAINFALL_ANOMALY: rainfall_stress,
             RechargeStressFactor.VEGETATION_CONDITION: vegetation_stress,
             RechargeStressFactor.SURFACE_WATER_TREND: surface_water_stress,
         }
 
-        weighted_sum = sum(score * config.weights.get(factor, 0.0) for factor, score in factor_scores.items())
-        total_weight = sum(config.weights.get(factor, 0.0) for factor in factor_scores)
-        weighted_average = weighted_sum / total_weight if total_weight > 0 else _NEUTRAL_SCORE
+        # The composite of COMPUTED factors only. An uncomputed factor is
+        # excluded, never scored neutral and averaged in.
+        if sum(config.weights.get(factor, 0.0) for factor in factor_scores) <= 0:
+            # A configuration error, not an evidence gap — reported as one.
+            raise ValueError("RechargeStressConfig.weights give no weight to any recharge-stress factor")
+        computed = {factor: score for factor, score in factor_scores.items() if score is not None}
+        computed_weight = sum(config.weights.get(factor, 0.0) for factor in computed)
+        if computed_weight <= 0:
+            not_computed = [f.value.replace("_", " ") for f, s in factor_scores.items() if s is None]
+            raise InsufficientEvidenceError(
+                "Recharge stress could not be computed: no usable data for "
+                f"{', '.join(not_computed)} for this catchment and period."
+            )
+        weighted_average = sum(score * config.weights.get(factor, 0.0) for factor, score in computed.items()) / computed_weight
         stress_score = _clamp(weighted_average, 0.0, 100.0)
 
         # Mirrors RiskEngine._compute_confidence()'s exact reasoning,
@@ -392,7 +401,11 @@ class RechargeStressEngine:
                 "vegetation_stress": vegetation_stress,
                 "surface_water_stress": surface_water_stress,
                 "weighted_average_score": weighted_average,
+                # Legacy name: NDVI data completeness, not model confidence.
                 "confidence": confidence,
+                "factors_computed": len(computed),
+                "factors_total": len(factor_scores),
+                "factors_not_computed": [f.value for f, s in factor_scores.items() if s is None],
             },
             model_version=self.MODEL_VERSION,
         )

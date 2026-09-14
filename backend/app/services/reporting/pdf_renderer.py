@@ -76,7 +76,7 @@ from app.services.reporting.report_text import (
 # on this, so every farm's PDF re-renders under the new layout instead of
 # serving a stale cached v1 file. Old *-v1.pdf files are simply orphaned on
 # disk, matching the existing cache design (never expired, never cleaned up).
-PDF_LAYOUT_VERSION = 2
+PDF_LAYOUT_VERSION = 3
 
 # Verbatim from the dashboard's lineage footer (reports/[id]/page.tsx).
 DATA_SOURCES = (
@@ -111,6 +111,23 @@ _BAND_STYLES: dict[RiskBand, tuple[colors.Color, colors.Color, colors.Color]] = 
     RiskBand.HIGH: (colors.HexColor("#c2410c"), colors.HexColor("#ffedd5"), colors.HexColor("#7c2d12")),
     RiskBand.VERY_HIGH: (colors.HexColor("#b91c1c"), colors.HexColor("#fee2e2"), colors.HexColor("#7f1d1d")),
 }
+# A factor or composite with no value (rule-engine-v2 onward). Neutral grey,
+# deliberately unlike every band colour: absence must never read as a band.
+_ABSENT_STYLE = (colors.HexColor("#475569"), colors.HexColor("#e2e8f0"), colors.HexColor("#1e293b"))
+
+
+def _band_style(band: RiskBand | None) -> tuple[colors.Color, colors.Color, colors.Color]:
+    return _ABSENT_STYLE if band is None else _BAND_STYLES[band]
+
+
+def _band_label(band: RiskBand | None, absent: str = "Not computed") -> str:
+    return absent if band is None else RISK_BAND_LABELS[band]
+
+
+def _score_text(value: float | None) -> str:
+    if value is None:
+        return "— <font size=8 color='#5b6472'>not computed</font>"
+    return f"{js_round(value)} <font size=8 color='#5b6472'>/ 100</font>"
 # -300-tier tints of the same emerald/amber/orange/red family, for the
 # Page 1 gauge's zone fill — bolder than the *-100 chip tint (needs to
 # read as a "band" of color at a glance) without introducing a new hue.
@@ -289,6 +306,9 @@ def _radar_chart_png(factors: list[FactorScoreResponse]) -> bytes:
     radar chart would visually misrepresent absence-of-data as a
     confirmed low-risk score, which is exactly the fabrication this
     redesign must not do."""
+    # Uncomputed factors are left off entirely: plotting them at 0 would draw
+    # an unmeasured risk as a low one. Callers check there are enough to draw.
+    factors = [f for f in factors if f.value is not None]
     labels = [FACTOR_LABELS[f.factor] for f in factors]
     values = [f.value for f in factors]
     count = len(values)
@@ -412,13 +432,13 @@ def _trend_text(trend: report_statistics.Trend) -> str:
 
 
 def _factor_cell(factor: FactorScoreResponse) -> Table:
-    _, chip_bg, chip_ink = _BAND_STYLES[factor.band]
+    _, chip_bg, chip_ink = _band_style(factor.band)
     inner = Table(
         [
-            [Paragraph(FACTOR_LABELS[factor.factor], _STYLES["factor_name"]), _chip(RISK_BAND_LABELS[factor.band], chip_bg, chip_ink)],
+            [Paragraph(FACTOR_LABELS[factor.factor], _STYLES["factor_name"]), _chip(_band_label(factor.band), chip_bg, chip_ink)],
             [
                 Paragraph(
-                    f"{js_round(factor.value)} <font size=8 color='#5b6472'>/ 100</font>",
+                    _score_text(factor.value),
                     _STYLES["factor_score"],
                 ),
                 "",
@@ -448,11 +468,11 @@ def _dashboard_card(factor: FactorScoreResponse, trend: report_statistics.Trend)
     """Page 2's fuller dashboard card: score, band, trend vs previous
     assessment, interpretation (what happened), and a recommended action
     (what to do) — more content than the compact Page-1-era factor cell."""
-    _, chip_bg, chip_ink = _BAND_STYLES[factor.band]
+    _, chip_bg, chip_ink = _band_style(factor.band)
     rows = [
-        [Paragraph(FACTOR_LABELS[factor.factor], _STYLES["factor_name"]), _chip(RISK_BAND_LABELS[factor.band], chip_bg, chip_ink)],
+        [Paragraph(FACTOR_LABELS[factor.factor], _STYLES["factor_name"]), _chip(_band_label(factor.band), chip_bg, chip_ink)],
         [
-            Paragraph(f"{js_round(factor.value)} <font size=8 color='#5b6472'>/ 100</font>", _STYLES["factor_score"]),
+            Paragraph(_score_text(factor.value), _STYLES["factor_score"]),
             Paragraph(_trend_text(trend), _style("trend", fontSize=7.5, leading=10, textColor=_MUTED, alignment=TA_RIGHT)),
         ],
         [Paragraph("WHAT HAPPENED", _STYLES["card_label"]), ""],
@@ -655,13 +675,48 @@ class _NumberedCanvas(Canvas):
         self.restoreState()
 
 
+def _evidence_sufficiency_block(report: ReportResponse) -> list:
+    """Model confidence and decision sufficiency, stated separately — the
+    distinction this section exists to make visible. Absent for assessments
+    computed before they were recorded, and says so."""
+    story: list = [Paragraph("Model Confidence and Evidence Sufficiency", _STYLES["section"]), Spacer(0, 3)]
+    if report.model_confidence is None or report.decision_sufficiency is None:
+        story.append(
+            Paragraph(
+                "Not recorded for this assessment: it was computed before model confidence and evidence "
+                "sufficiency were assessed separately.",
+                _STYLES["narrative"],
+            )
+        )
+        story.append(Spacer(0, 10))
+        return story
+
+    sufficiency = report.decision_sufficiency
+    story.append(Paragraph("MODEL CONFIDENCE — HOW WELL THE ESTIMATE IS DETERMINED", _STYLES["card_label"]))
+    story.append(Paragraph(report.model_confidence.statement, _STYLES["card_body"]))
+    story.append(Spacer(0, 5))
+    story.append(Paragraph("EVIDENCE SUFFICIENCY — WHETHER IT IS ENOUGH FOR A DECISION", _STYLES["card_label"]))
+    story.append(Paragraph(sufficiency.statement, _STYLES["card_body"]))
+    for verdict in sufficiency.tiers:
+        mark = "Sufficient" if verdict.sufficient else "Not sufficient"
+        story.append(Paragraph(f"• <b>{verdict.tier.capitalize()} stakes — {mark}.</b> {verdict.description}", _STYLES["bullet"]))
+        for gap in verdict.inadequacies[:3]:
+            story.append(Paragraph(f"&nbsp;&nbsp;&nbsp;– {gap.statement}", _STYLES["bullet"]))
+        if len(verdict.inadequacies) > 3:
+            story.append(Paragraph(f"&nbsp;&nbsp;&nbsp;– and {len(verdict.inadequacies) - 3} more.", _STYLES["bullet"]))
+    for caveat in sufficiency.caveats:
+        story.append(Paragraph(f"• {caveat.statement}", _STYLES["bullet"]))
+    story.append(Spacer(0, 10))
+    return story
+
+
 # ---------------------------------------------------------------------------
 # Page builders
 # ---------------------------------------------------------------------------
 
 
 def _build_page_1(report: ReportResponse, factors: list[FactorScoreResponse]) -> list:
-    band_ink, band_bg, _ = _BAND_STYLES[report.overall_band]
+    band_ink, band_bg, _ = _band_style(report.overall_band)
     recommendation = build_recommendation(report)
     story: list = []
 
@@ -694,14 +749,17 @@ def _build_page_1(report: ReportResponse, factors: list[FactorScoreResponse]) ->
             [
                 Paragraph("OVERALL CLIMATE RISK", _STYLES["verdict_label"]),
                 Paragraph(
-                    RISK_BAND_LABELS[report.overall_band],
+                    _band_label(report.overall_band, absent="Not estimable"),
                     _style("verdict", fontName="Times-Bold", fontSize=28, leading=32, textColor=band_ink),
                 ),
             ],
             [
-                Paragraph(f"Score {js_round(report.overall_score)} / 100", _STYLES["score"]),
                 Paragraph(
-                    f"Confidence {js_round(report.confidence)}% · Assessment quality: {quality_label}",
+                    "No overall score" if report.overall_score is None else f"Score {js_round(report.overall_score)} / 100",
+                    _STYLES["score"],
+                ),
+                Paragraph(
+                    f"Data completeness {js_round(report.confidence)}%<br/>Assessment quality: {quality_label}",
                     _STYLES["score_note"],
                 ),
             ],
@@ -716,10 +774,12 @@ def _build_page_1(report: ReportResponse, factors: list[FactorScoreResponse]) ->
     )
     story.append(Spacer(0, 8))
 
-    # Risk gauge.
-    gauge_png = _gauge_chart_png(report.overall_score)
-    story.append(Image(io.BytesIO(gauge_png), width=_CONTENT_WIDTH, height=_CONTENT_WIDTH * 1.55 / 7.0))
-    story.append(Spacer(0, 10))
+    # Risk gauge — only for a score that exists. A gauge needle placed anywhere
+    # for an unestimated composite would be an invented reading.
+    if report.overall_score is not None:
+        gauge_png = _gauge_chart_png(report.overall_score)
+        story.append(Image(io.BytesIO(gauge_png), width=_CONTENT_WIDTH, height=_CONTENT_WIDTH * 1.55 / 7.0))
+        story.append(Spacer(0, 10))
 
     # Metadata strip.
     meta_rows = [
@@ -750,6 +810,8 @@ def _build_page_1(report: ReportResponse, factors: list[FactorScoreResponse]) ->
     story.append(KeepTogether([_panel([[recommendation_block]], [_CONTENT_WIDTH], [("BACKGROUND", (0, 0), (-1, -1), _PANEL)])]))
     story.append(Spacer(0, 10))
 
+    story.extend(_evidence_sufficiency_block(report))
+
     # Key Findings.
     findings = report_findings.key_findings_for_report(factors)
     findings_block = [Paragraph("Key Findings", _STYLES["section"]), Spacer(0, 4)] + [
@@ -762,20 +824,32 @@ def _build_page_1(report: ReportResponse, factors: list[FactorScoreResponse]) ->
 def _build_page_2(report: ReportResponse, factors: list[FactorScoreResponse]) -> list:
     story: list = [Paragraph("Risk Dashboard", _STYLES["page_title"])]
 
-    radar_png = _radar_chart_png(factors)
-    radar_caption = Paragraph(
-        "Risk radar — all four factors on one chart, on the same 0-100 risk scale. A larger shape means more "
-        "risk overall; a spike toward one point means that specific factor is driving the shape.",
-        _STYLES["chart_caption"],
-    )
-    story.append(
-        KeepTogether(
-            [
-                Image(io.BytesIO(radar_png), width=90 * mm, height=90 * mm, hAlign="CENTER"),
-                radar_caption,
-            ]
+    computed = [f for f in factors if f.value is not None]
+    if len(computed) >= 3:
+        radar_png = _radar_chart_png(factors)
+        omitted = len(factors) - len(computed)
+        radar_caption = Paragraph(
+            "Risk radar — the computed factors on one chart, on the same 0-100 risk scale. A larger shape means "
+            "more risk overall; a spike toward one point means that specific factor is driving the shape."
+            + (f" {omitted} factor could not be computed and is not plotted." if omitted else ""),
+            _STYLES["chart_caption"],
         )
-    )
+        story.append(
+            KeepTogether(
+                [
+                    Image(io.BytesIO(radar_png), width=90 * mm, height=90 * mm, hAlign="CENTER"),
+                    radar_caption,
+                ]
+            )
+        )
+    else:
+        story.append(
+            Paragraph(
+                f"No risk radar: only {len(computed)} of {len(factors)} factors could be computed, too few to draw "
+                "a shape that would not mislead.",
+                _STYLES["narrative"],
+            )
+        )
     story.append(Spacer(0, 10))
 
     previous_scores = report.comparison.previous_factor_scores
@@ -972,7 +1046,7 @@ def _build_page_7(report: ReportResponse) -> list:
         [_field("Processing date", _fmt_datetime(report.computed_at) + " IST"), _field("Processing time", processing_time)],
         [_field("Earth Engine SDK version", EARTH_ENGINE_SDK_VERSION), _field("Model version", report.model_version)],
         [
-            _field("Confidence", f"{js_round(report.confidence)}%"),
+            _field("Data completeness", f"{js_round(report.confidence)}%"),
             _field("Missing data", "Not available" if missing_months is None else f"{missing_months} of {report.evidence.expected_months} expected months"),
         ],
         [_field("Processing region", f"{report.farm.district_name}, {report.farm.taluka_name}"), _field("Report template version", str(PDF_LAYOUT_VERSION))],

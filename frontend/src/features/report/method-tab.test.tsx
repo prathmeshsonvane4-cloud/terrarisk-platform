@@ -10,7 +10,7 @@ type ReportResponse = components["schemas"]["ReportResponse"];
 type FactorScore = components["schemas"]["FactorScoreResponse"];
 
 function factor(name: FactorScore["factor"], value: number, band: FactorScore["band"]): FactorScore {
-  return { factor: name, value, band, raw_inputs: {} };
+  return { factor: name, value, band, computed: true, raw_inputs: {} };
 }
 
 function report(overrides: Partial<ReportResponse> = {}): ReportResponse {

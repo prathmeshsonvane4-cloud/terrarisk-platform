@@ -46,14 +46,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database.base import AsyncSessionLocal
 from app.models.enums import EvidenceResultTable, JobStatus, RiskEntityType, RiskFactor, SatelliteIndexType
 from app.models.farm import FarmPolygon
+from app.models.decision_policy import DecisionPolicy
 from app.models.job import Job
+from app.models.observation_fetch import ObservationFetch
 from app.models.risk import ConfigWeight, RiskFactorScore, RiskScore
 from app.models.satellite import SatelliteObservation
 from app.services.provenance import EvidenceItem, add_evidence, add_validation_run, risk_score_evidence
 from app.services.reporting.progress import ProgressTracker
 from app.services.risk.engine import RiskEngine
 from app.services.risk.models import MonthlyValue, ObservationBundle, RiskEngineConfig
-from app.services.risk.seasonal import BASELINE_YEARS
+from app.services.risk.seasonal import BASELINE_YEARS, latest_valid_observation
+from app.services.sufficiency import DecisionSufficiency, EvidenceFacts, SufficiencyPolicy, evaluate_sufficiency
+from app.services.sufficiency.serialize import model_confidence_json, sub_signals_json, sufficiency_json
 from app.services.satellite.gee_provider import _monthly_periods
 from app.services.satellite.provider import IndexObservation, SatelliteDataProvider, SatelliteIndex
 from app.services.validation import ValidationReport, classify_zone_from_normals, validate_series
@@ -215,13 +219,42 @@ async def _run_pipeline(
         floor_threshold=config.floor_threshold,
         computed_in_year=datetime.now(timezone.utc).year,
         satellite_provider=satellite_provider,
+        farm_area_ha=float(farm.area_ha),
     )
     validation = _validate_inputs(bundle, farm_id)
     zone = classify_zone_from_normals(rainfall_normal_by_month)
 
+    # Decision sufficiency — kept apart from model confidence by construction:
+    # the engine says how well-determined the estimate is; this says, against
+    # a stated and versioned policy, whether that is enough per stakes tier.
+    policy_row, policy = await _get_active_decision_policy(db)
+    latest_optical = latest_valid_observation(bundle.ndvi_monthly)
+    sufficiency = evaluate_sufficiency(
+        result,
+        EvidenceFacts(
+            window_last_period=periods[-1][0],
+            latest_optical_period=latest_optical.period_start if latest_optical else None,
+            error_findings=len(validation.errors),
+            warning_findings=len(validation.warnings),
+            input_validation_statuses=[item.validation_status for item in lineage],
+            farm_area_ha=float(farm.area_ha),
+        ),
+        policy,
+    )
+
     await tracker.start("saving")
     risk_score_id = await _persist_risk_result(
-        db, farm_id, config_row.id, result, start, end, lineage=lineage, validation=validation, zone=zone.value
+        db,
+        farm_id,
+        config_row.id,
+        result,
+        start,
+        end,
+        lineage=lineage,
+        validation=validation,
+        zone=zone.value,
+        sufficiency=sufficiency,
+        decision_policy_id=policy_row.id,
     )
     await tracker.complete("saving")
 
@@ -242,6 +275,8 @@ async def _persist_risk_result(
     lineage: list[EvidenceItem],
     validation: ValidationReport,
     zone: str,
+    sufficiency: DecisionSufficiency,
+    decision_policy_id: UUID,
 ) -> UUID:
     """Single atomic transaction: a RiskScore is never left without its
     RiskFactorScore rows — nor, since Phase B, without its evidence lineage
@@ -260,18 +295,25 @@ async def _persist_risk_result(
         observation_window_start=observation_window_start,
         observation_window_end=observation_window_end,
         weighted_average_score=result.weighted_average_score,
+        model_confidence=model_confidence_json(result.model_confidence),
+        decision_sufficiency=sufficiency_json(sufficiency),
+        decision_policy_id=decision_policy_id,
     )
     db.add(risk_score)
     await db.flush()  # assigns risk_score.id for the factor rows below
 
     for factor_result in result.factors:
+        interval = factor_result.interval
         db.add(
             RiskFactorScore(
                 risk_score_id=risk_score.id,
                 factor=factor_result.factor,
                 value=factor_result.score,
                 band=factor_result.band,
-                raw_inputs=factor_result.raw_inputs,
+                computed=factor_result.computed,
+                interval_low=interval[0] if interval else None,
+                interval_high=interval[1] if interval else None,
+                raw_inputs={**factor_result.raw_inputs, "sub_signals": sub_signals_json(factor_result.sub_signals)},
             )
         )
 
@@ -327,17 +369,20 @@ async def _get_or_fetch_index_series(
     now also recorded in the result's lineage."""
     await tracker.start(stage_id)
     index_type = _INDEX_TO_SATELLITE_INDEX_TYPE[index]
-    cached = await _read_cached_observations(db, farm_id, index_type, start, end)
-    if cached:
+    if await _fetch_covers(db, farm_id, index_type, start, end):
+        cached = await _read_cached_observations(db, farm_id, index_type, start, end)
         # Truthful cache label (B7): a re-assessment that flies through
         # this stage must say so, not look like nothing happened.
         await tracker.complete(stage_id, metadata={"source": "cache", "months": len(cached)})
         return cached, "cache"
 
     fetched = await asyncio.to_thread(provider.get_index_time_series, geometry_geojson, index, start, end)
-    await _persist_observations(db, farm_id, index_type, fetched)
+    await _persist_observations(db, farm_id, index_type, fetched, start, end)
     await tracker.complete(stage_id, metadata={"source": "fetched", "months": len(fetched)})
-    return fetched, "fetched"
+    # Read back what is stored rather than returning `fetched`: where a month
+    # was already cached, the stored value is kept (see _persist_observations),
+    # and the score must use the same number the report's charts display.
+    return await _read_cached_observations(db, farm_id, index_type, start, end), "fetched"
 
 
 async def _get_or_fetch_rainfall_series(
@@ -350,15 +395,15 @@ async def _get_or_fetch_rainfall_series(
     tracker: ProgressTracker,
 ) -> tuple[list[IndexObservation], str]:
     await tracker.start("rainfall_observations")
-    cached = await _read_cached_observations(db, farm_id, SatelliteIndexType.RAINFALL, start, end)
-    if cached:
+    if await _fetch_covers(db, farm_id, SatelliteIndexType.RAINFALL, start, end):
+        cached = await _read_cached_observations(db, farm_id, SatelliteIndexType.RAINFALL, start, end)
         await tracker.complete("rainfall_observations", metadata={"source": "cache", "months": len(cached)})
         return cached, "cache"
 
     fetched = await asyncio.to_thread(provider.get_rainfall_series, geometry_geojson, start, end)
-    await _persist_observations(db, farm_id, SatelliteIndexType.RAINFALL, fetched)
+    await _persist_observations(db, farm_id, SatelliteIndexType.RAINFALL, fetched, start, end)
     await tracker.complete("rainfall_observations", metadata={"source": "fetched", "months": len(fetched)})
-    return fetched, "fetched"
+    return await _read_cached_observations(db, farm_id, SatelliteIndexType.RAINFALL, start, end), "fetched"
 
 
 async def _read_cached_observations(
@@ -390,12 +435,72 @@ async def _read_cached_observations(
     ]
 
 
+async def _fetch_covers(db: AsyncSession, farm_id: UUID, index_type: SatelliteIndexType, start: date, end: date) -> bool:
+    """True only if a recorded fetch covers ALL of [start, end).
+
+    Deliberately not "does the cache hold rows in this range". Months with no
+    usable scene have no row, so rows cannot distinguish "fetched, cloudy"
+    from "never fetched" — and treating any row as a hit is exactly how the
+    eight-year seasonal baseline was silently truncated to the three-year
+    report window. See app/models/observation_fetch.py.
+    """
+    covering = await db.scalar(
+        select(ObservationFetch.id)
+        .where(
+            ObservationFetch.entity_type == RiskEntityType.FARM,
+            ObservationFetch.entity_id == farm_id,
+            ObservationFetch.index_type == index_type,
+            ObservationFetch.period_start <= start,
+            ObservationFetch.period_end >= end,
+        )
+        .limit(1)
+    )
+    return covering is not None
+
+
 async def _persist_observations(
-    db: AsyncSession, farm_id: UUID, index_type: SatelliteIndexType, observations: list[IndexObservation]
+    db: AsyncSession,
+    farm_id: UUID,
+    index_type: SatelliteIndexType,
+    observations: list[IndexObservation],
+    start: date,
+    end: date,
 ) -> None:
     """Commits immediately — this data is valid regardless of what happens
-    later in the pipeline, and a retry should not need to re-fetch it."""
+    later in the pipeline, and a retry should not need to re-fetch it.
+
+    Records the fetched range as covered, and skips any month already
+    stored. A range fetched again (for example a baseline that contains an
+    earlier report window, or a legacy cache with no coverage record) must
+    not duplicate rows; and a month a past report already displayed keeps
+    the value that report showed, rather than being silently rewritten.
+    """
+    already_stored = set(
+        (
+            await db.execute(
+                select(SatelliteObservation.period_start).where(
+                    SatelliteObservation.entity_type == RiskEntityType.FARM,
+                    SatelliteObservation.entity_id == farm_id,
+                    SatelliteObservation.index_type == index_type,
+                    SatelliteObservation.period_start >= start,
+                    SatelliteObservation.period_start < end,
+                )
+            )
+        ).scalars().all()
+    )
+    db.add(
+        ObservationFetch(
+            entity_type=RiskEntityType.FARM,
+            entity_id=farm_id,
+            index_type=index_type,
+            period_start=start,
+            period_end=end,
+            periods_returned=len(observations),
+        )
+    )
     for observation in observations:
+        if observation.period_start in already_stored:
+            continue
         db.add(
             SatelliteObservation(
                 entity_type=RiskEntityType.FARM,
@@ -408,6 +513,21 @@ async def _persist_observations(
             )
         )
     await db.commit()
+
+
+async def _get_active_decision_policy(db: AsyncSession) -> tuple[DecisionPolicy, SufficiencyPolicy]:
+    """The policy in force now, validated. No silent fallback to the code
+    default: an assessment whose verdict cannot be tied to a stored policy
+    row is an assessment nobody can audit."""
+    row = await db.scalar(
+        select(DecisionPolicy)
+        .where(DecisionPolicy.effective_from <= datetime.now(timezone.utc))
+        .order_by(DecisionPolicy.effective_from.desc())
+        .limit(1)
+    )
+    if row is None:
+        raise RuntimeError("No active decision policy found — migration 0013 seeds sufficiency-v1")
+    return row, SufficiencyPolicy.model_validate(row.sufficiency_requirements)
 
 
 async def _get_active_config_weight(db: AsyncSession) -> ConfigWeight:

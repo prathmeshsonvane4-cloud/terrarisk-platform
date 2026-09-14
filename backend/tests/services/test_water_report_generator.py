@@ -30,6 +30,7 @@ from app.models.user import AppUser
 from app.models.water_balance import RechargeStressScore, WaterBalanceResult
 from app.services.hydrology.engine import WaterBalanceEngine
 from app.services.hydrology.gee_hydrology_provider import GEEHydrologyProvider
+from app.services.hydrology.models import InsufficientEvidenceError
 from app.services.hydrology.recharge_stress import RechargeStressEngine
 from app.services.hydrology.water_report_generator import _index_observations_to_monthly_values, generate_water_report
 from app.services.satellite._gee_common import monthly_periods
@@ -311,35 +312,30 @@ async def test_successful_orchestration_persists_both_results_and_returns_metada
 
 
 @pytest.mark.asyncio
-async def test_empty_provider_data_still_produces_a_neutral_persisted_result(catchment_fixture):
-    """Every provider returning nothing (a brand-new catchment with no
-    usable history yet) must not crash the orchestrator — both engines
-    already define a deterministic neutral fallback for this case; the
-    orchestrator's job is to persist it honestly, not paper over it."""
+async def test_empty_provider_data_produces_no_report_and_persists_nothing(catchment_fixture):
+    """REPLACES a test asserting that a catchment with no usable data at all
+    was persisted with a "Normal" storage band and "Moderate" stress — both
+    neutral stand-ins presented as findings. Phase C fails the report loudly
+    instead, with a reason, and writes nothing."""
     catchment = catchment_fixture
     all_missing = set(range(100))  # covers every period in any lookback window used here
 
     async with AsyncSessionLocal() as db:
-        metadata = await generate_water_report(
-            db,
-            catchment_id=catchment.id,
-            hydrology_provider=FakeHydrologyDataProvider(et_value=None, surface_water_percent=None),
-            satellite_provider=FakeSatelliteDataProvider(missing_months=all_missing),
-            water_balance_engine=WaterBalanceEngine(),
-            recharge_stress_engine=RechargeStressEngine(),
-        )
-
-    assert metadata.storage_change_band == StorageChangeBand.NORMAL
-    assert metadata.stress_band == StressBand.MODERATE  # neutral score (50) per each engine's own fallback
+        with pytest.raises(InsufficientEvidenceError, match="could not be computed"):
+            await generate_water_report(
+                db,
+                catchment_id=catchment.id,
+                hydrology_provider=FakeHydrologyDataProvider(et_value=None, surface_water_percent=None),
+                satellite_provider=FakeSatelliteDataProvider(missing_months=all_missing),
+                water_balance_engine=WaterBalanceEngine(),
+                recharge_stress_engine=RechargeStressEngine(),
+            )
 
     async with AsyncSessionLocal() as db:
-        water_balance_row = await db.get(WaterBalanceResult, metadata.water_balance_result_id)
-
-    assert water_balance_row.data_completeness == 0.0
-    assert water_balance_row.rainfall_mm is None
-    assert water_balance_row.et_mm is None
-    assert water_balance_row.runoff_mm is None
-    assert water_balance_row.storage_change_mm is None
+        persisted = (
+            await db.execute(select(WaterBalanceResult).where(WaterBalanceResult.catchment_id == catchment.id))
+        ).scalars().all()
+    assert persisted == []
 
 
 # =====================================================================

@@ -27,6 +27,7 @@ from app.models.enums import BoundaryLevel, JobStatus, JobType, RiskFactor, Sate
 from app.models.evidence import EvidenceRecord, ValidationFinding, ValidationRun
 from app.models.farm import FarmPolygon
 from app.models.job import Job
+from app.models.observation_fetch import ObservationFetch
 from app.models.risk import ConfigWeight, RiskFactorScore, RiskScore
 from app.models.satellite import SatelliteObservation
 from app.models.user import AppUser
@@ -124,6 +125,7 @@ async def scenario(db_session):
         )))
         await cleanup.execute(delete(RiskScore).where(RiskScore.entity_id == farm.id))
         await cleanup.execute(delete(SatelliteObservation).where(SatelliteObservation.entity_id == farm.id))
+        await cleanup.execute(delete(ObservationFetch).where(ObservationFetch.entity_id == farm.id))
         await cleanup.execute(delete(Job).where(Job.id == job.id))
         await cleanup.execute(delete(FarmPolygon).where(FarmPolygon.id == farm.id))
         await cleanup.execute(delete(ConfigWeight).where(ConfigWeight.id == config.id))
@@ -528,7 +530,7 @@ async def test_the_score_is_persisted_with_its_lineage(scenario):
     by_quantity = {row.quantity: row for row in rows}
     for quantity in (
         "ndvi", "mndwi", "ndmi", "ndvi_baseline", "rainfall_monthly_mm", "rainfall_climatology_mm",
-        "jrc_occurrence_percent", "neutral_score_when_uncomputable", "floor_threshold",
+        "jrc_occurrence_percent", "composite_min_weight_coverage", "confidence_level", "floor_threshold",
     ):
         assert quantity in by_quantity, f"no lineage recorded for {quantity}"
 
@@ -623,3 +625,122 @@ async def test_the_database_rejects_a_validation_level_that_does_not_exist(scena
         )
         with pytest.raises(IntegrityError):
             await db.commit()
+
+
+# =====================================================================
+# Phase C — cache coverage, model confidence, decision sufficiency
+# =====================================================================
+
+
+class _RecordingProvider(_DescribedFakeProvider):
+    """Records every index fetch as (index, start, end)."""
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.index_calls: list[tuple] = []
+
+    def get_index_time_series(self, geometry_geojson, index, start, end):
+        self.index_calls.append((index, start, end))
+        return super().get_index_time_series(geometry_geojson, index, start, end)
+
+
+@pytest.mark.asyncio
+async def test_a_first_report_fetches_the_full_seasonal_baseline(scenario):
+    """Regression test for the defect that made three of the four factors in
+    the production assessment uncomputable. The report window was fetched
+    and cached first; the eight-year baseline request then found those rows,
+    called the cache a hit, and never fetched the earlier years."""
+    provider = _RecordingProvider()
+    score = await _run_report(scenario, provider)
+
+    ndvi_starts = sorted(start for index, start, _end in provider.index_calls if index.value == "ndvi")
+    assert len(ndvi_starts) == 2, "the baseline must be fetched, not assumed from the report-window cache"
+    assert ndvi_starts[0].year <= ndvi_starts[1].year - 8
+
+    async with AsyncSessionLocal() as db:
+        vegetation = (
+            await db.execute(
+                select(RiskFactorScore).where(
+                    RiskFactorScore.risk_score_id == score.id, RiskFactorScore.factor == RiskFactor.VEGETATION_STABILITY
+                )
+            )
+        ).scalar_one()
+    assert vegetation.computed
+    assert vegetation.raw_inputs["baseline_samples"] >= 5
+
+
+@pytest.mark.asyncio
+async def test_a_legacy_cache_without_a_coverage_record_is_refetched_without_duplicating_rows(scenario):
+    """Production has cached rows written before coverage was recorded. They
+    must not be trusted as complete, and refetching must not duplicate them."""
+    first = _DescribedFakeProvider()
+    await _run_report(scenario, first)
+    async with AsyncSessionLocal() as db:
+        await db.execute(delete(ObservationFetch).where(ObservationFetch.entity_id == scenario["farm"].id))
+        await db.commit()
+        before = (
+            await db.execute(select(SatelliteObservation).where(SatelliteObservation.entity_id == scenario["farm"].id))
+        ).scalars().all()
+
+    async with AsyncSessionLocal() as db:
+        job2 = Job(type=JobType.FARM_REPORT, status=JobStatus.PENDING, created_by=scenario["user"].id)
+        db.add(job2)
+        await db.commit()
+        await db.refresh(job2)
+    refetch = _RecordingProvider()
+    await generate_farm_report(
+        job_id=job2.id, farm_id=scenario["farm"].id, lookback_years=3, satellite_provider=refetch, risk_engine=RiskEngine()
+    )
+
+    async with AsyncSessionLocal() as db:
+        after = (
+            await db.execute(select(SatelliteObservation).where(SatelliteObservation.entity_id == scenario["farm"].id))
+        ).scalars().all()
+        await db.execute(delete(Job).where(Job.id == job2.id))
+        await db.commit()
+
+    assert refetch.index_calls, "a cache with no coverage record must be refetched"
+    keys = [(o.index_type, o.period_start) for o in after]
+    assert len(keys) == len(set(keys)), "refetching duplicated cached rows"
+    assert len(after) == len(before)
+
+
+@pytest.mark.asyncio
+async def test_the_score_is_persisted_with_model_confidence_and_sufficiency_as_separate_fields(scenario):
+    score = await _run_report(scenario, _DescribedFakeProvider())
+
+    async with AsyncSessionLocal() as db:
+        stored = await db.get(RiskScore, score.id)
+        factors = (await db.execute(select(RiskFactorScore).where(RiskFactorScore.risk_score_id == score.id))).scalars().all()
+
+    assert stored.model_version == "rule-engine-v2"
+    assert stored.decision_policy_id is not None
+    mc, ds = stored.model_confidence, stored.decision_sufficiency
+    assert set(mc) >= {"factors_computed", "overall_estimable", "overall_interval", "interval_coverage", "statement"}
+    assert ds["policy_version"] == "sufficiency-v1" and ds["calibration_status"] == "uncalibrated"
+    assert {t["tier"] for t in ds["tiers"]} == {"low", "medium", "high"}
+    # No input is validated, so high stakes cannot be sufficient.
+    high = next(t for t in ds["tiers"] if t["tier"] == "high")
+    assert not high["sufficient"]
+    assert any(i["code"] == "no_validated_evidence" for i in high["inadequacies"])
+    # Factor detail: computed flags, intervals where defined, sub-signals kept.
+    by_factor = {f.factor: f for f in factors}
+    assert by_factor[RiskFactor.VEGETATION_STABILITY].interval_low is not None
+    assert "sub_signals" in by_factor[RiskFactor.WATER_AVAILABILITY].raw_inputs
+
+
+@pytest.mark.asyncio
+async def test_a_farm_with_no_measurable_factors_stores_no_overall_score(scenario):
+    """End to end, through the real database: the nullable columns and the
+    computed-has-value constraint accept an honest absence."""
+    empty = _DescribedFakeProvider(missing_months=set(range(200)))
+    score = await _run_report(scenario, empty)
+
+    async with AsyncSessionLocal() as db:
+        stored = await db.get(RiskScore, score.id)
+        factors = (await db.execute(select(RiskFactorScore).where(RiskFactorScore.risk_score_id == score.id))).scalars().all()
+
+    assert stored.overall_score is None and stored.overall_band is None
+    uncomputed = [f for f in factors if not f.computed]
+    assert uncomputed and all(f.value is None and f.band is None for f in uncomputed)
+    assert not any(t["sufficient"] for t in stored.decision_sufficiency["tiers"])
