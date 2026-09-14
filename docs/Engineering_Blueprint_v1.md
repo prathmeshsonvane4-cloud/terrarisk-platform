@@ -344,4 +344,6 @@ provider --> ingestion checks --> engine --> result --+
 
 Data model and honesty rules: `docs/Climate_Intelligence_Data_Model.md`. Product audit: `docs/GEE_Product_Audit_2026.md`. Decisions: `docs/DECISIONS.md` (Phases A and B).
 
-Still to come on this roadmap, in order: model confidence separated from decision sufficiency; a recommended action computed from score, uncertainty and stakes (loan amount, reversibility); an observation policy per factor; an evidence decision log; uncertainty propagation; and a transferability test across agro-climatic zones.
+**Phase C (Sep 2026):** §07's "Confidence score: reflects data quality" is now three fields — data completeness (the old `confidence`, renamed in the UI only), `model_confidence` (a statistical property of the estimate) and `decision_sufficiency` (per stakes tier, against a versioned policy in `decision_policy`). The engine (`rule-engine-v2`) no longer scores an uncomputable factor as 50; §06's cache now records fetched ranges in `observation_fetch`.
+
+Still to come on this roadmap, in order: a recommended action computed from score, uncertainty and stakes (loan amount, reversibility); an observation policy per factor; an evidence decision log; uncertainty propagation; and a transferability test across agro-climatic zones.

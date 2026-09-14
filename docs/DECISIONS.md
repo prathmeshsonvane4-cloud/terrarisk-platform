@@ -2693,3 +2693,81 @@ sufficiency as distinct persisted fields, reading from these tables. The
 hydrology provider contract should return composite and pass dates. Wire
 PML_V22a so ET can reach `cross_checked`. Recompute the affected Service 1
 assessments (decision 1).
+
+---
+
+### Evidence-aware roadmap, Phase C — model confidence separated from decision sufficiency (Sep 2026)
+
+**Decision.** Three fields where there was one. `risk_score.confidence` keeps
+its name and is documented as what it always measured — optical data
+completeness. `model_confidence` is a statistical property of the estimate.
+`decision_sufficiency` evaluates the evidence per stakes tier against a
+versioned policy (`decision_policy`, seeded with uncalibrated
+`sufficiency-v1`) and states every shortfall. No factor or composite score is
+ever invented again. Data model: `docs/Climate_Intelligence_Data_Model.md` §6a.
+
+**What production showed.** The only Service 1 assessment in production (the
+0.25 ha Shera plot, 26 Aug 2026) was reported as Moderate, 37.5, at "83%
+confidence". Three of its four factors were a neutral 50 and the fourth was JRC
+occurrence 0.0. That was not bad luck; two structural defects produced it:
+
+1. **The seasonal baseline was never fetched.** The report window was cached
+   first; the eight-year baseline request found those rows, treated any row in
+   range as a complete hit, and skipped the other years. Every calendar month
+   had at most three baseline samples against a minimum of five, so vegetation
+   stability, MNDWI, NDMI and VCI were uncomputable on every farm's first
+   assessment.
+2. **Small farms got no rainfall.** CHIRPS `reduceRegion` at ~5 km returned
+   null for any polygon too small to contain a sample point of the grid.
+   Probed live: 0.25 ha and 1.25 ha null, 10 ha and above fine. Indian
+   smallholdings are typically 0.5-2 ha.
+
+**Fixes.**
+- CHIRPS: polygon mean, falling back to the containing cell's value only when
+  the mean is null. Verified live that the 233 ha Maski polygon is
+  byte-identical to the old code, so no catchment number moves.
+- Cache: `observation_fetch` records the ranges actually fetched; a range is a
+  hit only if a recorded fetch covers it. Refetching skips months already
+  stored, so legacy caches are neither trusted nor duplicated.
+- Engine (`rule-engine-v2`): uncomputed factors are null and excluded; a
+  composite requires two computed factors carrying at least half the weight;
+  otherwise there is no overall score. Re-averaging what survived would have
+  turned the production assessment into Low from one number.
+- Recharge stress (`recharge-stress-engine-v2`) and the water balance: no
+  neutral score or "Normal" band. Nothing computable raises
+  `InsufficientEvidenceError`, and the job fails with that reason, not
+  "please retry".
+
+**Trade-offs.**
+- **The `confidence` field is not renamed.** Renaming would touch ~25 files
+  across API, database, PDF and UI for no behaviour change. It is documented as
+  a legacy name everywhere it appears, and every user-facing label now reads
+  "Data completeness".
+- **Only baseline-sampling uncertainty is quantified** — Wilson intervals at
+  90% on the percentile signals, combined under a perfect-correlation bound.
+  Every interval is a lower bound, and says so. The rest is item 8.
+- **Sufficiency is reported for all three tiers.** Loan amount and
+  reversibility become inputs in item 2; inventing a rupee-to-tier mapping now
+  would be policy taken by default.
+- **High stakes can never be sufficient today**, because no input is validated.
+  Intended: nothing here has been back-tested against loan outcomes.
+- **Water Intelligence gets the fixes, not a sufficiency verdict.** Its
+  decision is programme targeting, not a loan, and that context has not been
+  defined.
+- **Migration 0013's downgrade refuses** when honestly-null scores exist,
+  rather than inventing values to restore NOT NULL.
+
+**Other defects found on the way.**
+- The report's chart series read every cached month for the farm, unbounded.
+  With the baseline now fetched it would have charted 132 months as though the
+  report covered them. Now bounded to the report's own window.
+- A migration command chain continued after a failed upgrade and stepped the
+  local database back a revision. Local only; each migration step is now run
+  and checked separately.
+- `report_findings.py` used `FACTOR_LABELS` without importing it — would have
+  crashed any PDF with an uncomputed factor. Caught by the new PDF test.
+
+**Future migration path.** Item 2 maps loan amount and reversibility to a tier
+and adds action thresholds to `decision_policy`. Item 8 widens the intervals to
+include measurement error and propagates them. The production Shera assessment
+is recomputed under `rule-engine-v2`, appended; the v1 row is kept.

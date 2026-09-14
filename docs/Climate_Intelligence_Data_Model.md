@@ -1,6 +1,6 @@
 # Climate Intelligence Data Model
 
-**Status:** living document — created 13 Sep 2026 (evidence-aware roadmap, Phase B).
+**Status:** living document — created 13 Sep 2026 (Phase B); extended 14 Sep 2026 (Phase C).
 **Scope:** the persisted data behind every TerraRisk assessment in both services: results, their inputs, their lineage, and their validation.
 **Authority:** the SQLAlchemy models under `backend/app/models/` and the migrations under `backend/alembic/versions/`. Where this document and the code disagree, the code is right and this document is a bug.
 
@@ -40,6 +40,8 @@ This document describes that model as it stands, and marks what is not built yet
  └────────────────────────────────────────────────────────────────┘
 
  satellite_observation   cached monthly series per farm/catchment (Service 1 cache)
+ observation_fetch       which date ranges were actually fetched, per farm and index
+ decision_policy         versioned sufficiency requirements per stakes tier
 ```
 
 | Table | Kind | Written by | Mutability |
@@ -50,6 +52,8 @@ This document describes that model as it stands, and marks what is not built yet
 | `config_weight` | Configuration | Seed scripts | New row per version, never edited |
 | `evidence_record` | Lineage | Both pipelines, same transaction as the result | Append-only |
 | `validation_run`, `validation_finding` | Validation | Both pipelines (`source='pipeline'`); `scripts/backfill_validation.py` (`source='backfill'`) | Append-only |
+| `observation_fetch` | Cache coverage | Service 1 pipeline, on every fetch | Insert |
+| `decision_policy` | Configuration | Migration seed; new versions by insert | New row per version, never edited |
 
 ---
 
@@ -117,6 +121,40 @@ Evidence and validation vocabularies (`kind`, `validation_status`, `severity`, `
 
 The reason is change cost. Each value added to a native enum needs an `ALTER TYPE ... ADD VALUE` migration, and forgetting one fails silently until the first insert (see `0010_extend_existing_enums`). The evidence vocabulary will grow through the remaining roadmap phases. The constraints are generated from the Python enums in `app/models/enums.py`, and `test_schema_ddl.py` asserts both the model constraints and migration `0012` admit exactly those values.
 
+
+---
+
+## 6a. Model confidence and decision sufficiency (Phase C)
+
+The single `confidence` number conflated three different things. They are now three fields.
+
+| Field | What it is | Where |
+|---|---|---|
+| `risk_score.confidence` | **Optical data completeness** — the share of expected monthly Sentinel-2 composites that were usable. Legacy name, kept because every report and API reads it. It is not confidence in the score. | column |
+| `risk_score.model_confidence` | **A statistical property of the estimate**: factors computed, share of weight they carry, whether a composite is estimable, the overall interval and how complete it is, and a statement. Independent of any decision. | JSONB |
+| `risk_score.decision_sufficiency` | **Whether the evidence is adequate for a decision** at each stakes tier, with a sentence for every shortfall, under the policy in `decision_policy_id`. Not a recommended action. | JSONB + FK |
+
+### What is quantified, and what is not
+
+Only one uncertainty is quantified: **baseline sampling in the seasonal percentile signals** (NDVI, MNDWI, NDMI). With *n* baseline years, the count below the current reading is Binomial(*n*, *q*); the interval on *q* is the Wilson score interval at 90%. VCI, rainfall anomaly and JRC occurrence have no uncertainty model, and no product's measurement error is included. So every interval is a **lower bound** on the true uncertainty. `interval_coverage` (`full` / `partial` / `none`) and the statement say so on every result.
+
+### No invented scores
+
+- `risk_factor_score.value` and `band` are **null** when a factor could not be computed, with `computed = false`. A database constraint forbids a computed factor without a value, or a value on an uncomputed one. Before `rule-engine-v2`, these rows held a neutral 50.
+- `risk_score.overall_score` and `overall_band` are **null** when computed factors carry less than half the configured weight, or fewer than two are computed. Averaging whatever survived would turn one measured number into a composite verdict.
+- `raw_inputs.sub_signals` records each sub-signal of each factor, its value or the reason it is missing, its interval and its baseline sample count.
+- Water Intelligence has no nullable result columns. When nothing can be computed, the report fails with `InsufficientEvidenceError` and a reason shown to the requester, instead of storing a "Normal" band or a stress score of 50.
+
+### `decision_policy`
+
+Versioned requirements per stakes tier — low, medium, high — covering factors computed, composite required, data completeness, validation errors and warnings, staleness of the latest optical reading, interval width, and whether any input must be cross-checked or field-validated. The seeded `sufficiency-v1` is **uncalibrated**: set by the platform, not derived from outcomes, not agreed with a bank. Under it, no high-stakes decision can be sufficient on satellite evidence alone, because no input is validated.
+
+Loan amount and reversibility do not map to a tier yet. That is the decision-output phase.
+
+### `observation_fetch`
+
+A cached month has a row; a month with no usable scene has none. Rows alone cannot tell "fetched, cloudy" from "never fetched", and treating any row as a cache hit silently truncated every farm's eight-year seasonal baseline to its three-year window. A range is now a cache hit only if a recorded fetch covers all of it. Refetching skips months already stored, so rows are never duplicated and a past report's values are never rewritten.
+
 ---
 
 ## 7. What each pipeline records
@@ -163,6 +201,9 @@ Lineage is **not yet rendered in either report**. The report's output is redesig
 | Polymorphic references have no cascade | Deleting a result would orphan its lineage | Application code never deletes results; the test suite sweeps orphans at session end |
 | Service 1 results before Phase B | No lineage and no backfilled validation | Superseded by recomputing affected assessments after the JRC fix |
 | Cross-product ET check not wired | No input is `cross_checked` | Awaits the uncertainty-propagation phase |
+| Only baseline-sampling uncertainty is quantified | Every interval understates the true uncertainty | Uncertainty propagation phase |
+| Sufficiency tiers are not tied to loan amount | The report shows all three tiers instead of the one that applies | Decision-output phase |
+| Water Intelligence has model confidence only as `raw_inputs` counts | No sufficiency verdict for programme decisions | Not scheduled — its decision context is not a loan and has not been defined |
 
 ---
 
@@ -170,7 +211,7 @@ Lineage is **not yet rendered in either report**. The report's output is redesig
 
 Recorded here so the model is designed forward, not patched later. Not built.
 
-- **Model confidence vs decision sufficiency** — two distinct fields per assessment, with the reason evidence is inadequate when it is.
+- ~~**Model confidence vs decision sufficiency**~~ — built in Phase C; see §6a.
 - **Decision output** — the recommended action (PROCEED / VERIFY / WAIT / ESCALATE / ABSTAIN) with the stakes it was computed for: loan amount and reversibility as explicit, persisted inputs.
 - **Observation policy** — per factor: the dominant uncertain input, the alternative source, the bounded expected effect, retrieval cost, and the recommendation.
 - **Evidence decision log** — per assessment: evidence available and missing, what the policy recommended, whether it was acted on, and the final decision.

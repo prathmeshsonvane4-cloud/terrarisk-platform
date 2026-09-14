@@ -612,8 +612,14 @@ The product is moving from "here is a score" to "here is whether the evidence is
 - **Evidence lineage for every new report in both services** — for each input: source product and version, acquisition dates where available, resolution and resampling, known limitations, and validation status. Retrievable through the API.
 - **Nothing is labelled validated.** Every input is marked `unvalidated` until it is cross-checked against an independent source or field data.
 
+**Phase C (Sep 2026), in the dashboard and PDF:**
+
+- **Data completeness** replaces the "Confidence" label: it always measured usable satellite months, not confidence.
+- **Model confidence and evidence sufficiency** appear as two separate sections. The first says how well determined the estimate is. The second says, for low-, medium- and high-stakes decisions, whether the evidence is enough — and lists every reason it is not.
+- **No invented scores.** A factor without enough evidence shows "Not computed"; an assessment without enough computed factors shows "Not estimable", with no gauge, no radar and no band posture, and the recommendation says not to rely on it.
+
 **Not yet in the product surface:** lineage and validation findings are not shown in the dashboard or PDF. They arrive with the report redesign below rather than being built twice.
 
-**Planned, in order:** separate *model confidence* from *decision sufficiency*; replace the band-only recommendation (§7.5) with PROCEED / VERIFY / WAIT / ESCALATE / ABSTAIN computed from score, uncertainty and stakes, with loan amount and reversibility as explicit inputs; for each factor, show what additional evidence would change the answer and what it would cost.
+**Planned, in order:** replace the band-only recommendation (§7.5) with PROCEED / VERIFY / WAIT / ESCALATE / ABSTAIN computed from score, uncertainty and stakes, with loan amount and reversibility as explicit inputs; for each factor, show what additional evidence would change the answer and what it would cost.
 
 §11 item 3 still stands: back-testing against loan outcomes is the real validation, and it still requires the pilot.
