@@ -63,6 +63,39 @@ _JRC_SCALE_METERS = 30
 # Named so provenance records (app/services/provenance/lineage.py) can
 # import the values this module actually uses rather than restating them.
 
+
+def _chirps_value(image: ee.Image, region: ee.Geometry):
+    """Mean CHIRPS precipitation over `region`, or — only when that comes
+    back null — the value of the CHIRPS cell containing the region's centroid.
+
+    ADDED 13 Sep 2026, fixing a defect that left most real farms with no
+    rainfall at all. `reduceRegion` at the ~5 km CHIRPS scale returns null
+    for a polygon too small to contain a sampling point of that grid. Probed
+    live: a 0.25 ha and a 1.25 ha polygon both returned null; 10 ha and
+    larger returned values. Indian smallholdings are typically 0.5-2 ha, so
+    Service 1 was silently computing every rainfall-dependent sub-signal
+    from nothing, and every factor that depended on one fell back to a
+    neutral score.
+
+    The fallback applies only on null, deliberately. Every polygon that
+    already returned a value — every Water Intelligence catchment included —
+    keeps exactly the value it had. For a polygon that small, the containing
+    cell's value is all CHIRPS can say about it: a regional figure for
+    ~3,000 ha, which is what the sub-pixel disclosure in lineage states.
+    """
+    over_polygon = image.reduceRegion(
+        reducer=ee.Reducer.mean(), geometry=region, scale=_CHIRPS_SCALE_METERS, maxPixels=_CHIRPS_MAX_PIXELS
+    )
+    at_centroid = image.reduceRegion(
+        reducer=ee.Reducer.first(), geometry=region.centroid(1), scale=_CHIRPS_SCALE_METERS
+    )
+    # A key can be absent (band-less image: nothing published) or present
+    # with a null value (published, but no sample in the polygon). Both mean
+    # "no value"; only the second has a centroid fallback worth taking.
+    polygon_value = ee.Algorithms.If(over_polygon.contains("precipitation"), over_polygon.get("precipitation"), None)
+    centroid_value = ee.Algorithms.If(at_centroid.contains("precipitation"), at_centroid.get("precipitation"), None)
+    return ee.Algorithms.If(ee.Algorithms.IsEqual(polygon_value, None), centroid_value, polygon_value)
+
 # 30-year climate-normal window (WMO-standard normal period length),
 # computed relative to the last fully-completed calendar year rather than
 # hardcoded, so it doesn't silently go stale.
@@ -210,15 +243,7 @@ class GeeProvider(SatelliteDataProvider):
         # day.
         def _daily_value(image: ee.Image) -> ee.Feature:
             image = ee.Image(image)
-            stats = image.reduceRegion(
-                reducer=ee.Reducer.mean(),
-                geometry=region,
-                scale=_CHIRPS_SCALE_METERS,
-                maxPixels=_CHIRPS_MAX_PIXELS,
-            )
-            # Same guarded lookup get_rainfall_series() documents at
-            # length: a band-less/unpublished image yields an empty
-            # dictionary and a bare .get() throws server-side.
+            # Guarded, with the sub-pixel centroid fallback — see _chirps_value.
             return ee.Feature(
                 None,
                 {
@@ -227,7 +252,7 @@ class GeeProvider(SatelliteDataProvider):
                     # getInfo(). Needed to attribute each storm's runoff to
                     # a water year.
                     "day": image.date().format("YYYY-MM-dd"),
-                    "value": ee.Algorithms.If(stats.contains("precipitation"), stats.get("precipitation"), None),
+                    "value": _chirps_value(image, region),
                 },
             )
 
@@ -268,9 +293,6 @@ class GeeProvider(SatelliteDataProvider):
             period_start = ee.Date(period.get("start"))
             period_end = ee.Date(period.get("end"))
             month_total = chirps.filterDate(period_start, period_end).sum()
-            stats = month_total.reduceRegion(
-                reducer=ee.Reducer.mean(), geometry=region, scale=_CHIRPS_SCALE_METERS, maxPixels=1e9
-            )
             # Guarded lookup — REAL bug found during M2A P4's live E2E:
             # CHIRPS publishes with a multi-week lag, so the lookback
             # window's most recent month can have zero published images.
@@ -283,14 +305,13 @@ class GeeProvider(SatelliteDataProvider):
             # null, so the unpublished month is skipped by
             # _parse_monthly_features exactly like a fully cloud-masked
             # month — the already-designed sparse-data path (the confidence
-            # score accounts for missing months by construction).
+            # score accounts for missing months by construction). The guard
+            # and the sub-pixel centroid fallback live in _chirps_value.
             return ee.Feature(
                 None,
                 {
                     "period_start": period_start.format("YYYY-MM-dd"),
-                    "value": ee.Algorithms.If(
-                        stats.contains("precipitation"), stats.get("precipitation"), None
-                    ),
+                    "value": _chirps_value(month_total, region),
                 },
             )
 
@@ -317,13 +338,10 @@ class GeeProvider(SatelliteDataProvider):
                 period_start = ee.Date.fromYMD(year, month, 1)
                 period_end = period_start.advance(1, "month")
                 year_month_total = chirps.filterDate(period_start, period_end).sum()
-                stats = year_month_total.reduceRegion(
-                    reducer=ee.Reducer.mean(), geometry=region, scale=_CHIRPS_SCALE_METERS, maxPixels=1e9
-                )
-                # Same empty-month guard as get_rainfall_series; the
-                # climatology's mean reducer simply averages over the
-                # years that do have data.
-                return ee.Algorithms.If(stats.contains("precipitation"), stats.get("precipitation"), None)
+                # Same empty-month guard and sub-pixel fallback as
+                # get_rainfall_series; the climatology's mean reducer simply
+                # averages over the years that do have data.
+                return _chirps_value(year_month_total, region)
 
             yearly_totals = years.map(_year_total)
             normal = ee.List(yearly_totals).reduce(ee.Reducer.mean())
