@@ -14,11 +14,13 @@ export const ROLE_LABELS: Record<UserRole, string> = {
   programme_admin: "Programme Admin",
 };
 
-// Used only to decide whether the Catchments nav item should render
-// (components/workspace/app-shell.tsx) — the real access boundary is
-// still the backend's require_role() gate on every catchment endpoint
-// (README.md: "the guard is a UX convenience, not the actual
-// access-control boundary").
+// Used only to decide which product's landing content "/" shows
+// (app/(app)/page.tsx). It no longer gates any navigation: since
+// 17 Sep 2026 every role may use both services, so the rail renders both
+// products' routes (app-shell.tsx NAV_ITEMS). The real access boundary
+// was always the backend's require_role() gate, never this (README.md:
+// "the guard is a UX convenience, not the actual access-control
+// boundary").
 const WATER_INTELLIGENCE_ROLES: ReadonlySet<UserRole> = new Set(["programme_officer", "programme_admin"]);
 
 export function isWaterIntelligenceRole(role: string): boolean {

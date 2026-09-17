@@ -54,6 +54,24 @@ def require_role(*allowed_roles: UserRole) -> Callable[[AppUser], Awaitable[AppU
     return _check
 
 
+# Every account may run both services — draw farms and generate farm
+# reports, create catchments and generate water reports (founder decision,
+# 17 Sep 2026, docs/DECISIONS.md). Replaces the per-product split in which a
+# Chairman could do neither and a Programme Officer could not assess a farm.
+# Data scoping is unchanged: farms stay owner-or-branch, catchments stay
+# creator-only. Listed explicitly rather than as tuple(UserRole), so a role
+# added later gets no access until someone decides it should.
+REPORTING_ROLES: tuple[UserRole, ...] = (
+    UserRole.CREDIT_OFFICER,
+    UserRole.BRANCH_MANAGER,
+    UserRole.RISK_OFFICER,
+    UserRole.CEO,
+    UserRole.CHAIRMAN,
+    UserRole.PROGRAMME_OFFICER,
+    UserRole.PROGRAMME_ADMIN,
+)
+
+
 async def user_can_access_owned_resource(db: AsyncSession, current_user: AppUser, owner_id: UUID) -> bool:
     """Shared owner-or-same-branch authorization check, used by every
     endpoint that scopes a resource to whoever created/drew it (jobs,

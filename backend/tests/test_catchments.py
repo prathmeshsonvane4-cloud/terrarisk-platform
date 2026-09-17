@@ -196,16 +196,16 @@ async def test_create_catchment_rejects_unauthenticated_request(api_client, user
 
 
 @pytest.mark.asyncio
-async def test_create_catchment_rejects_role_without_catchment_creation_permission(api_client, users_and_org):
-    """A real, authenticated user — but a bank Credit Officer has no
-    Water Intelligence role at all, so this must be 403, not 201."""
+async def test_create_catchment_allowed_for_a_bank_role(api_client, users_and_org):
+    """Every account may use both services (REPORTING_ROLES, 17 Sep 2026).
+    Until then a Credit Officer got 403 here."""
     token = await _login(api_client, users_and_org["credit_officer"].email)
 
     response = await api_client.post(
         "/api/v1/catchments", headers={"Authorization": f"Bearer {token}"}, json=_payload()
     )
 
-    assert response.status_code == 403
+    assert response.status_code == 201, response.text
 
 
 @pytest.mark.asyncio
@@ -493,12 +493,12 @@ async def test_upload_rejects_unauthenticated_request(api_client, users_and_org)
 
 
 @pytest.mark.asyncio
-async def test_upload_rejects_role_without_catchment_creation_permission(api_client, users_and_org):
+async def test_upload_allowed_for_a_bank_role(api_client, users_and_org):
     token = await _login(api_client, users_and_org["credit_officer"].email)
 
     response = await _upload(api_client, token, "boundary.geojson", _geojson_bytes(), "application/geo+json")
 
-    assert response.status_code == 403
+    assert response.status_code == 201, response.text
 
 
 @pytest.mark.asyncio
@@ -604,24 +604,29 @@ async def test_get_catchment_rejects_unauthenticated_request(api_client, users_a
 
 
 @pytest.mark.asyncio
-async def test_list_catchments_rejects_role_without_permission(api_client, users_and_org):
-    """A bank Credit Officer is a real, authenticated user — Water
-    Intelligence data is simply not their product, hence 403 rather than
-    an (empty, but successful) 200."""
+async def test_list_catchments_for_a_bank_role_shows_only_its_own(api_client, users_and_org):
+    """Opening the service to every role must not open anyone's data:
+    a Credit Officer sees its own catchment and not the officer's."""
+    officer_token = await _login(api_client, users_and_org["officer"].email)
+    await _create(api_client, officer_token)
     token = await _login(api_client, users_and_org["credit_officer"].email)
+    own = await _create(api_client, token)
 
     response = await api_client.get("/api/v1/catchments", headers={"Authorization": f"Bearer {token}"})
 
-    assert response.status_code == 403
+    assert response.status_code == 200
+    assert [row["id"] for row in response.json()] == [own["id"]]
 
 
 @pytest.mark.asyncio
-async def test_get_catchment_rejects_role_without_permission(api_client, users_and_org):
+async def test_get_catchment_for_a_bank_role_is_scoped_like_anyone_else(api_client, users_and_org):
+    officer_token = await _login(api_client, users_and_org["officer"].email)
+    catchment = await _create(api_client, officer_token)
     token = await _login(api_client, users_and_org["credit_officer"].email)
 
-    response = await api_client.get(f"/api/v1/catchments/{uuid4()}", headers={"Authorization": f"Bearer {token}"})
+    response = await api_client.get(f"/api/v1/catchments/{catchment['id']}", headers={"Authorization": f"Bearer {token}"})
 
-    assert response.status_code == 403
+    assert response.status_code == 404
 
 
 @pytest.mark.asyncio
@@ -797,10 +802,9 @@ async def test_trigger_water_report_rejects_unauthenticated_request(api_client, 
 
 
 @pytest.mark.asyncio
-async def test_trigger_water_report_rejects_role_without_catchment_permission(api_client, users_and_org):
-    """A bank Credit Officer is a real, authenticated user — but Water
-    Intelligence is not their product; same 403 as create_catchment's
-    own role gate."""
+async def test_trigger_water_report_on_another_users_catchment_is_404_for_a_bank_role(api_client, users_and_org):
+    """A bank role may now generate water reports, but only for its own
+    catchments: someone else's is indistinguishable from none."""
     officer_token = await _login(api_client, users_and_org["officer"].email)
     catchment = await _create(api_client, officer_token)
 
@@ -809,7 +813,7 @@ async def test_trigger_water_report_rejects_role_without_catchment_permission(ap
         f"/api/v1/catchments/{catchment['id']}/water-reports",
         headers={"Authorization": f"Bearer {credit_officer_token}"},
     )
-    assert response.status_code == 403
+    assert response.status_code == 404
 
 
 @pytest.mark.asyncio

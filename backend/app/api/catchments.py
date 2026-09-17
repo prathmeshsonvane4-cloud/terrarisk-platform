@@ -4,9 +4,9 @@ the creating officer's identity always comes from the authenticated
 JWT — never the request body — and the authoritative area is always
 computed server-side via PostGIS, never trusted from the client.
 
-Role-gated to `PROGRAMME_OFFICER`/`PROGRAMME_ADMIN` — Water
-Intelligence's own roles (Blueprint v2 D8), not Service 1's bank roles
-(`CREDIT_OFFICER`/`BRANCH_MANAGER`).
+Role-gated to `REPORTING_ROLES` (app/api/deps.py) — since 17 Sep 2026
+every account may use both services. Until then this was
+`PROGRAMME_OFFICER`/`PROGRAMME_ADMIN` only (Blueprint v2 D8).
 
 `POST /catchments` (manual draw, M4-003) and `POST /catchments/upload`
 (file upload, M4-004) both converge on `_persist_catchment()` below —
@@ -23,13 +23,11 @@ diverge from `app/api/farms.py`'s own GET-endpoint pattern in one way:
 Farm's reads use the role-agnostic `get_current_user` (any authenticated
 bank user may read), because Service 1's entire user population is bank
 staff already implicitly scoped by branch. Water Intelligence shares the
-same auth system with a materially different user population (bank
-roles have no legitimate reason to see catchment data at all), so reads
-here are role-gated exactly like writes
-(`PROGRAMME_OFFICER`/`PROGRAMME_ADMIN`) — giving a real, distinct 403 for
-a wrong-product-entirely caller, separate from the 404 IDOR-safe
-not-found response `user_can_access_owned_resource`-style scoping
-produces for a right-role caller viewing someone else's catchment.
+same auth system, so reads here are role-gated exactly like writes
+(`REPORTING_ROLES`). Every role is currently in that list, so a caller
+viewing someone else's catchment gets the IDOR-safe 404 from
+`created_by` scoping; a 403 would only reappear for a role deliberately
+left out of it.
 
 `POST /catchments/{id}/water-reports` (ticket M4-006; wired to a real
 pipeline in M5-002) mirrors `app/api/reports.py`'s `trigger_report`
@@ -114,12 +112,12 @@ from geoalchemy2.shape import from_shape
 from sqlalchemy import and_, cast, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import require_role
+from app.api.deps import REPORTING_ROLES, require_role
 from app.database.base import AsyncSessionLocal
 from app.database.session import get_db
 from app.models.admin import AdminBoundary
 from app.models.catchment import Catchment
-from app.models.enums import DelineationMethod, EvidenceResultTable, JobStatus, JobType, UserRole
+from app.models.enums import DelineationMethod, EvidenceResultTable, JobStatus, JobType
 from app.models.job import Job
 from app.models.organization import Organization
 from app.models.user import AppUser
@@ -229,7 +227,7 @@ _EARTH_ENGINE_REPORT_SEMAPHORE = asyncio.Semaphore(1)
 @router.post("", response_model=CatchmentResponse, status_code=status.HTTP_201_CREATED)
 async def create_catchment(
     payload: CatchmentCreateRequest,
-    current_user: AppUser = Depends(require_role(UserRole.PROGRAMME_OFFICER, UserRole.PROGRAMME_ADMIN)),
+    current_user: AppUser = Depends(require_role(*REPORTING_ROLES)),
     db: AsyncSession = Depends(get_db),
 ) -> CatchmentResponse:
     """Persist a manually-drawn catchment boundary. Geometry validity,
@@ -255,7 +253,7 @@ async def upload_catchment(
     name: str = Form(...),
     organization_id: UUID | None = Form(None),
     admin_boundary_id: UUID | None = Form(None),
-    current_user: AppUser = Depends(require_role(UserRole.PROGRAMME_OFFICER, UserRole.PROGRAMME_ADMIN)),
+    current_user: AppUser = Depends(require_role(*REPORTING_ROLES)),
     db: AsyncSession = Depends(get_db),
 ) -> CatchmentResponse:
     """Persist a catchment boundary from an uploaded GeoJSON, KML, or
@@ -296,7 +294,7 @@ async def list_catchments(
     response: Response,
     limit: int = Query(_DEFAULT_PAGE_SIZE, ge=1, le=_MAX_PAGE_SIZE),
     offset: int = Query(0, ge=0),
-    current_user: AppUser = Depends(require_role(UserRole.PROGRAMME_OFFICER, UserRole.PROGRAMME_ADMIN)),
+    current_user: AppUser = Depends(require_role(*REPORTING_ROLES)),
     db: AsyncSession = Depends(get_db),
 ) -> list[CatchmentResponse]:
     """Every catchment the caller created, newest first. Scoped by
@@ -334,7 +332,7 @@ async def list_catchments(
 @router.get("/{catchment_id}", response_model=CatchmentDetailResponse)
 async def get_catchment(
     catchment_id: UUID,
-    current_user: AppUser = Depends(require_role(UserRole.PROGRAMME_OFFICER, UserRole.PROGRAMME_ADMIN)),
+    current_user: AppUser = Depends(require_role(*REPORTING_ROLES)),
     db: AsyncSession = Depends(get_db),
 ) -> CatchmentDetailResponse:
     """A single catchment by id — 404 for both "doesn't exist" and
@@ -501,7 +499,7 @@ async def _fail_water_report_job(job_id: UUID, message: str, *, db: AsyncSession
 async def trigger_water_report(
     catchment_id: UUID,
     background_tasks: BackgroundTasks,
-    current_user: AppUser = Depends(require_role(UserRole.PROGRAMME_OFFICER, UserRole.PROGRAMME_ADMIN)),
+    current_user: AppUser = Depends(require_role(*REPORTING_ROLES)),
     db: AsyncSession = Depends(get_db),
 ) -> ReportTriggerResponse:
     """Create a water-report job for a catchment and schedule its
@@ -565,7 +563,7 @@ async def trigger_water_report(
 @router.get("/{catchment_id}/water-reports", response_model=WaterReportDetailResponse)
 async def get_latest_water_report(
     catchment_id: UUID,
-    current_user: AppUser = Depends(require_role(UserRole.PROGRAMME_OFFICER, UserRole.PROGRAMME_ADMIN)),
+    current_user: AppUser = Depends(require_role(*REPORTING_ROLES)),
     db: AsyncSession = Depends(get_db),
 ) -> WaterReportDetailResponse:
     """The latest completed water report for a catchment — see the
@@ -589,7 +587,7 @@ async def get_latest_water_report(
 @router.get("/{catchment_id}/water-reports/lineage", response_model=WaterReportLineageResponse)
 async def get_latest_water_report_lineage(
     catchment_id: UUID,
-    current_user: AppUser = Depends(require_role(UserRole.PROGRAMME_OFFICER, UserRole.PROGRAMME_ADMIN)),
+    current_user: AppUser = Depends(require_role(*REPORTING_ROLES)),
     db: AsyncSession = Depends(get_db),
 ) -> WaterReportLineageResponse:
     """Evidence lineage and validation findings for the latest completed
@@ -669,7 +667,7 @@ _DEFAULT_HISTORY_LIMIT = 24
 async def get_water_report_history(
     catchment_id: UUID,
     limit: int = Query(default=_DEFAULT_HISTORY_LIMIT, ge=1, le=_MAX_HISTORY_LIMIT),
-    current_user: AppUser = Depends(require_role(UserRole.PROGRAMME_OFFICER, UserRole.PROGRAMME_ADMIN)),
+    current_user: AppUser = Depends(require_role(*REPORTING_ROLES)),
     db: AsyncSession = Depends(get_db),
 ) -> list[WaterReportHistoryItem]:
     """Every past completed run for a catchment, most recent first — not

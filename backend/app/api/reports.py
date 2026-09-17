@@ -24,12 +24,18 @@ from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
-from app.api.deps import get_current_user, owned_or_branch_filter, require_role, user_can_access_owned_resource
+from app.api.deps import (
+    REPORTING_ROLES,
+    get_current_user,
+    owned_or_branch_filter,
+    require_role,
+    user_can_access_owned_resource,
+)
 from app.core.config import get_settings
 from app.database.base import AsyncSessionLocal
 from app.database.session import get_db
 from app.models.admin import AdminBoundary
-from app.models.enums import EvidenceResultTable, JobStatus, JobType, RiskEntityType, SatelliteIndexType, UserRole
+from app.models.enums import EvidenceResultTable, JobStatus, JobType, RiskEntityType, SatelliteIndexType
 from app.models.farm import FarmPolygon
 from app.models.job import Job
 from app.models.risk import ConfigWeight, RiskFactorScore, RiskScore
@@ -121,7 +127,7 @@ async def trigger_report(
     farm_id: UUID,
     payload: ReportGenerateRequest,
     background_tasks: BackgroundTasks,
-    current_user: AppUser = Depends(require_role(UserRole.CREDIT_OFFICER, UserRole.BRANCH_MANAGER)),
+    current_user: AppUser = Depends(require_role(*REPORTING_ROLES)),
     db: AsyncSession = Depends(get_db),
 ) -> ReportTriggerResponse:
     farm = await db.get(FarmPolygon, farm_id)

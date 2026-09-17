@@ -130,7 +130,7 @@ async def test_history_rejects_unauthenticated_request(api_client, users_and_cat
 
 
 @pytest.mark.asyncio
-async def test_history_rejects_role_without_catchment_permission(api_client, users_and_catchment):
+async def test_history_of_another_users_catchment_is_404_for_a_bank_role(api_client, users_and_catchment):
     catchment = users_and_catchment["catchment"]
     credit_officer = users_and_catchment["credit_officer"]
     token = await _login(api_client, credit_officer.email)
@@ -138,7 +138,7 @@ async def test_history_rejects_role_without_catchment_permission(api_client, use
     response = await api_client.get(
         f"/api/v1/catchments/{catchment.id}/water-reports/history", headers={"Authorization": f"Bearer {token}"}
     )
-    assert response.status_code == 403
+    assert response.status_code == 404
 
 
 @pytest.mark.asyncio

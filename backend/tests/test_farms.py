@@ -139,9 +139,9 @@ async def test_create_farm_rejects_unauthenticated_request(api_client, village_a
 
 
 @pytest.mark.asyncio
-async def test_create_farm_rejects_role_without_farm_drawing_permission(api_client, village_and_users):
-    """A Risk Officer is a real, authenticated user — but drawing a farm
-    boundary is a Credit Officer / Branch Manager action, not theirs."""
+async def test_create_farm_allowed_for_a_non_officer_role(api_client, village_and_users):
+    """Every account may draw farms and generate reports (REPORTING_ROLES,
+    17 Sep 2026). Until then a Risk Officer got 403 here."""
     token = await _login(api_client, village_and_users["risk_officer"].email)
 
     response = await api_client.post(
@@ -152,7 +152,7 @@ async def test_create_farm_rejects_role_without_farm_drawing_permission(api_clie
             "geometry": {"type": "Polygon", "coordinates": [_VALID_SQUARE]},
         },
     )
-    assert response.status_code == 403
+    assert response.status_code == 201, response.text
 
 
 @pytest.mark.asyncio

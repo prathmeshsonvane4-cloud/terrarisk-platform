@@ -1,6 +1,6 @@
 """Farm polygon endpoints (Blueprint §01 Service 1 workflow, step 1-2).
 
-Every write is role-gated (Credit Officer / Branch Manager), the drawing
+Every write is role-gated (`REPORTING_ROLES` — every role since 17 Sep 2026), the drawing
 officer's identity always comes from the authenticated JWT — never from
 the request body — and the authoritative area is always computed
 server-side via PostGIS, never trusted from the client (Blueprint §05).
@@ -18,10 +18,16 @@ from sqlalchemy import cast, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
-from app.api.deps import get_current_user, owned_or_branch_filter, require_role, user_can_access_owned_resource
+from app.api.deps import (
+    REPORTING_ROLES,
+    get_current_user,
+    owned_or_branch_filter,
+    require_role,
+    user_can_access_owned_resource,
+)
 from app.database.session import get_db
 from app.models.admin import AdminBoundary
-from app.models.enums import BoundaryLevel, JobStatus, JobType, RiskEntityType, UserRole
+from app.models.enums import BoundaryLevel, JobStatus, JobType, RiskEntityType
 from app.models.farm import FarmPolygon
 from app.models.job import Job
 from app.models.risk import RiskScore
@@ -49,7 +55,7 @@ _MAX_FARM_AREA_HA = 1000.0
 @router.post("", response_model=FarmResponse, status_code=status.HTTP_201_CREATED)
 async def create_farm(
     payload: FarmCreateRequest,
-    current_user: AppUser = Depends(require_role(UserRole.CREDIT_OFFICER, UserRole.BRANCH_MANAGER)),
+    current_user: AppUser = Depends(require_role(*REPORTING_ROLES)),
     db: AsyncSession = Depends(get_db),
 ) -> FarmResponse:
     """Persist an officer-drawn farm boundary. Geometry validity,

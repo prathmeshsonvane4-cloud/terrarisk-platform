@@ -10,7 +10,7 @@ import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/s
 import { useAuth } from "@/features/auth/auth-context";
 import { useNavigationGuard } from "@/features/navigation-guard/navigation-guard-context";
 import { useAssessments } from "@/features/workspace/use-assessments";
-import { isWaterIntelligenceRole, ROLE_LABELS, type UserRole } from "@/lib/roles";
+import { ROLE_LABELS, type UserRole } from "@/lib/roles";
 import { cn } from "@/lib/utils";
 import { OfflineBanner } from "@/components/ui/offline-banner";
 
@@ -20,10 +20,6 @@ import { OfflineBanner } from "@/components/ui/offline-banner";
 // somewhere that role can actually use.
 const COMMON_NAV_ITEM = { href: "/", label: "Overview", icon: LayoutDashboard } as const;
 
-// Service 1's own nav — a Water Intelligence role has no farms,
-// assessments, or bank reports, and these routes have nothing for that
-// role to do (previously shown to every role regardless; a real, now-
-// fixed UX gap — see docs/WELL_Labs_Demo_Guide.md).
 const SERVICE_ONE_NAV_ITEMS = [
   { href: "/assessments", label: "Assessments", icon: ListChecks },
   { href: "/farms", label: "Farms", icon: Map },
@@ -37,6 +33,14 @@ const WATER_INTELLIGENCE_NAV_ITEMS = [
   { href: "/catchments/map", label: "Map", icon: MapPin },
   { href: "/catchments", label: "Catchments", icon: Droplets },
 ] as const;
+
+/** Both products' nav, for every role (founder decision, 17 Sep 2026 —
+ * docs/DECISIONS.md): the backend's REPORTING_ROLES now lets any account
+ * draw farms, assess them, create catchments and run water reports, so
+ * hiding either product's routes would hide work the account can do.
+ * Landing content stays role-dispatched (app/(app)/page.tsx) — that is
+ * about where a day starts, not about what is reachable. */
+export const NAV_ITEMS = [COMMON_NAV_ITEM, ...SERVICE_ONE_NAV_ITEMS, ...WATER_INTELLIGENCE_NAV_ITEMS] as const;
 
 function isActive(pathname: string, href: string): boolean {
   if (href === "/") return pathname === "/";
@@ -56,13 +60,7 @@ export function activeHref(pathname: string, hrefs: readonly string[]): string |
 
 function NavLinks({ pathname, onNavigate }: { pathname: string; onNavigate?: () => void }) {
   const { confirmNavigation } = useNavigationGuard();
-  const { session } = useAuth();
-  const isWaterIntelligence = Boolean(session && isWaterIntelligenceRole(session.role));
-  const navItems = [
-    COMMON_NAV_ITEM,
-    ...(isWaterIntelligence ? [] : SERVICE_ONE_NAV_ITEMS),
-    ...(isWaterIntelligence ? WATER_INTELLIGENCE_NAV_ITEMS : []),
-  ];
+  const navItems = NAV_ITEMS;
   const currentHref = activeHref(
     pathname,
     navItems.map((item) => item.href),
@@ -158,17 +156,14 @@ function UserMenu() {
 
 function NewAssessmentButton({ className }: { className?: string }) {
   const { confirmNavigation } = useNavigationGuard();
-  const { session } = useAuth();
 
   function handleClick(event: MouseEvent<HTMLAnchorElement>) {
     if (!confirmNavigation()) event.preventDefault();
   }
 
-  // Service 1's own action — a Water Intelligence role has nowhere to
-  // use it (own equivalent, "New catchment," lives on their own landing
-  // page and the Catchments page instead).
-  if (session && isWaterIntelligenceRole(session.role)) return null;
-
+  // Shown for every role since 17 Sep 2026 — a programme account may now
+  // assess a farm too. Water Intelligence's own equivalent, "New
+  // catchment", still lives on its landing page and the Catchments page.
   return (
     <Link href="/assessments/new" onClick={handleClick} className={cn(buttonVariants({ size: "sm" }), "gap-1.5", className)}>
       <Plus aria-hidden className="size-4" />
@@ -185,8 +180,6 @@ export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const { confirmNavigation } = useNavigationGuard();
-  const { session } = useAuth();
-  const isWaterIntelligence = Boolean(session && isWaterIntelligenceRole(session.role));
 
   function guardedClick(event: MouseEvent<HTMLAnchorElement>) {
     if (!confirmNavigation()) event.preventDefault();
@@ -229,16 +222,14 @@ export function AppShell({ children }: { children: ReactNode }) {
           </Sheet>
           <span className="font-heading text-sm font-semibold">TerraRisk</span>
         </div>
-        {!isWaterIntelligence && (
-          <Link
-            href="/assessments/new"
-            onClick={guardedClick}
-            className={buttonVariants({ size: "icon-sm" })}
-            aria-label="New assessment"
-          >
-            <Plus aria-hidden className="size-4" />
-          </Link>
-        )}
+        <Link
+          href="/assessments/new"
+          onClick={guardedClick}
+          className={buttonVariants({ size: "icon-sm" })}
+          aria-label="New assessment"
+        >
+          <Plus aria-hidden className="size-4" />
+        </Link>
       </header>
 
       <main className="flex flex-1 flex-col">{children}</main>

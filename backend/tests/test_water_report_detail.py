@@ -215,10 +215,9 @@ async def test_get_latest_water_report_rejects_unauthenticated_request(api_clien
 
 
 @pytest.mark.asyncio
-async def test_get_latest_water_report_rejects_role_without_catchment_permission(api_client, users_and_catchment):
-    """A bank Credit Officer is a real, authenticated user — but Water
-    Intelligence is not their product; same 403 as the other catchment
-    endpoints' own role gate."""
+async def test_get_latest_water_report_of_another_user_is_404_for_a_bank_role(api_client, users_and_catchment):
+    """A bank role may use Water Intelligence, but another user's
+    catchment stays invisible to it."""
     catchment = users_and_catchment["catchment"]
     credit_officer = users_and_catchment["credit_officer"]
     token = await _login(api_client, credit_officer.email)
@@ -226,7 +225,7 @@ async def test_get_latest_water_report_rejects_role_without_catchment_permission
     response = await api_client.get(
         f"/api/v1/catchments/{catchment.id}/water-reports", headers={"Authorization": f"Bearer {token}"}
     )
-    assert response.status_code == 403
+    assert response.status_code == 404
 
 
 @pytest.mark.asyncio
@@ -311,8 +310,8 @@ async def test_water_report_lineage_covers_both_results(api_client, users_and_ca
 
 @pytest.mark.asyncio
 async def test_water_report_lineage_follows_the_report_access_rules(api_client, users_and_catchment):
-    """Another programme officer gets the report's own 404; a bank role
-    gets the report's own 403. Lineage is never wider than the report."""
+    """Another user, whatever the role, gets the report's own 404.
+    Lineage is never wider than the report."""
     officer = users_and_catchment["officer"]
     catchment = users_and_catchment["catchment"]
     token = await _login(api_client, officer.email)
@@ -323,7 +322,7 @@ async def test_water_report_lineage_follows_the_report_access_rules(api_client, 
     bank = await _login(api_client, users_and_catchment["credit_officer"].email)
 
     assert (await api_client.get(url, headers={"Authorization": f"Bearer {other}"})).status_code == 404
-    assert (await api_client.get(url, headers={"Authorization": f"Bearer {bank}"})).status_code == 403
+    assert (await api_client.get(url, headers={"Authorization": f"Bearer {bank}"})).status_code == 404
 
 
 @pytest.mark.asyncio

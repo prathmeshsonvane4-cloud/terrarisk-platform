@@ -144,8 +144,9 @@ and [`docs/Product_Design_v2.md`](docs/Product_Design_v2.md).
   trusted from the client's preview.
 - Async job tracking for long-running Earth Engine work, with live
   progress polling.
-- Role-scoped access with a deliberate separation between bank roles and
-  programme roles, so a wrong-product caller gets a distinct 403.
+- Role-scoped access through one list (`REPORTING_ROLES`); since 17 Sep 2026
+  every role may use both services, while farms stay owner-or-branch scoped
+  and catchments creator-scoped (another user's row is always a 404).
 - Retry with exponential backoff and jitter on transient Earth Engine
   throttling; non-transient errors still fail fast rather than burning
   quota to reach the same failure.

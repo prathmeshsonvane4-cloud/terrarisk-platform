@@ -2771,3 +2771,36 @@ occurrence 0.0. That was not bad luck; two structural defects produced it:
 and adds action thresholds to `decision_policy`. Item 8 widens the intervals to
 include measurement error and propagates them. The production Shera assessment
 is recomputed under `rule-engine-v2`, appended; the v1 row is kept.
+
+---
+
+### Every account may use both services (17 Sep 2026)
+
+**Decision.** `REPORTING_ROLES` (`backend/app/api/deps.py`) lists every role,
+and gates farm creation, farm reports and every catchment endpoint. Until now
+Service 1 was `credit_officer`/`branch_manager` only and Water Intelligence
+`programme_officer`/`programme_admin` only, so of the four real accounts the
+Chairman could generate nothing at all, the two programme accounts could not
+assess a farm, and the credit officer could not open a catchment. The UI rail
+now shows both products to every role.
+
+**What did not change.** Data scoping. Farms stay owner-or-same-branch,
+catchments stay creator-only, and both still return 404 — never 403 — for
+someone else's row. Widening the roles moved the "which product is yours"
+boundary only; it did not widen anyone's view of anyone else's data. The old
+cross-product 403 tests now assert exactly that: a bank role reaching another
+user's catchment gets 404, and its own catchments list shows only its own.
+
+**Trade-offs.**
+- **The role split was a product statement, not a security control**, and it is
+  now gone. When a bank pilot needs "a Chairman may read but not commission
+  assessments", that is a new, narrower list — not a revert.
+- **Listed explicitly, not `tuple(UserRole)`.** A role added later is excluded
+  until someone decides otherwise, and `test_auth.py` fails to force that
+  decision.
+- **An external collaborator's account (`vivek.srinivasan@ifmr.ac.in`,
+  programme officer) gains Service 1 access** as part of "all accounts". It
+  sees only farms it draws itself. Revoke by narrowing the list or
+  deactivating the account.
+- **Metered Earth Engine compute is now reachable by every account**, on a
+  non-commercial GCP project.

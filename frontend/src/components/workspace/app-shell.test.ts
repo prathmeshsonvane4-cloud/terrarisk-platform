@@ -1,10 +1,31 @@
 import { describe, expect, it } from "vitest";
 
-import { activeHref } from "./app-shell";
+import { activeHref, NAV_ITEMS } from "./app-shell";
 
-// The nav hrefs as actually rendered, per role.
+// The two products' hrefs. Every role now renders both (NAV_ITEMS), but
+// these stay split so each product's highlighting is still asserted on
+// its own, exactly as when the rail showed one product at a time.
 const WATER_INTELLIGENCE = ["/", "/catchments/map", "/catchments"];
 const SERVICE_ONE = ["/", "/assessments", "/farms", "/reports"];
+
+describe("NAV_ITEMS", () => {
+  it("offers both products to every role, since every account can now run both", () => {
+    expect(NAV_ITEMS.map((item) => item.href)).toEqual([
+      "/",
+      "/assessments",
+      "/farms",
+      "/reports",
+      "/catchments/map",
+      "/catchments",
+    ]);
+  });
+
+  it("keeps the most-specific-match rule working across the combined list", () => {
+    const hrefs = NAV_ITEMS.map((item) => item.href);
+    expect(activeHref("/catchments/map", hrefs)).toBe("/catchments/map");
+    expect(activeHref("/reports/abc-123", hrefs)).toBe("/reports");
+  });
+});
 
 /**
  * Adding the Map nav item put a nested route ("/catchments/map") next to

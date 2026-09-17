@@ -144,3 +144,24 @@ async def test_email_casing_does_not_weaken_the_password_check(client_with_seede
         "/api/v1/auth/login", json={"email": "OFFICER@EXAMPLE.COM", "password": "wrong-password"}
     )
     assert response.status_code == 401
+
+
+def test_every_current_role_may_generate_reports():
+    """Founder decision, 17 Sep 2026: every account runs both services.
+    REPORTING_ROLES is an explicit list, so adding a role makes this fail
+    until someone decides whether the new role should generate reports."""
+    from app.api.deps import REPORTING_ROLES
+
+    assert set(REPORTING_ROLES) == set(UserRole)
+
+
+@pytest.mark.asyncio
+async def test_require_role_still_rejects_a_role_outside_the_list():
+    from fastapi import HTTPException
+
+    from app.api.deps import require_role
+
+    check = require_role(UserRole.CREDIT_OFFICER)
+    with pytest.raises(HTTPException) as raised:
+        await check(user=AppUser(role=UserRole.CHAIRMAN))
+    assert raised.value.status_code == 403
