@@ -93,7 +93,7 @@ export function PriorityQueueView({ maxCatchments, embedded = false }: PriorityQ
           <div>
             <h1 className="text-lg font-semibold">Priority Queue</h1>
             <p className="text-sm text-muted-foreground">
-              Every catchment TerraRisk is monitoring, ranked by what needs attention first — using the same satellite
+              Every catchment Kshetra is monitoring, ranked by what needs attention first — using the same satellite
               water-balance data as each catchment&rsquo;s own report, not a separate model.
             </p>
           </div>

@@ -99,7 +99,7 @@ group controls:
 | Earth Engine | `GEE_PROJECT_ID`, `GEE_SERVICE_ACCOUNT_JSON_HOST_PATH` | The host path is bind-mounted read-only into the backend container; see `DECISIONS.md` for the GCP project/service-account setup itself. |
 | App | `APP_NAME`, `APP_VERSION`, `ENVIRONMENT`, `DEBUG` | `ENVIRONMENT=production` and `DEBUG=False` for any real deployment. |
 | Public origin | `FRONTEND_ORIGIN`, `NEXT_PUBLIC_API_BASE_URL` | Leave `NEXT_PUBLIC_API_BASE_URL` blank (same-origin via nginx) unless you're deploying the frontend without nginx in front of it. |
-| TLS | `NGINX_CERTS_HOST_PATH` | See §4 below. |
+| TLS | `NGINX_CONF_FILE` | `nginx.conf` (plain HTTP, default) or `nginx.https.conf` (TLS for kshetra.in). See §4 below. |
 
 `backend/.env.example` and `frontend/.env.example` are separate files for
 running the services directly on your machine (no Docker) — see
@@ -107,40 +107,75 @@ running the services directly on your machine (no Docker) — see
 
 ## 4. SSL / domain
 
-A fresh clone comes up over plain HTTP so `docker compose up` never fails
-on a missing certificate. To enable HTTPS once you have a real domain
-pointed at the server:
+The production domain is **kshetra.in** (the product was renamed from
+TerraRisk on 19 Sep 2026; code, containers and the database keep the
+internal name `terrarisk`). A fresh clone comes up over plain HTTP, so
+`docker compose up` never fails on a missing certificate.
 
-```bash
-# Obtain a certificate with certbot in standalone mode (stop nginx first,
-# since both need port 80):
-docker compose -f docker/docker-compose.prod.yml stop nginx
-sudo apt-get install -y certbot
-sudo certbot certonly --standalone -d your-domain.example
+How it fits together:
 
-# Copy (or symlink) the issued cert where nginx expects it:
-sudo mkdir -p docker/nginx/certs
-sudo cp /etc/letsencrypt/live/your-domain.example/fullchain.pem docker/nginx/certs/
-sudo cp /etc/letsencrypt/live/your-domain.example/privkey.pem docker/nginx/certs/
-```
+- `docker/nginx/nginx.conf` — plain HTTP. Also answers Let's Encrypt
+  challenges, so the first certificate is issued with the site still up.
+- `docker/nginx/nginx.https.conf` — TLS for `kshetra.in`; HTTP, `www` and
+  the bare IP redirect to `https://kshetra.in`.
+- `docker/nginx/snippets/` — everything both share, so they cannot drift.
+- The `certbot` service renews in place twice a day; nginx reloads every
+  6 hours to pick renewals up. No cron job, no copying files.
 
-Then edit `docker/nginx/nginx.conf`: uncomment the `server { listen 443
-ssl; ... }` block at the bottom, set `server_name` to your real domain, and
-restart:
+### Enabling HTTPS (once)
 
-```bash
-docker compose -f docker/docker-compose.prod.yml up -d nginx
-```
+All commands from `/opt/terrarisk`, with
+`C="docker compose --env-file .env -f docker/docker-compose.prod.yml"`.
 
-Set up renewal (Let's Encrypt certs expire every 90 days) via a cron job
-running `certbot renew` followed by the copy step and an `nginx` restart,
-or use certbot's nginx plugin if you prefer it managing the config
-directly.
+1. **DNS.** At the registrar, add A records for `@` and `www`, both to the
+   server's IP. Wait until both resolve:
+
+   ```bash
+   getent hosts kshetra.in www.kshetra.in
+   ```
+
+2. **Deploy in HTTP mode** (`NGINX_CONF_FILE=nginx.conf`), so nginx serves
+   the challenge path and the `certbot` container exists: `$C up -d`.
+
+3. **Rehearse against Let's Encrypt's staging server** — it does not count
+   against the production rate limits:
+
+   ```bash
+   $C run --rm --entrypoint certbot certbot certonly --webroot -w /var/www/certbot \
+     --cert-name kshetra.in -d kshetra.in -d www.kshetra.in \
+     --agree-tos --register-unsafely-without-email --dry-run
+   ```
+
+   `--agree-tos` accepts Let's Encrypt's Subscriber Agreement on the
+   domain owner's behalf — confirm with them before running it.
+   Let's Encrypt no longer sends expiry emails, so no address is
+   registered; renewal is automatic and monitored by the steps below.
+
+4. **Issue the real certificate:** the same command without `--dry-run`.
+
+5. **Switch nginx to TLS.** In `.env` set `NGINX_CONF_FILE=nginx.https.conf`
+   and `FRONTEND_ORIGIN=https://kshetra.in`, then check the config before
+   swapping it in, and recreate:
+
+   ```bash
+   $C run --rm --no-deps --entrypoint nginx nginx -t
+   $C up -d nginx backend
+   ```
+
+6. **Verify:** `curl -sI http://kshetra.in` (301 to https),
+   `curl -s https://kshetra.in/health/ready`, and the certificate's expiry:
+   `$C run --rm --entrypoint certbot certbot certificates`.
+
+After a week without problems, raise `Strict-Transport-Security` in
+`nginx.https.conf` from one day to two years.
+
+**Rolling back:** set `NGINX_CONF_FILE=nginx.conf` and `$C up -d nginx`.
+Browsers that already received HSTS keep insisting on HTTPS until its
+max-age runs out — why it starts at one day.
 
 **Alternative**: if TLS is already terminated upstream (a cloud load
 balancer, a bank-managed WAF/reverse proxy in front of this server), leave
-nginx on plain HTTP and point that upstream at port 80 — nginx's own HTTPS
-block is only needed when this server terminates TLS itself.
+nginx on plain HTTP and point that upstream at port 80.
 
 ## 5. Reverse proxy design
 

@@ -2804,3 +2804,37 @@ user's catchment gets 404, and its own catchments list shows only its own.
   deactivating the account.
 - **Metered Earth Engine compute is now reachable by every account**, on a
   non-commercial GCP project.
+
+---
+
+### Product renamed to Kshetra; HTTPS prepared for kshetra.in (19 Sep 2026)
+
+**Decision.** Everything a user sees — app header, login, page titles, both
+PDF reports, the API's title — now says **Kshetra** (क्षेत्र: field, region).
+The domain is `kshetra.in`, bought by the founder. `PDF_LAYOUT_VERSION` went
+to 4 so no cached PDF keeps the old name.
+
+**What deliberately keeps the old name.** The repository, Python and npm
+package names, Docker project and database, docs file names, and the
+browser-storage keys `terrarisk.session` and `terrarisk.assessment-draft.*`.
+Renaming the storage keys would sign every user out and delete unsaved
+assessment drafts; renaming the rest is churn nobody sees.
+
+**HTTPS.** Until now production served plain HTTP on a bare IP, so login
+passwords crossed the network unencrypted. The nginx config is now split
+into `nginx.conf` (HTTP, default) and `nginx.https.conf` (TLS for
+kshetra.in), with everything shared in `docker/nginx/snippets/` — the old
+commented-out HTTPS block had already drifted from the live one. A `certbot`
+service renews in place and nginx reloads every 6 hours.
+
+**Trade-offs.**
+- **The first certificate is issued by hand**, because it accepts Let's
+  Encrypt's Subscriber Agreement on the domain owner's behalf; renewals
+  are automatic.
+- **HSTS starts at one day**, not two years, so a bad first rollout cannot
+  lock visitors out for long. Raise it after a clean week.
+- **The domain is hardcoded** in `nginx.https.conf` and `snippets/tls.conf`.
+  Templating it would serve a hypothetical second deployment.
+- **Others own kshetra.com, kshetra.co.in and kshetra.ai.** No agritech or
+  geospatial company of that name turned up in a quick search. A formal
+  trademark search is needed before incorporating under the name.

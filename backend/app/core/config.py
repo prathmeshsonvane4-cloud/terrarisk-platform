@@ -21,7 +21,7 @@ class Settings(BaseSettings):
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
-    app_name: str = "TerraRisk Credit Intelligence API"
+    app_name: str = "Kshetra Credit Intelligence API"
     app_version: str = "0.1.0"
     environment: str = "development"
     # Secure by default: verbose SQL logging (app/database/base.py echoes

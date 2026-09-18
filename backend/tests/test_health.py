@@ -17,7 +17,7 @@ async def test_root_endpoint():
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
         response = await client.get("/")
     assert response.status_code == 200
-    assert response.json()["application"] == "TerraRisk Credit Intelligence"
+    assert response.json()["application"] == "Kshetra Credit Intelligence"
 
 
 @pytest.mark.asyncio

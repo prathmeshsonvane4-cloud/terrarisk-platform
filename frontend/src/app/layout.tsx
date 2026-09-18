@@ -15,7 +15,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "TerraRisk — Climate Intelligence for Agricultural Credit",
+  title: "Kshetra — Climate Intelligence for Agricultural Credit",
   description: "Farm-level climate risk reports for agricultural lending, built on satellite data.",
 };
 

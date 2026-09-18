@@ -37,7 +37,7 @@ export default function CatchmentsPage() {
         <div>
           <h1 className="text-lg font-semibold">Catchments</h1>
           <p className="text-sm text-muted-foreground">
-            Every village or field boundary TerraRisk is generating water reports for. Select two or more with the
+            Every village or field boundary Kshetra is generating water reports for. Select two or more with the
             checkboxes to compare them side by side.
           </p>
         </div>

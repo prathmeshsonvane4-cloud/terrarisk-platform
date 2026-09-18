@@ -18,7 +18,7 @@ const FAMILY_COPY: Record<ErrorFamily, FamilyCopy> = {
   network: {
     icon: WifiOff,
     title: "Couldn't reach the server",
-    description: "Check your connection and try again. If this keeps happening, TerraRisk's servers may be unreachable.",
+    description: "Check your connection and try again. If this keeps happening, Kshetra's servers may be unreachable.",
     showRetry: true,
   },
   auth: {

@@ -166,7 +166,7 @@ export default function NewCatchmentPage() {
         <div>
           <h1 className="text-lg font-semibold">New catchment</h1>
           <p className="text-sm text-muted-foreground">
-            A catchment is the boundary TerraRisk generates water reports for — a village, a farm, or any area you
+            A catchment is the boundary Kshetra generates water reports for — a village, a farm, or any area you
             draw.
           </p>
         </div>

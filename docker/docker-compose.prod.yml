@@ -63,7 +63,7 @@ services:
       postgres:
         condition: service_healthy
     environment:
-      APP_NAME: ${APP_NAME:-TerraRisk Credit Intelligence API}
+      APP_NAME: ${APP_NAME:-Kshetra Credit Intelligence API}
       APP_VERSION: ${APP_VERSION:-0.1.0}
       ENVIRONMENT: ${ENVIRONMENT:-production}
       DEBUG: ${DEBUG:-False}
@@ -137,12 +137,36 @@ services:
     ports:
       - "80:80"
       - "443:443"
+    # Reload every 6h so a certificate the certbot service renewed in place
+    # is actually served — nginx reads certificates only at (re)load.
+    # Harmless in plain-HTTP mode, where there is nothing to pick up.
+    command: ["/bin/sh", "-c", "while :; do sleep 6h & wait $${!}; nginx -s reload; done & exec nginx -g 'daemon off;'"]
     volumes:
-      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
-      # Mount a real certificate directory here once TLS is enabled (see
-      # docs/Deployment_Guide.md) — empty/absent is fine while the HTTPS
-      # server block in nginx.conf stays commented out.
-      - ${NGINX_CERTS_HOST_PATH:-./nginx/certs}:/etc/nginx/certs:ro
+      # nginx.conf (plain HTTP, the default) or nginx.https.conf (TLS for
+      # kshetra.in) — docs/Deployment_Guide.md §4. Switch only after the
+      # certificate exists; nginx.https.conf will not start without it.
+      - ./nginx/${NGINX_CONF_FILE:-nginx.conf}:/etc/nginx/nginx.conf:ro
+      - ./nginx/snippets:/etc/nginx/snippets:ro
+      - letsencrypt:/etc/letsencrypt:ro
+      - certbot_www:/var/www/certbot:ro
+    networks:
+      - terrarisk_net
+
+  # Renews the Let's Encrypt certificate. Checks twice a day; certbot only
+  # renews within 30 days of expiry, so almost every check is a no-op.
+  # Before the first certificate exists there is nothing to renew and it
+  # says so. The FIRST certificate is issued once, by hand, with
+  # `docker compose run --rm --entrypoint certbot certbot certonly ...`
+  # (docs/Deployment_Guide.md §4) — that step accepts Let's Encrypt's
+  # subscriber agreement, so it is deliberately not automated.
+  certbot:
+    logging: *default-logging
+    image: certbot/certbot:v5.8.0
+    restart: unless-stopped
+    entrypoint: ["/bin/sh", "-c", "trap exit TERM; while :; do certbot renew --webroot -w /var/www/certbot --quiet; sleep 12h & wait $${!}; done"]
+    volumes:
+      - letsencrypt:/etc/letsencrypt
+      - certbot_www:/var/www/certbot
     networks:
       - terrarisk_net
 
@@ -154,3 +178,8 @@ volumes:
   postgres_data:
   pdf_cache:
   uploads:
+  # Certificates and certbot's account/renewal config. Losing it is not a
+  # disaster — the certificate can be reissued — but back it up with the
+  # rest when off-site backups exist.
+  letsencrypt:
+  certbot_www:

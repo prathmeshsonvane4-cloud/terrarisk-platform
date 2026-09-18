@@ -494,7 +494,7 @@ async def get_report_pdf(
         temp_path.replace(cache_path)
 
     village_slug = re.sub(r"[^A-Za-z0-9]+", "-", report.farm.village_name).strip("-") or "farm"
-    filename = f"TerraRisk-Report-{village_slug}-{report.computed_at:%Y%m%d}.pdf"
+    filename = f"Kshetra-Report-{village_slug}-{report.computed_at:%Y%m%d}.pdf"
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",

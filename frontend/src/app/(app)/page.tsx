@@ -38,7 +38,7 @@ function WaterIntelligenceOverview({ firstName }: { firstName: string | undefine
         <div>
           <h1 className="text-lg font-semibold">{firstName ? `Good to see you, ${firstName}` : "Overview"}</h1>
           <p className="text-sm text-muted-foreground">
-            TerraRisk Water Intelligence turns satellite rainfall, vegetation, and surface-water readings into a map of
+            Kshetra Water Intelligence turns satellite rainfall, vegetation, and surface-water readings into a map of
             where water stress is building, and a ranked list of which villages need attention this week, and why.
           </p>
         </div>

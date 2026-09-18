@@ -76,7 +76,9 @@ from app.services.reporting.report_text import (
 # on this, so every farm's PDF re-renders under the new layout instead of
 # serving a stale cached v1 file. Old *-v1.pdf files are simply orphaned on
 # disk, matching the existing cache design (never expired, never cleaned up).
-PDF_LAYOUT_VERSION = 3
+# 3: Phase C sufficiency sections. 4: brand renamed TerraRisk -> Kshetra,
+# so no cached PDF keeps the old name.
+PDF_LAYOUT_VERSION = 4
 
 # Verbatim from the dashboard's lineage footer (reports/[id]/page.tsx).
 DATA_SOURCES = (
@@ -635,13 +637,13 @@ def _footer_furniture(canvas: Canvas, doc) -> None:
     if doc.page > 1:
         canvas.setFont("Helvetica-Bold", 8.5)
         canvas.setFillColor(_BRAND)
-        canvas.drawString(_MARGIN, _PAGE_HEIGHT - 10 * mm, "TerraRisk — Climate Credit Report")
+        canvas.drawString(_MARGIN, _PAGE_HEIGHT - 10 * mm, "Kshetra — Climate Credit Report")
         canvas.setStrokeColor(_BORDER)
         canvas.setLineWidth(0.8)
         canvas.line(_MARGIN, _PAGE_HEIGHT - 12 * mm, _PAGE_WIDTH - _MARGIN, _PAGE_HEIGHT - 12 * mm)
     canvas.setFont("Helvetica", 6.5)
     canvas.setFillColor(_MUTED)
-    canvas.drawString(_MARGIN, 9 * mm, "TerraRisk — Climate Credit Report")
+    canvas.drawString(_MARGIN, 9 * mm, "Kshetra — Climate Credit Report")
     canvas.restoreState()
 
 
@@ -723,7 +725,7 @@ def _build_page_1(report: ReportResponse, factors: list[FactorScoreResponse]) ->
     header = Table(
         [
             [
-                [Paragraph("TerraRisk", _STYLES["brand"]), Paragraph("Climate Intelligence for Agricultural Credit", _STYLES["tagline"])],
+                [Paragraph("Kshetra", _STYLES["brand"]), Paragraph("Climate Intelligence for Agricultural Credit", _STYLES["tagline"])],
                 [Paragraph("Climate Credit Report", _STYLES["doc_title"]), Paragraph("Farmer report · Service 1", _STYLES["doc_subtitle"])],
             ]
         ],
@@ -929,7 +931,7 @@ def _build_page_4(report: ReportResponse) -> list:
     story: list = [Paragraph("Climate Outlook", _STYLES["page_title"])]
     story.append(
         Paragraph(
-            "TerraRisk's assessment is entirely backward-looking — real satellite observations of what already "
+            "Kshetra's assessment is entirely backward-looking — real satellite observations of what already "
             "happened on this farm. It does not currently integrate a forward-looking seasonal forecast. The "
             "sections below say so honestly rather than estimating a number with nothing behind it.",
             _STYLES["narrative"],
@@ -1095,8 +1097,8 @@ def render_report_pdf(report: ReportResponse, map_png: bytes | None) -> bytes:
         rightMargin=_MARGIN,
         topMargin=14 * mm,
         bottomMargin=16 * mm,
-        title=f"TerraRisk Climate Credit Report — {report.farm.village_name}",
-        author="TerraRisk",
+        title=f"Kshetra Climate Credit Report — {report.farm.village_name}",
+        author="Kshetra",
         subject="Farm climate credit risk assessment (decision support)",
     )
     document.build(story, onFirstPage=_footer_furniture, onLaterPages=_footer_furniture, canvasmaker=_NumberedCanvas)

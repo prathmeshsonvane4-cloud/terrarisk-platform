@@ -18,7 +18,7 @@ INDEX_EXPLANATIONS: dict[str, str] = {
     "NDVI": (
         "Normalized Difference Vegetation Index — a standard satellite measurement of how green and dense "
         "a crop's canopy is. Healthy, actively growing crops reflect near-infrared light strongly and absorb "
-        "red light; NDVI captures that contrast as a single number. TerraRisk never compares a farm's NDVI to "
+        "red light; NDVI captures that contrast as a single number. Kshetra never compares a farm's NDVI to "
         "other farms — only to this same farm's own 3-year history, so the comparison is always fair to the "
         "specific soil, crop, and micro-climate of that field."
     ),

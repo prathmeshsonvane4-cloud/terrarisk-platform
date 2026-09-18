@@ -11,7 +11,7 @@ import { API_BASE_URL } from "@/lib/api/client";
  * backend put in Content-Disposition (village + assessment date). */
 function filenameFrom(disposition: string | null): string {
   const match = disposition?.match(/filename="([^"]+)"/);
-  return match?.[1] ?? "TerraRisk-Report.pdf";
+  return match?.[1] ?? "Kshetra-Report.pdf";
 }
 
 /**

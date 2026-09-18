@@ -42,7 +42,7 @@ export function DownloadWaterReportPdfButton({
       // download a PDF, and the locator costs four extra requests.
       const mapContext = await loadWaterReportMapContext(catchment);
       const doc = generateWaterReportPdf(report, catchment, mapContext);
-      doc.save(`TerraRisk-Water-Report-${slugify(catchment.name)}-${report.generated_at.slice(0, 10)}.pdf`);
+      doc.save(`Kshetra-Water-Report-${slugify(catchment.name)}-${report.generated_at.slice(0, 10)}.pdf`);
       setState("idle");
     } catch {
       setState("error");

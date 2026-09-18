@@ -1,14 +1,16 @@
-# TerraRisk
+# Kshetra
 
 [![CI](https://github.com/prathmeshsonvane4-cloud/terrarisk-platform/actions/workflows/ci.yml/badge.svg)](https://github.com/prathmeshsonvane4-cloud/terrarisk-platform/actions/workflows/ci.yml)
-![Backend tests](https://img.shields.io/badge/backend%20tests-438%20passing-brightgreen)
-![Frontend tests](https://img.shields.io/badge/frontend%20tests-126%20passing-brightgreen)
+![Backend tests](https://img.shields.io/badge/backend%20tests-752%20passing-brightgreen)
+![Frontend tests](https://img.shields.io/badge/frontend%20tests-137%20passing-brightgreen)
 ![License](https://img.shields.io/badge/license-proprietary-lightgrey)
 
 Climate and water risk intelligence for agricultural lending and watershed
-programmes. TerraRisk turns a location — a farm boundary or a village
+programmes. Kshetra turns a location — a farm boundary or a village
 catchment — into a transparent, evidence-backed report that a credit
 officer or a programme officer can act on.
+
+*Kshetra (क्षेत्र — field, region) was called TerraRisk until September 2026. The code, containers and database keep the internal name `terrarisk`.*
 
 Built around two real deployments: a district cooperative bank in Latur,
 and village-scale water intelligence across Maski taluka, Raichur.

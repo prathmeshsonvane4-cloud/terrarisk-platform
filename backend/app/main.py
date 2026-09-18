@@ -49,7 +49,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 
 app = FastAPI(
-    title="TerraRisk Credit Intelligence API",
+    title="Kshetra Credit Intelligence API",
     description="Climate Risk Intelligence Platform for Financial Institutions",
     version="0.1.0",
     lifespan=lifespan,
@@ -119,10 +119,10 @@ async def _unhandled_exception_handler(request: Request, exc: Exception) -> JSON
 @app.get("/")
 async def root():
     return {
-        "application": "TerraRisk Credit Intelligence",
+        "application": "Kshetra Credit Intelligence",
         "version": "0.1.0",
         "status": "running",
-        "message": "Welcome to TerraRisk API",
+        "message": "Welcome to the Kshetra API",
     }
 
 

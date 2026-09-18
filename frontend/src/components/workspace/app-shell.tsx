@@ -193,7 +193,7 @@ export function AppShell({ children }: { children: ReactNode }) {
        * officer actually prints. */}
       <aside className="hidden w-56 shrink-0 flex-col gap-4 border-r p-4 md:flex print:hidden">
         <Link href="/" onClick={guardedClick} className="font-heading text-base font-semibold">
-          TerraRisk
+          Kshetra
         </Link>
         <NewAssessmentButton />
         <NavLinks pathname={pathname} />
@@ -212,7 +212,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               <Menu aria-hidden className="size-4.5" />
             </SheetTrigger>
             <SheetContent side="left" className="flex w-64 flex-col gap-4 p-4">
-              <SheetTitle>TerraRisk</SheetTitle>
+              <SheetTitle>Kshetra</SheetTitle>
               <NewAssessmentButton />
               <NavLinks pathname={pathname} onNavigate={() => setMobileNavOpen(false)} />
               <div className="flex-1" />
@@ -220,7 +220,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               <UserMenu />
             </SheetContent>
           </Sheet>
-          <span className="font-heading text-sm font-semibold">TerraRisk</span>
+          <span className="font-heading text-sm font-semibold">Kshetra</span>
         </div>
         <Link
           href="/assessments/new"

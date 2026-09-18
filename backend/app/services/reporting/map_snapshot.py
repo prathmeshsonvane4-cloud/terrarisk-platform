@@ -168,7 +168,7 @@ def fetch_map_snapshot(geometry: dict) -> bytes | None:
 
     canvas = Image.new("RGB", (_SNAPSHOT_WIDTH, _SNAPSHOT_HEIGHT))
     try:
-        with httpx.Client(timeout=10.0, headers={"User-Agent": "TerraRisk/0.1 report-pdf"}) as client:
+        with httpx.Client(timeout=10.0, headers={"User-Agent": "Kshetra/0.1 report-pdf"}) as client:
             max_index = 2**zoom - 1
             for tile_x in range(first_tile_x, last_tile_x + 1):
                 for tile_y in range(first_tile_y, last_tile_y + 1):

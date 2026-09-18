@@ -150,7 +150,7 @@ def test_page_1_executive_summary_answers_the_core_credit_questions():
     assert pdf_bytes.startswith(b"%PDF"), "not a PDF"
     page1 = _extract_pages(pdf_bytes)[0]
 
-    assert "TerraRisk" in page1  # branding
+    assert "Kshetra" in page1  # branding
     assert "Climate Credit Report" in page1
     assert "Executive Climate Credit Summary" in page1
     assert "Moderate risk" in page1  # overall band
