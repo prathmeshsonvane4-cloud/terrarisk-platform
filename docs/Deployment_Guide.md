@@ -166,6 +166,25 @@ All commands from `/opt/terrarisk`, with
    `curl -s https://kshetra.in/health/ready`, and the certificate's expiry:
    `$C run --rm --entrypoint certbot certbot certificates`.
 
+### Interim: HTTPS on the bare IP (until the domain exists)
+
+Let's Encrypt issues certificates for IP addresses, generally available
+since January 2026, only on its six-day `shortlived` profile. Certbot 4.0+
+renews a certificate of ten days or less once half its lifetime has
+passed; the `certbot` service checks every 12 hours and nginx reloads
+every 6, so each certificate gets about six renewal attempts before it
+could expire. Browsers ignore HSTS on IP addresses, so this mode sends none.
+
+```bash
+$C run --rm --entrypoint certbot certbot certonly --webroot -w /var/www/certbot   --preferred-profile shortlived --ip-address 174.138.122.238   --cert-name 174.138.122.238   --agree-tos --register-unsafely-without-email --dry-run   # then without --dry-run
+```
+
+Then set `NGINX_CONF_FILE=nginx.https-ip.conf` and
+`FRONTEND_ORIGIN=https://174.138.122.238`, run `nginx -t` as in step 5, and
+`$C up -d nginx backend`. When the domain works, follow steps 1–6 and
+switch to `nginx.https.conf`; the IP certificate can then be deleted with
+`certbot delete --cert-name 174.138.122.238`.
+
 After a week without problems, raise `Strict-Transport-Security` in
 `nginx.https.conf` from one day to two years.
 
