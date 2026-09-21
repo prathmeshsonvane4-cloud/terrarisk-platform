@@ -54,16 +54,54 @@ DEFAULT_PATH = Path("ml/labels.geojson")
 # a longitude lands the square in another district without looking wrong.
 LATUR_BOUNDS = (17.8, 19.0, 75.9, 77.3)  # lat_min, lat_max, lon_min, lon_max
 
-# Two pins closer than this are treated as the same field submitted
-# twice. At 40 m the 50 m squares would overlap heavily, so the model
-# would see one field's curve twice and leave-one-village-out would be
-# scoring on a field it had effectively trained on.
+# Two pins this close are the same field pinned twice — on two visits, or
+# by two people. Always skipped.
+SAME_PIN_DISTANCE_M = 10.0
+
+# Kept for callers and tests that ask "would these two be treated as one
+# field by default?": two default 25 m radii, whose squares touch at 50 m.
 DUPLICATE_DISTANCE_M = 40.0
+
+# Beyond SAME_PIN_DISTANCE_M, whether two pins clash depends on how big a
+# square each one draws: two squares that overlap feed the model the same
+# pixels twice, and leave-one-village-out then scores a field it has part
+# of in training. Real plots here are small, so neighbouring fields 30 m
+# apart are perfectly plausible — the fix is a smaller radius or the
+# corners, not discarding the field.
+def squares_overlap(a: tuple[float, float], radius_a: float, b: tuple[float, float], radius_b: float) -> bool:
+    return distance_m(a, b) < (radius_a + radius_b)
+
+
+# Village boundaries in this dataset are approximate (OpenStreetMap), and
+# a field often falls just outside its own village polygon — the first
+# real coordinate sat 608 m outside Shera's. So the nearest village is
+# used, with its distance reported. Past this, the guess is not worth
+# making and the name must be given by hand.
+MAX_VILLAGE_DISTANCE_M = 5000.0
+VILLAGES_PATH = Path(__file__).parent / "villages_latur.json"
 
 # Anything in this set is sugarcane; everything else is not. Deliberately
 # explicit: a silent "unknown crop means not cane" is how a mislabelled
 # positive becomes a negative and teaches the model the opposite lesson.
 CANE_WORDS = {"sugarcane", "sugar cane", "cane", "us", "oos", "ऊस", "uus"}
+
+
+@dataclass
+class Defaults:
+    """Values for columns left blank, given once for a whole batch.
+
+    A day's collection is usually all one kind — "these are all sugarcane
+    planted in December 2025" — and repeating that on every line is how
+    a wrong value gets copy-pasted down a file.
+    """
+
+    village: str = ""
+    crop: str = ""
+    cane_type: str = ""
+    planted: str = ""
+    source: str = ""
+    radius_m: float = 25.0
+    auto_village: bool = False
 
 
 @dataclass
@@ -78,6 +116,27 @@ class Row:
     cane_type: str
     planted: str
     source: str
+    radius_m: float
+
+
+def load_villages(path: Path = VILLAGES_PATH) -> list[dict]:
+    if not path.exists():
+        return []
+    return json.loads(path.read_text(encoding="utf-8"))["villages"]
+
+
+def nearest_village(point: tuple[float, float], villages: list[dict]) -> tuple[str, str, float] | None:
+    """Nearest village centre to a field, with its distance in metres.
+
+    Returns None when nothing is close enough to be worth guessing.
+    """
+    if not villages:
+        return None
+    best = min(villages, key=lambda v: distance_m(point, (v["lat"], v["lon"])))
+    metres = distance_m(point, (best["lat"], best["lon"]))
+    if metres > MAX_VILLAGE_DISTANCE_M:
+        return None
+    return best["name"], best["taluka"], metres
 
 
 def distance_m(a: tuple[float, float], b: tuple[float, float]) -> float:
@@ -160,15 +219,25 @@ def fix_order(lat: float, lon: float) -> tuple[float, float, bool]:
     return lat, lon, False
 
 
-def parse_line(line: str, number: int) -> Row:
+def parse_line(line: str, number: int, defaults: Defaults | None = None) -> Row:
+    defaults = defaults or Defaults()
     parts = [part.strip() for part in line.split("|")]
-    if len(parts) < 3:
-        raise ValueError("need at least: coordinates | village | crop")
     while len(parts) < 7:
         parts.append("")
     coords, village, crop, cane_type, planted, source, radius = parts[:7]
 
-    if not village:
+    village = village or defaults.village
+    crop = crop or defaults.crop
+    planted = planted or defaults.planted
+    source = source or defaults.source
+    # The cane-type default applies only to cane. Otherwise a batch of
+    # "all plant cane" would stamp a cane type onto the one soybean field
+    # in the file, and the line would be rejected for a mistake the
+    # collector did not make.
+    if not cane_type and crop.strip().lower() in CANE_WORDS:
+        cane_type = defaults.cane_type
+
+    if not village and not defaults.auto_village:
         raise ValueError("village is required — it forms the validation folds")
 
     pairs = parse_pairs(coords)
@@ -194,8 +263,8 @@ def parse_line(line: str, number: int) -> Row:
     if label == 0 and not crop:
         raise ValueError("crop is required — 'fallow' or 'bare' is fine, blank is not")
 
+    metres = float(radius) if radius else defaults.radius_m
     if len(fixed) == 1:
-        metres = float(radius) if radius else 25.0
         if not 5 <= metres <= 200:
             raise ValueError(f"radius {metres} m is out of range (5-200)")
         ring = square_around(fixed[0][0], fixed[0][1], metres)
@@ -219,6 +288,9 @@ def parse_line(line: str, number: int) -> Row:
         cane_type=cane_type,
         planted=planted,
         source=(source or "visual").lower(),
+        # A boundary's own extent stands in for a radius when checking
+        # whether two fields overlap.
+        radius_m=metres if len(fixed) == 1 else max(distance_m(centre, point) for point in fixed),
     )
     if row.source not in ("visual", "field", "mill", "owner"):
         raise ValueError(f"source {row.source!r} must be one of visual, field, mill, owner")
@@ -241,11 +313,45 @@ def main() -> None:
     parser.add_argument("input", type=Path, help="Text file of fields, one per line")
     parser.add_argument("--path", type=Path, default=DEFAULT_PATH, help="Label set to append to")
     parser.add_argument("--dry-run", action="store_true", help="Validate and report, write nothing")
+    parser.add_argument("--village", default="", help="Village for lines that do not name one")
+    parser.add_argument("--crop", default="", help="Crop for lines that do not name one, e.g. sugarcane")
+    parser.add_argument("--cane-type", default="", choices=["", "plant", "ratoon"], help="Default cane type")
+    parser.add_argument("--planted", default="", help="Default planting date, e.g. 2025-12")
+    parser.add_argument("--source", default="", choices=["", "visual", "field", "mill", "owner"])
+    parser.add_argument("--radius", type=float, default=25.0, help="Default half-width in metres (default 25)")
+    parser.add_argument(
+        "--auto-village",
+        action="store_true",
+        help="Name the village from the coordinate, using ml/villages_latur.json",
+    )
     args = parser.parse_args()
+
+    defaults = Defaults(
+        village=args.village,
+        crop=args.crop,
+        cane_type=args.cane_type,
+        planted=args.planted,
+        source=args.source,
+        radius_m=args.radius,
+        auto_village=args.auto_village,
+    )
+    villages = load_villages() if args.auto_village else []
+    if args.auto_village and not villages:
+        sys.exit("--auto-village needs ml/villages_latur.json, which is missing")
 
     collection = load(args.path)
     existing = collection["features"]
-    existing_centres = [(f["properties"]["field_id"], ring_centre(f["geometry"]["coordinates"][0])) for f in existing]
+    existing_fields = [
+        (
+            f["properties"]["field_id"],
+            ring_centre(f["geometry"]["coordinates"][0]),
+            max(
+                distance_m(ring_centre(f["geometry"]["coordinates"][0]), (point[1], point[0]))
+                for point in f["geometry"]["coordinates"][0]
+            ),
+        )
+        for f in existing
+    ]
     used_ids = {f["properties"]["field_id"] for f in existing}
 
     accepted: list[Row] = []
@@ -256,24 +362,49 @@ def main() -> None:
         if not line.strip() or line.lstrip().startswith("#"):
             continue
         try:
-            row = parse_line(line, number)
+            row = parse_line(line, number, defaults)
         except ValueError as error:
             rejected.append((number, line.strip(), str(error)))
             continue
 
-        near = [
-            (field_id, distance_m(row.centre, centre))
-            for field_id, centre in existing_centres
-            if distance_m(row.centre, centre) < DUPLICATE_DISTANCE_M
-        ]
-        near += [
-            (f"line {other.line_number}", distance_m(row.centre, other.centre))
-            for other in accepted
-            if distance_m(row.centre, other.centre) < DUPLICATE_DISTANCE_M
-        ]
-        if near:
-            field_id, metres = near[0]
-            skipped.append((number, f"{metres:.0f} m from {field_id} — same field already labelled"))
+        if not row.village:
+            found = nearest_village(row.centre, villages)
+            if found is None:
+                rejected.append((number, line.strip(), "no village within 5 km — give the name in the line"))
+                continue
+            name, taluka, metres = found
+            row.village = name
+            print(f"  line {number}: village {name} ({taluka} taluka), {metres:.0f} m from its centre")
+
+        clash = next(
+            (
+                (field_id, distance_m(row.centre, centre))
+                for field_id, centre, radius in existing_fields
+                if squares_overlap(row.centre, row.radius_m, centre, radius)
+            ),
+            None,
+        ) or next(
+            (
+                (f"line {other.line_number}", distance_m(row.centre, other.centre))
+                for other in accepted
+                if squares_overlap(row.centre, row.radius_m, other.centre, other.radius_m)
+            ),
+            None,
+        )
+        if clash:
+            other_id, metres = clash
+            if metres < SAME_PIN_DISTANCE_M:
+                skipped.append((number, f"{metres:.0f} m from {other_id} — the same field pinned twice"))
+            else:
+                skipped.append(
+                    (
+                        number,
+                        f"{metres:.0f} m from {other_id}: with a {row.radius_m:g} m radius their sample "
+                        f"squares overlap, so the model would read the same pixels twice. If these really "
+                        f"are two fields, re-send this one with a radius under {metres / 2:.0f} "
+                        f"(last column) or with its corners.",
+                    )
+                )
             continue
         accepted.append(row)
 

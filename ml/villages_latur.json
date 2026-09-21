@@ -1,0 +1,5166 @@
+{
+ "_source": "Village boundaries for Latur district, loaded into TerraRisk/Kshetra from OpenStreetMap via scripts/fetch_latur_villages_osm.py. Centroids only. OpenStreetMap contributors, ODbL.",
+ "_note": "Used to name the village a field sits in, which decides the leave-one-village-out folds. Boundaries are approximate, so the nearest village is reported with its distance rather than asserted as containment.",
+ "villages": [
+  {
+   "name": "Ahmadpur",
+   "taluka": "Ahmadpur",
+   "lat": 18.706124,
+   "lon": 76.937731
+  },
+  {
+   "name": "Ajani Khurd",
+   "taluka": "Ahmadpur",
+   "lat": 18.619897,
+   "lon": 76.941252
+  },
+  {
+   "name": "Ajaniwadi",
+   "taluka": "Ahmadpur",
+   "lat": 18.60914,
+   "lon": 76.944375
+  },
+  {
+   "name": "Anandwadi",
+   "taluka": "Ahmadpur",
+   "lat": 18.627926,
+   "lon": 77.03167
+  },
+  {
+   "name": "Anandwadi Sumthana",
+   "taluka": "Ahmadpur",
+   "lat": 18.778815,
+   "lon": 76.926586
+  },
+  {
+   "name": "Andhori",
+   "taluka": "Ahmadpur",
+   "lat": 18.768395,
+   "lon": 76.824835
+  },
+  {
+   "name": "Babaldara",
+   "taluka": "Ahmadpur",
+   "lat": 18.613956,
+   "lon": 77.046111
+  },
+  {
+   "name": "Barahmpuri",
+   "taluka": "Ahmadpur",
+   "lat": 18.66254,
+   "lon": 76.881144
+  },
+  {
+   "name": "Belure",
+   "taluka": "Ahmadpur",
+   "lat": 18.647536,
+   "lon": 76.933855
+  },
+  {
+   "name": "Bhutekarwadi",
+   "taluka": "Ahmadpur",
+   "lat": 18.625984,
+   "lon": 76.861553
+  },
+  {
+   "name": "Bodka",
+   "taluka": "Ahmadpur",
+   "lat": 18.608191,
+   "lon": 77.016027
+  },
+  {
+   "name": "Borgaon",
+   "taluka": "Ahmadpur",
+   "lat": 18.735212,
+   "lon": 76.860459
+  },
+  {
+   "name": "Bramhawadi",
+   "taluka": "Ahmadpur",
+   "lat": 18.73505,
+   "lon": 77.01828
+  },
+  {
+   "name": "Chera",
+   "taluka": "Ahmadpur",
+   "lat": 18.663058,
+   "lon": 77.102587
+  },
+  {
+   "name": "Chikali",
+   "taluka": "Ahmadpur",
+   "lat": 18.748725,
+   "lon": 76.798768
+  },
+  {
+   "name": "Chilka",
+   "taluka": "Ahmadpur",
+   "lat": 18.736249,
+   "lon": 76.895049
+  },
+  {
+   "name": "Chobli",
+   "taluka": "Ahmadpur",
+   "lat": 18.599517,
+   "lon": 76.972339
+  },
+  {
+   "name": "Dagadwadi",
+   "taluka": "Ahmadpur",
+   "lat": 18.730498,
+   "lon": 76.747119
+  },
+  {
+   "name": "Devkara",
+   "taluka": "Ahmadpur",
+   "lat": 18.744895,
+   "lon": 76.735243
+  },
+  {
+   "name": "Dhalegaon",
+   "taluka": "Ahmadpur",
+   "lat": 18.757909,
+   "lon": 76.849022
+  },
+  {
+   "name": "Dhamangaon",
+   "taluka": "Ahmadpur",
+   "lat": 18.63305,
+   "lon": 77.116985
+  },
+  {
+   "name": "Dhanora",
+   "taluka": "Ahmadpur",
+   "lat": 18.703895,
+   "lon": 77.001071
+  },
+  {
+   "name": "Dhanora Bk",
+   "taluka": "Ahmadpur",
+   "lat": 18.687066,
+   "lon": 76.774027
+  },
+  {
+   "name": "Dhaswadi",
+   "taluka": "Ahmadpur",
+   "lat": 18.799799,
+   "lon": 76.867197
+  },
+  {
+   "name": "Dhorsangvi",
+   "taluka": "Ahmadpur",
+   "lat": 18.601917,
+   "lon": 77.113445
+  },
+  {
+   "name": "Domgaon",
+   "taluka": "Ahmadpur",
+   "lat": 18.632643,
+   "lon": 77.090249
+  },
+  {
+   "name": "Dwarka Nagar",
+   "taluka": "Ahmadpur",
+   "lat": 18.58703,
+   "lon": 77.000486
+  },
+  {
+   "name": "Gadewadi",
+   "taluka": "Ahmadpur",
+   "lat": 18.579825,
+   "lon": 76.996935
+  },
+  {
+   "name": "Gangahipperga",
+   "taluka": "Ahmadpur",
+   "lat": 18.785519,
+   "lon": 76.942406
+  },
+  {
+   "name": "Gotala",
+   "taluka": "Ahmadpur",
+   "lat": 18.644151,
+   "lon": 76.884556
+  },
+  {
+   "name": "Gugdal",
+   "taluka": "Ahmadpur",
+   "lat": 18.748247,
+   "lon": 76.97058
+  },
+  {
+   "name": "Gunjoti",
+   "taluka": "Ahmadpur",
+   "lat": 18.687289,
+   "lon": 76.741583
+  },
+  {
+   "name": "Guttewadi",
+   "taluka": "Ahmadpur",
+   "lat": 18.786839,
+   "lon": 76.791987
+  },
+  {
+   "name": "Hadolti",
+   "taluka": "Ahmadpur",
+   "lat": 18.65454,
+   "lon": 77.039952
+  },
+  {
+   "name": "Halni",
+   "taluka": "Ahmadpur",
+   "lat": 18.683651,
+   "lon": 76.907451
+  },
+  {
+   "name": "Hangerga",
+   "taluka": "Ahmadpur",
+   "lat": 18.677553,
+   "lon": 77.050724
+  },
+  {
+   "name": "Hangewadi",
+   "taluka": "Ahmadpur",
+   "lat": 18.725773,
+   "lon": 76.787041
+  },
+  {
+   "name": "Hasarni",
+   "taluka": "Ahmadpur",
+   "lat": 18.687879,
+   "lon": 76.994891
+  },
+  {
+   "name": "Hawarga",
+   "taluka": "Ahmadpur",
+   "lat": 18.621114,
+   "lon": 77.095056
+  },
+  {
+   "name": "Hingangaon",
+   "taluka": "Ahmadpur",
+   "lat": 18.741852,
+   "lon": 76.762885
+  },
+  {
+   "name": "Hippalgaon",
+   "taluka": "Ahmadpur",
+   "lat": 18.665295,
+   "lon": 77.025189
+  },
+  {
+   "name": "Hipparga Kopdeo",
+   "taluka": "Ahmadpur",
+   "lat": 18.676516,
+   "lon": 76.815569
+  },
+  {
+   "name": "Hokarna",
+   "taluka": "Ahmadpur",
+   "lat": 18.68609,
+   "lon": 77.137649
+  },
+  {
+   "name": "Hugdal",
+   "taluka": "Ahmadpur",
+   "lat": 18.747811,
+   "lon": 76.9778
+  },
+  {
+   "name": "Jagalpur Bk",
+   "taluka": "Ahmadpur",
+   "lat": 18.628922,
+   "lon": 77.068405
+  },
+  {
+   "name": "Jamb",
+   "taluka": "Ahmadpur",
+   "lat": 18.687401,
+   "lon": 77.007755
+  },
+  {
+   "name": "Jirga",
+   "taluka": "Ahmadpur",
+   "lat": 18.620336,
+   "lon": 77.119839
+  },
+  {
+   "name": "Kajal Hipparaga",
+   "taluka": "Ahmadpur",
+   "lat": 18.682594,
+   "lon": 76.871359
+  },
+  {
+   "name": "Kalegaon",
+   "taluka": "Ahmadpur",
+   "lat": 18.737366,
+   "lon": 76.921313
+  },
+  {
+   "name": "Kamanwadi",
+   "taluka": "Ahmadpur",
+   "lat": 18.59906,
+   "lon": 77.089155
+  },
+  {
+   "name": "Kaudgaon",
+   "taluka": "Ahmadpur",
+   "lat": 18.591687,
+   "lon": 77.092727
+  },
+  {
+   "name": "Kekatsindgi",
+   "taluka": "Ahmadpur",
+   "lat": 18.688895,
+   "lon": 77.179642
+  },
+  {
+   "name": "Kendrewadi",
+   "taluka": "Ahmadpur",
+   "lat": 18.732479,
+   "lon": 76.823477
+  },
+  {
+   "name": "Khanapur",
+   "taluka": "Ahmadpur",
+   "lat": 18.70734,
+   "lon": 76.751583
+  },
+  {
+   "name": "Khandali",
+   "taluka": "Ahmadpur",
+   "lat": 18.809123,
+   "lon": 76.890328
+  },
+  {
+   "name": "Kingaon",
+   "taluka": "Ahmadpur",
+   "lat": 18.719402,
+   "lon": 76.764929
+  },
+  {
+   "name": "Kinikaddu",
+   "taluka": "Ahmadpur",
+   "lat": 18.706852,
+   "lon": 77.038515
+  },
+  {
+   "name": "Kokanga",
+   "taluka": "Ahmadpur",
+   "lat": 18.673741,
+   "lon": 76.977671
+  },
+  {
+   "name": "Kopra",
+   "taluka": "Ahmadpur",
+   "lat": 18.708773,
+   "lon": 76.799219
+  },
+  {
+   "name": "Kumatha",
+   "taluka": "Ahmadpur",
+   "lat": 18.592891,
+   "lon": 77.067871
+  },
+  {
+   "name": "Lanji",
+   "taluka": "Ahmadpur",
+   "lat": 18.705074,
+   "lon": 76.892903
+  },
+  {
+   "name": "Lendegaon",
+   "taluka": "Ahmadpur",
+   "lat": 18.733963,
+   "lon": 76.84458
+  },
+  {
+   "name": "Lingdal",
+   "taluka": "Ahmadpur",
+   "lat": 18.633944,
+   "lon": 76.917161
+  },
+  {
+   "name": "Mahadevwadi",
+   "taluka": "Ahmadpur",
+   "lat": 18.645137,
+   "lon": 76.952148
+  },
+  {
+   "name": "Makni",
+   "taluka": "Ahmadpur",
+   "lat": 18.582371,
+   "lon": 76.962263
+  },
+  {
+   "name": "Malegaon",
+   "taluka": "Ahmadpur",
+   "lat": 18.684779,
+   "lon": 76.964808
+  },
+  {
+   "name": "Mandni",
+   "taluka": "Ahmadpur",
+   "lat": 18.658464,
+   "lon": 76.994022
+  },
+  {
+   "name": "Mangadari",
+   "taluka": "Ahmadpur",
+   "lat": 18.754389,
+   "lon": 77.047817
+  },
+  {
+   "name": "Mankhed",
+   "taluka": "Ahmadpur",
+   "lat": 18.709698,
+   "lon": 76.821438
+  },
+  {
+   "name": "Mawalgaon",
+   "taluka": "Ahmadpur",
+   "lat": 18.725783,
+   "lon": 76.869471
+  },
+  {
+   "name": "Methi",
+   "taluka": "Ahmadpur",
+   "lat": 18.617972,
+   "lon": 76.906464
+  },
+  {
+   "name": "Mogha",
+   "taluka": "Ahmadpur",
+   "lat": 18.724605,
+   "lon": 77.016531
+  },
+  {
+   "name": "Mohgaon",
+   "taluka": "Ahmadpur",
+   "lat": 18.712187,
+   "lon": 76.747538
+  },
+  {
+   "name": "Molwan",
+   "taluka": "Ahmadpur",
+   "lat": 18.76247,
+   "lon": 76.750145
+  },
+  {
+   "name": "Morewadi",
+   "taluka": "Ahmadpur",
+   "lat": 18.599294,
+   "lon": 76.984098
+  },
+  {
+   "name": "Mulki",
+   "taluka": "Ahmadpur",
+   "lat": 18.599802,
+   "lon": 76.886691
+  },
+  {
+   "name": "Nagthana",
+   "taluka": "Ahmadpur",
+   "lat": 18.634859,
+   "lon": 76.830686
+  },
+  {
+   "name": "Nagzari",
+   "taluka": "Ahmadpur",
+   "lat": 18.816699,
+   "lon": 76.918952
+  },
+  {
+   "name": "Nandura",
+   "taluka": "Ahmadpur",
+   "lat": 18.667206,
+   "lon": 76.902044
+  },
+  {
+   "name": "Nandura Bk",
+   "taluka": "Ahmadpur",
+   "lat": 18.653666,
+   "lon": 76.908717
+  },
+  {
+   "name": "Narwatwadi",
+   "taluka": "Ahmadpur",
+   "lat": 18.794833,
+   "lon": 76.841812
+  },
+  {
+   "name": "Omerga K",
+   "taluka": "Ahmadpur",
+   "lat": 18.604988,
+   "lon": 76.894448
+  },
+  {
+   "name": "Omerga Y",
+   "taluka": "Ahmadpur",
+   "lat": 18.572386,
+   "lon": 76.943747
+  },
+  {
+   "name": "Para",
+   "taluka": "Ahmadpur",
+   "lat": 18.746236,
+   "lon": 76.869117
+  },
+  {
+   "name": "Parchanda",
+   "taluka": "Ahmadpur",
+   "lat": 18.673548,
+   "lon": 76.836169
+  },
+  {
+   "name": "Patoda",
+   "taluka": "Ahmadpur",
+   "lat": 18.689718,
+   "lon": 76.831116
+  },
+  {
+   "name": "Pratap Nagar",
+   "taluka": "Ahmadpur",
+   "lat": 18.813114,
+   "lon": 76.887817
+  },
+  {
+   "name": "Ralga",
+   "taluka": "Ahmadpur",
+   "lat": 18.815402,
+   "lon": 76.983226
+  },
+  {
+   "name": "Rokada Savargaon",
+   "taluka": "Ahmadpur",
+   "lat": 18.650388,
+   "lon": 76.858914
+  },
+  {
+   "name": "Rudha",
+   "taluka": "Ahmadpur",
+   "lat": 18.770465,
+   "lon": 76.946783
+  },
+  {
+   "name": "Rui Tanda",
+   "taluka": "Ahmadpur",
+   "lat": 18.761734,
+   "lon": 76.995583
+  },
+  {
+   "name": "Ruie North",
+   "taluka": "Ahmadpur",
+   "lat": 18.795757,
+   "lon": 76.995792
+  },
+  {
+   "name": "Ruie South",
+   "taluka": "Ahmadpur",
+   "lat": 18.76693,
+   "lon": 76.996307
+  },
+  {
+   "name": "Salgara",
+   "taluka": "Ahmadpur",
+   "lat": 18.620443,
+   "lon": 76.927085
+  },
+  {
+   "name": "Sangvi Sune",
+   "taluka": "Ahmadpur",
+   "lat": 18.787307,
+   "lon": 76.976502
+  },
+  {
+   "name": "Sangvi Tanda",
+   "taluka": "Ahmadpur",
+   "lat": 18.796245,
+   "lon": 76.970151
+  },
+  {
+   "name": "Satala",
+   "taluka": "Ahmadpur",
+   "lat": 18.670133,
+   "lon": 76.761432
+  },
+  {
+   "name": "Sawargaon",
+   "taluka": "Ahmadpur",
+   "lat": 18.685816,
+   "lon": 77.038815
+  },
+  {
+   "name": "Sayyadpur",
+   "taluka": "Ahmadpur",
+   "lat": 18.606981,
+   "lon": 77.031627
+  },
+  {
+   "name": "Sendri",
+   "taluka": "Ahmadpur",
+   "lat": 18.756873,
+   "lon": 76.927171
+  },
+  {
+   "name": "Sheldara",
+   "taluka": "Ahmadpur",
+   "lat": 18.682462,
+   "lon": 77.085925
+  },
+  {
+   "name": "Shenkud",
+   "taluka": "Ahmadpur",
+   "lat": 18.751519,
+   "lon": 76.907215
+  },
+  {
+   "name": "Shenni",
+   "taluka": "Ahmadpur",
+   "lat": 18.750655,
+   "lon": 76.93511
+  },
+  {
+   "name": "Shindgi Bk",
+   "taluka": "Ahmadpur",
+   "lat": 18.736604,
+   "lon": 77.039727
+  },
+  {
+   "name": "Shindgi Kh",
+   "taluka": "Ahmadpur",
+   "lat": 18.756954,
+   "lon": 77.025275
+  },
+  {
+   "name": "Shirsatwadi",
+   "taluka": "Ahmadpur",
+   "lat": 18.762932,
+   "lon": 76.772767
+  },
+  {
+   "name": "Shivankhed Bk",
+   "taluka": "Ahmadpur",
+   "lat": 18.574633,
+   "lon": 77.067171
+  },
+  {
+   "name": "Sirur Tajband",
+   "taluka": "Ahmadpur",
+   "lat": 18.629507,
+   "lon": 76.970104
+  },
+  {
+   "name": "Sonkhed",
+   "taluka": "Ahmadpur",
+   "lat": 18.714697,
+   "lon": 76.819453
+  },
+  {
+   "name": "Sonwanewadi",
+   "taluka": "Ahmadpur",
+   "lat": 18.736706,
+   "lon": 76.779918
+  },
+  {
+   "name": "Sora",
+   "taluka": "Ahmadpur",
+   "lat": 18.723192,
+   "lon": 76.88373
+  },
+  {
+   "name": "Sumthana",
+   "taluka": "Ahmadpur",
+   "lat": 18.774437,
+   "lon": 76.916592
+  },
+  {
+   "name": "Sunegaon Sangavi",
+   "taluka": "Ahmadpur",
+   "lat": 18.770465,
+   "lon": 76.975912
+  },
+  {
+   "name": "Sunegaon Shendri",
+   "taluka": "Ahmadpur",
+   "lat": 18.755308,
+   "lon": 76.932578
+  },
+  {
+   "name": "Takalagaon",
+   "taluka": "Ahmadpur",
+   "lat": 18.657041,
+   "lon": 76.829238
+  },
+  {
+   "name": "Takalgaon Sen",
+   "taluka": "Ahmadpur",
+   "lat": 18.755979,
+   "lon": 76.899447
+  },
+  {
+   "name": "Talegaon",
+   "taluka": "Ahmadpur",
+   "lat": 18.665661,
+   "lon": 76.936677
+  },
+  {
+   "name": "Tambatsangvi",
+   "taluka": "Ahmadpur",
+   "lat": 18.715144,
+   "lon": 76.876262
+  },
+  {
+   "name": "Telgaon",
+   "taluka": "Ahmadpur",
+   "lat": 18.60329,
+   "lon": 76.930078
+  },
+  {
+   "name": "Thodga",
+   "taluka": "Ahmadpur",
+   "lat": 18.713773,
+   "lon": 76.978991
+  },
+  {
+   "name": "Thodgawadi",
+   "taluka": "Ahmadpur",
+   "lat": 18.730223,
+   "lon": 76.986233
+  },
+  {
+   "name": "Thorlewadi",
+   "taluka": "Ahmadpur",
+   "lat": 18.662692,
+   "lon": 76.965752
+  },
+  {
+   "name": "Tirth",
+   "taluka": "Ahmadpur",
+   "lat": 18.69791,
+   "lon": 77.008292
+  },
+  {
+   "name": "Ugilewadi",
+   "taluka": "Ahmadpur",
+   "lat": 18.675235,
+   "lon": 76.868302
+  },
+  {
+   "name": "Ujana",
+   "taluka": "Ahmadpur",
+   "lat": 18.806828,
+   "lon": 76.936591
+  },
+  {
+   "name": "Umardara",
+   "taluka": "Ahmadpur",
+   "lat": 18.700623,
+   "lon": 77.145824
+  },
+  {
+   "name": "Umarga Retu",
+   "taluka": "Ahmadpur",
+   "lat": 18.657508,
+   "lon": 77.071795
+  },
+  {
+   "name": "Unni",
+   "taluka": "Ahmadpur",
+   "lat": 18.679423,
+   "lon": 77.005856
+  },
+  {
+   "name": "Vanjarwadi",
+   "taluka": "Ahmadpur",
+   "lat": 18.778713,
+   "lon": 76.891551
+  },
+  {
+   "name": "Vijaynagar Tanda",
+   "taluka": "Ahmadpur",
+   "lat": 18.825153,
+   "lon": 76.900992
+  },
+  {
+   "name": "Vilegaon",
+   "taluka": "Ahmadpur",
+   "lat": 18.710175,
+   "lon": 76.849601
+  },
+  {
+   "name": "Wadgaon",
+   "taluka": "Ahmadpur",
+   "lat": 18.688529,
+   "lon": 77.113423
+  },
+  {
+   "name": "Waigaon",
+   "taluka": "Ahmadpur",
+   "lat": 18.589084,
+   "lon": 77.015512
+  },
+  {
+   "name": "Wairagad",
+   "taluka": "Ahmadpur",
+   "lat": 18.726047,
+   "lon": 76.846747
+  },
+  {
+   "name": "Walsangi",
+   "taluka": "Ahmadpur",
+   "lat": 18.641813,
+   "lon": 77.0093
+  },
+  {
+   "name": "Wanjarwada",
+   "taluka": "Ahmadpur",
+   "lat": 18.660705,
+   "lon": 77.130214
+  },
+  {
+   "name": "Warwanti",
+   "taluka": "Ahmadpur",
+   "lat": 18.75162,
+   "lon": 76.998035
+  },
+  {
+   "name": "Warwanti Tanda",
+   "taluka": "Ahmadpur",
+   "lat": 18.759164,
+   "lon": 76.994172
+  },
+  {
+   "name": "Yastar",
+   "taluka": "Ahmadpur",
+   "lat": 18.756284,
+   "lon": 76.890821
+  },
+  {
+   "name": "Yeldara",
+   "taluka": "Ahmadpur",
+   "lat": 18.611709,
+   "lon": 77.084692
+  },
+  {
+   "name": "Yelderwadi",
+   "taluka": "Ahmadpur",
+   "lat": 18.789165,
+   "lon": 76.817286
+  },
+  {
+   "name": "Almala",
+   "taluka": "Ausa",
+   "lat": 18.3062,
+   "lon": 76.483437
+  },
+  {
+   "name": "Anandwadi",
+   "taluka": "Ausa",
+   "lat": 18.137838,
+   "lon": 76.698775
+  },
+  {
+   "name": "Andhora",
+   "taluka": "Ausa",
+   "lat": 18.277586,
+   "lon": 76.335518
+  },
+  {
+   "name": "Ashiv",
+   "taluka": "Ausa",
+   "lat": 18.112286,
+   "lon": 76.351354
+  },
+  {
+   "name": "Ausa",
+   "taluka": "Ausa",
+   "lat": 18.251024,
+   "lon": 76.500958
+  },
+  {
+   "name": "Barhanpur",
+   "taluka": "Ausa",
+   "lat": 18.265921,
+   "lon": 76.415384
+  },
+  {
+   "name": "Belkund",
+   "taluka": "Ausa",
+   "lat": 18.163346,
+   "lon": 76.399398
+  },
+  {
+   "name": "Bhada",
+   "taluka": "Ausa",
+   "lat": 18.269084,
+   "lon": 76.388894
+  },
+  {
+   "name": "Bhangewadi",
+   "taluka": "Ausa",
+   "lat": 18.252604,
+   "lon": 76.643962
+  },
+  {
+   "name": "Bhusni",
+   "taluka": "Ausa",
+   "lat": 18.344953,
+   "lon": 76.650646
+  },
+  {
+   "name": "Birwali",
+   "taluka": "Ausa",
+   "lat": 18.193926,
+   "lon": 76.329135
+  },
+  {
+   "name": "Borgaon",
+   "taluka": "Ausa",
+   "lat": 18.301036,
+   "lon": 76.358231
+  },
+  {
+   "name": "Borphal",
+   "taluka": "Ausa",
+   "lat": 18.213056,
+   "lon": 76.467032
+  },
+  {
+   "name": "Budhada",
+   "taluka": "Ausa",
+   "lat": 18.304296,
+   "lon": 76.53662
+  },
+  {
+   "name": "Chalburga",
+   "taluka": "Ausa",
+   "lat": 18.188137,
+   "lon": 76.581842
+  },
+  {
+   "name": "Chincholi Kajle",
+   "taluka": "Ausa",
+   "lat": 18.136411,
+   "lon": 76.339166
+  },
+  {
+   "name": "Chincholi Pati",
+   "taluka": "Ausa",
+   "lat": 18.135758,
+   "lon": 76.366675
+  },
+  {
+   "name": "Chincholi Son",
+   "taluka": "Ausa",
+   "lat": 18.168209,
+   "lon": 76.42784
+  },
+  {
+   "name": "Dapegaon",
+   "taluka": "Ausa",
+   "lat": 18.151469,
+   "lon": 76.498575
+  },
+  {
+   "name": "Devongra",
+   "taluka": "Ausa",
+   "lat": 18.254398,
+   "lon": 76.672897
+  },
+  {
+   "name": "Devtala",
+   "taluka": "Ausa",
+   "lat": 18.101048,
+   "lon": 76.433752
+  },
+  {
+   "name": "Dhanora",
+   "taluka": "Ausa",
+   "lat": 18.350666,
+   "lon": 76.623562
+  },
+  {
+   "name": "Ekambi",
+   "taluka": "Ausa",
+   "lat": 18.159228,
+   "lon": 76.294663
+  },
+  {
+   "name": "Ekambi Laman Tanda",
+   "taluka": "Ausa",
+   "lat": 18.156353,
+   "lon": 76.311078
+  },
+  {
+   "name": "Fattepur",
+   "taluka": "Ausa",
+   "lat": 18.205474,
+   "lon": 76.526223
+  },
+  {
+   "name": "Gadhvewadi",
+   "taluka": "Ausa",
+   "lat": 18.147218,
+   "lon": 76.526105
+  },
+  {
+   "name": "Ganjankheda",
+   "taluka": "Ausa",
+   "lat": 18.05148,
+   "lon": 76.512909
+  },
+  {
+   "name": "Ghawewadi Tanda",
+   "taluka": "Ausa",
+   "lat": 18.143905,
+   "lon": 76.518338
+  },
+  {
+   "name": "Gondri",
+   "taluka": "Ausa",
+   "lat": 18.314583,
+   "lon": 76.645453
+  },
+  {
+   "name": "Gulkheda",
+   "taluka": "Ausa",
+   "lat": 18.192581,
+   "lon": 76.374282
+  },
+  {
+   "name": "Haregaon",
+   "taluka": "Ausa",
+   "lat": 18.098458,
+   "lon": 76.493039
+  },
+  {
+   "name": "Hasala",
+   "taluka": "Ausa",
+   "lat": 18.323816,
+   "lon": 76.559215
+  },
+  {
+   "name": "Hasalgan",
+   "taluka": "Ausa",
+   "lat": 18.084884,
+   "lon": 76.454855
+  },
+  {
+   "name": "Hasegaon",
+   "taluka": "Ausa",
+   "lat": 18.311538,
+   "lon": 76.622161
+  },
+  {
+   "name": "Hasegaonwadi",
+   "taluka": "Ausa",
+   "lat": 18.275243,
+   "lon": 76.613867
+  },
+  {
+   "name": "Hipperarga",
+   "taluka": "Ausa",
+   "lat": 18.137532,
+   "lon": 76.414998
+  },
+  {
+   "name": "Hippersoga",
+   "taluka": "Ausa",
+   "lat": 18.323572,
+   "lon": 76.604303
+  },
+  {
+   "name": "Holi",
+   "taluka": "Ausa",
+   "lat": 18.311604,
+   "lon": 76.696222
+  },
+  {
+   "name": "Jainagar",
+   "taluka": "Ausa",
+   "lat": 18.224277,
+   "lon": 76.600027
+  },
+  {
+   "name": "Jaiphal",
+   "taluka": "Ausa",
+   "lat": 18.248345,
+   "lon": 76.300628
+  },
+  {
+   "name": "Jamalpur",
+   "taluka": "Ausa",
+   "lat": 18.32375,
+   "lon": 76.582325
+  },
+  {
+   "name": "Jawalgawadi Pomadevi",
+   "taluka": "Ausa",
+   "lat": 18.124267,
+   "lon": 76.500871
+  },
+  {
+   "name": "Jawali",
+   "taluka": "Ausa",
+   "lat": 18.166058,
+   "lon": 76.598182
+  },
+  {
+   "name": "Kalmatha",
+   "taluka": "Ausa",
+   "lat": 18.300812,
+   "lon": 76.396898
+  },
+  {
+   "name": "Kanheri",
+   "taluka": "Ausa",
+   "lat": 18.233222,
+   "lon": 76.572859
+  },
+  {
+   "name": "Karajgaon",
+   "taluka": "Ausa",
+   "lat": 18.216226,
+   "lon": 76.54222
+  },
+  {
+   "name": "Karla",
+   "taluka": "Ausa",
+   "lat": 18.083609,
+   "lon": 76.628995
+  },
+  {
+   "name": "Kawali",
+   "taluka": "Ausa",
+   "lat": 18.11301,
+   "lon": 76.41709
+  },
+  {
+   "name": "Kawtha Kej",
+   "taluka": "Ausa",
+   "lat": 18.321922,
+   "lon": 76.374914
+  },
+  {
+   "name": "Khanapur LT",
+   "taluka": "Ausa",
+   "lat": 18.234936,
+   "lon": 76.4589
+  },
+  {
+   "name": "Kharosa",
+   "taluka": "Ausa",
+   "lat": 18.159707,
+   "lon": 76.669014
+  },
+  {
+   "name": "Khuntegaon",
+   "taluka": "Ausa",
+   "lat": 18.295617,
+   "lon": 76.581659
+  },
+  {
+   "name": "Killari",
+   "taluka": "Ausa",
+   "lat": 18.073813,
+   "lon": 76.592866
+  },
+  {
+   "name": "Killari Pati",
+   "taluka": "Ausa",
+   "lat": 18.05762,
+   "lon": 76.59242
+  },
+  {
+   "name": "Killari-2",
+   "taluka": "Ausa",
+   "lat": 18.056315,
+   "lon": 76.56179
+  },
+  {
+   "name": "Kininawre",
+   "taluka": "Ausa",
+   "lat": 18.177571,
+   "lon": 76.635577
+  },
+  {
+   "name": "Kinithot",
+   "taluka": "Ausa",
+   "lat": 18.23649,
+   "lon": 76.634257
+  },
+  {
+   "name": "Korangla",
+   "taluka": "Ausa",
+   "lat": 18.240245,
+   "lon": 76.418238
+  },
+  {
+   "name": "Lakhangaon",
+   "taluka": "Ausa",
+   "lat": 18.283892,
+   "lon": 76.438966
+  },
+  {
+   "name": "Lamjana",
+   "taluka": "Ausa",
+   "lat": 18.134738,
+   "lon": 76.594422
+  },
+  {
+   "name": "Limbali Dau",
+   "taluka": "Ausa",
+   "lat": 18.093889,
+   "lon": 76.498854
+  },
+  {
+   "name": "Lodga",
+   "taluka": "Ausa",
+   "lat": 18.31166,
+   "lon": 76.676803
+  },
+  {
+   "name": "Lohata",
+   "taluka": "Ausa",
+   "lat": 18.061354,
+   "lon": 76.423001
+  },
+  {
+   "name": "Mahadev Wadi",
+   "taluka": "Ausa",
+   "lat": 18.236179,
+   "lon": 76.620712
+  },
+  {
+   "name": "Malkondgi",
+   "taluka": "Ausa",
+   "lat": 18.116834,
+   "lon": 76.447463
+  },
+  {
+   "name": "Malumbra",
+   "taluka": "Ausa",
+   "lat": 18.141784,
+   "lon": 76.431048
+  },
+  {
+   "name": "Mangrul",
+   "taluka": "Ausa",
+   "lat": 18.053601,
+   "lon": 76.504412
+  },
+  {
+   "name": "Matola",
+   "taluka": "Ausa",
+   "lat": 18.085098,
+   "lon": 76.403056
+  },
+  {
+   "name": "Mogarga",
+   "taluka": "Ausa",
+   "lat": 18.122075,
+   "lon": 76.625326
+  },
+  {
+   "name": "Nadi Hattarga",
+   "taluka": "Ausa",
+   "lat": 18.053887,
+   "lon": 76.61052
+  },
+  {
+   "name": "Nagarsoga",
+   "taluka": "Ausa",
+   "lat": 18.181409,
+   "lon": 76.503146
+  },
+  {
+   "name": "Nanand",
+   "taluka": "Ausa",
+   "lat": 18.102715,
+   "lon": 76.716446
+  },
+  {
+   "name": "Nandurga",
+   "taluka": "Ausa",
+   "lat": 18.060374,
+   "lon": 76.478426
+  },
+  {
+   "name": "Nandurga Part 1",
+   "taluka": "Ausa",
+   "lat": 18.068871,
+   "lon": 76.470337
+  },
+  {
+   "name": "Radha Nagar",
+   "taluka": "Ausa",
+   "lat": 18.109227,
+   "lon": 76.312065
+  },
+  {
+   "name": "Rajewadi",
+   "taluka": "Ausa",
+   "lat": 18.14783,
+   "lon": 76.612709
+  },
+  {
+   "name": "Ramegoan",
+   "taluka": "Ausa",
+   "lat": 18.171889,
+   "lon": 76.677597
+  },
+  {
+   "name": "Samderga",
+   "taluka": "Ausa",
+   "lat": 18.250444,
+   "lon": 76.435339
+  },
+  {
+   "name": "Sarni",
+   "taluka": "Ausa",
+   "lat": 18.06422,
+   "lon": 76.45228
+  },
+  {
+   "name": "Sarni Old",
+   "taluka": "Ausa",
+   "lat": 18.042554,
+   "lon": 76.447077
+  },
+  {
+   "name": "Sarola",
+   "taluka": "Ausa",
+   "lat": 18.259787,
+   "lon": 76.589009
+  },
+  {
+   "name": "Sattarwadi",
+   "taluka": "Ausa",
+   "lat": 18.277311,
+   "lon": 76.460327
+  },
+  {
+   "name": "Selu",
+   "taluka": "Ausa",
+   "lat": 18.281926,
+   "lon": 76.553786
+  },
+  {
+   "name": "Shindala Jahagir",
+   "taluka": "Ausa",
+   "lat": 18.323824,
+   "lon": 76.572972
+  },
+  {
+   "name": "Shindala Lohara",
+   "taluka": "Ausa",
+   "lat": 18.191582,
+   "lon": 76.425555
+  },
+  {
+   "name": "Shivani Bk",
+   "taluka": "Ausa",
+   "lat": 18.346822,
+   "lon": 76.667436
+  },
+  {
+   "name": "Shivli",
+   "taluka": "Ausa",
+   "lat": 18.221585,
+   "lon": 76.332536
+  },
+  {
+   "name": "Shivni Lakh",
+   "taluka": "Ausa",
+   "lat": 18.121667,
+   "lon": 76.667533
+  },
+  {
+   "name": "Shivnilakh L T",
+   "taluka": "Ausa",
+   "lat": 18.128264,
+   "lon": 76.675762
+  },
+  {
+   "name": "Sindelwadi",
+   "taluka": "Ausa",
+   "lat": 18.203282,
+   "lon": 76.425211
+  },
+  {
+   "name": "Sirsal",
+   "taluka": "Ausa",
+   "lat": 18.090401,
+   "lon": 76.591744
+  },
+  {
+   "name": "Taka",
+   "taluka": "Ausa",
+   "lat": 18.167648,
+   "lon": 76.352255
+  },
+  {
+   "name": "Talani",
+   "taluka": "Ausa",
+   "lat": 18.071655,
+   "lon": 76.551297
+  },
+  {
+   "name": "Tamberwadi",
+   "taluka": "Ausa",
+   "lat": 18.146484,
+   "lon": 76.618695
+  },
+  {
+   "name": "Tapse Chincholi",
+   "taluka": "Ausa",
+   "lat": 18.125297,
+   "lon": 76.545889
+  },
+  {
+   "name": "Tavshitad",
+   "taluka": "Ausa",
+   "lat": 18.148258,
+   "lon": 76.378756
+  },
+  {
+   "name": "Tembhi",
+   "taluka": "Ausa",
+   "lat": 18.223869,
+   "lon": 76.428945
+  },
+  {
+   "name": "Tungi Bk",
+   "taluka": "Ausa",
+   "lat": 18.163733,
+   "lon": 76.464973
+  },
+  {
+   "name": "Ujani",
+   "taluka": "Ausa",
+   "lat": 18.11873,
+   "lon": 76.305499
+  },
+  {
+   "name": "Umadga Kh",
+   "taluka": "Ausa",
+   "lat": 18.288333,
+   "lon": 76.507984
+  },
+  {
+   "name": "Umbadaga Bk",
+   "taluka": "Ausa",
+   "lat": 18.300934,
+   "lon": 76.509701
+  },
+  {
+   "name": "Uti Bk",
+   "taluka": "Ausa",
+   "lat": 18.293814,
+   "lon": 76.432185
+  },
+  {
+   "name": "Utka",
+   "taluka": "Ausa",
+   "lat": 18.166629,
+   "lon": 76.563174
+  },
+  {
+   "name": "Utka-1",
+   "taluka": "Ausa",
+   "lat": 18.151755,
+   "lon": 76.565609
+  },
+  {
+   "name": "Wadji",
+   "taluka": "Ausa",
+   "lat": 18.276659,
+   "lon": 76.351558
+  },
+  {
+   "name": "Wagholi",
+   "taluka": "Ausa",
+   "lat": 18.205086,
+   "lon": 76.573688
+  },
+  {
+   "name": "Wangi",
+   "taluka": "Ausa",
+   "lat": 18.122993,
+   "lon": 76.367211
+  },
+  {
+   "name": "Wanwada",
+   "taluka": "Ausa",
+   "lat": 18.189839,
+   "lon": 76.467644
+  },
+  {
+   "name": "Warwada",
+   "taluka": "Ausa",
+   "lat": 18.223685,
+   "lon": 76.372619
+  },
+  {
+   "name": "Yakatpur",
+   "taluka": "Ausa",
+   "lat": 18.234141,
+   "lon": 76.555138
+  },
+  {
+   "name": "Yeli",
+   "taluka": "Ausa",
+   "lat": 18.227324,
+   "lon": 76.650313
+  },
+  {
+   "name": "Yellori",
+   "taluka": "Ausa",
+   "lat": 18.204587,
+   "lon": 76.391115
+  },
+  {
+   "name": "Yelloriwadi",
+   "taluka": "Ausa",
+   "lat": 18.225622,
+   "lon": 76.39957
+  },
+  {
+   "name": "Yerandi",
+   "taluka": "Ausa",
+   "lat": 18.25777,
+   "lon": 76.580694
+  },
+  {
+   "name": "Agensonda KH",
+   "taluka": "Chakur",
+   "lat": 18.454066,
+   "lon": 76.847005
+  },
+  {
+   "name": "Ajansonda Bk",
+   "taluka": "Chakur",
+   "lat": 18.55241,
+   "lon": 76.949723
+  },
+  {
+   "name": "Algarwadi",
+   "taluka": "Chakur",
+   "lat": 18.525536,
+   "lon": 76.898847
+  },
+  {
+   "name": "Ambewadi",
+   "taluka": "Chakur",
+   "lat": 18.422341,
+   "lon": 76.918046
+  },
+  {
+   "name": "Ambulga",
+   "taluka": "Chakur",
+   "lat": 18.461801,
+   "lon": 76.789176
+  },
+  {
+   "name": "Anandwadi",
+   "taluka": "Chakur",
+   "lat": 18.573748,
+   "lon": 76.87461
+  },
+  {
+   "name": "Asarachiwadi",
+   "taluka": "Chakur",
+   "lat": 18.582311,
+   "lon": 76.712379
+  },
+  {
+   "name": "Ashta",
+   "taluka": "Chakur",
+   "lat": 18.452418,
+   "lon": 76.754479
+  },
+  {
+   "name": "Astamod",
+   "taluka": "Chakur",
+   "lat": 18.46522,
+   "lon": 76.739438
+  },
+  {
+   "name": "Atola",
+   "taluka": "Chakur",
+   "lat": 18.436622,
+   "lon": 76.867454
+  },
+  {
+   "name": "Bansawargaon",
+   "taluka": "Chakur",
+   "lat": 18.486579,
+   "lon": 76.844924
+  },
+  {
+   "name": "Bawalgaon",
+   "taluka": "Chakur",
+   "lat": 18.414615,
+   "lon": 76.88241
+  },
+  {
+   "name": "Belgaon",
+   "taluka": "Chakur",
+   "lat": 18.626075,
+   "lon": 76.796451
+  },
+  {
+   "name": "Bhakarwadi",
+   "taluka": "Chakur",
+   "lat": 18.568409,
+   "lon": 76.969748
+  },
+  {
+   "name": "Bharmwadi Wagholi",
+   "taluka": "Chakur",
+   "lat": 18.562083,
+   "lon": 76.794992
+  },
+  {
+   "name": "Bhatsangvi",
+   "taluka": "Chakur",
+   "lat": 18.479436,
+   "lon": 76.842198
+  },
+  {
+   "name": "Bhramhawadi Chapoli",
+   "taluka": "Chakur",
+   "lat": 18.543297,
+   "lon": 76.910981
+  },
+  {
+   "name": "Borgaon",
+   "taluka": "Chakur",
+   "lat": 18.534724,
+   "lon": 76.974018
+  },
+  {
+   "name": "Bothi",
+   "taluka": "Chakur",
+   "lat": 18.50646,
+   "lon": 76.931977
+  },
+  {
+   "name": "Bramhawadi Yengewadi",
+   "taluka": "Chakur",
+   "lat": 18.550163,
+   "lon": 76.971427
+  },
+  {
+   "name": "Chakur",
+   "taluka": "Chakur",
+   "lat": 18.517472,
+   "lon": 76.87662
+  },
+  {
+   "name": "Chapoli",
+   "taluka": "Chakur",
+   "lat": 18.571897,
+   "lon": 76.91258
+  },
+  {
+   "name": "Chawalewadi",
+   "taluka": "Chakur",
+   "lat": 18.507234,
+   "lon": 76.997488
+  },
+  {
+   "name": "Dapkyal",
+   "taluka": "Chakur",
+   "lat": 18.512026,
+   "lon": 76.761764
+  },
+  {
+   "name": "Devangra",
+   "taluka": "Chakur",
+   "lat": 18.414646,
+   "lon": 76.767011
+  },
+  {
+   "name": "Dongraj",
+   "taluka": "Chakur",
+   "lat": 18.47386,
+   "lon": 76.999118
+  },
+  {
+   "name": "Ganjur",
+   "taluka": "Chakur",
+   "lat": 18.474867,
+   "lon": 76.717701
+  },
+  {
+   "name": "Gharani",
+   "taluka": "Chakur",
+   "lat": 18.487129,
+   "lon": 76.809872
+  },
+  {
+   "name": "Gharola",
+   "taluka": "Chakur",
+   "lat": 18.497873,
+   "lon": 76.79188
+  },
+  {
+   "name": "Hadoli",
+   "taluka": "Chakur",
+   "lat": 18.632745,
+   "lon": 76.784531
+  },
+  {
+   "name": "Hali Kh",
+   "taluka": "Chakur",
+   "lat": 18.548484,
+   "lon": 76.830472
+  },
+  {
+   "name": "Hanmant Jawalaga",
+   "taluka": "Chakur",
+   "lat": 18.587864,
+   "lon": 76.823337
+  },
+  {
+   "name": "Hanmantwadi Tanda",
+   "taluka": "Chakur",
+   "lat": 18.516044,
+   "lon": 76.908492
+  },
+  {
+   "name": "Hanmatwadi",
+   "taluka": "Chakur",
+   "lat": 18.513033,
+   "lon": 76.910048
+  },
+  {
+   "name": "Hatkarwadi Nalegaon",
+   "taluka": "Chakur",
+   "lat": 18.454901,
+   "lon": 76.824099
+  },
+  {
+   "name": "Himpalner",
+   "taluka": "Chakur",
+   "lat": 18.587335,
+   "lon": 76.843786
+  },
+  {
+   "name": "Jadhala",
+   "taluka": "Chakur",
+   "lat": 18.653773,
+   "lon": 76.798908
+  },
+  {
+   "name": "Jagalpur Kh",
+   "taluka": "Chakur",
+   "lat": 18.496775,
+   "lon": 76.706135
+  },
+  {
+   "name": "Janwal",
+   "taluka": "Chakur",
+   "lat": 18.550417,
+   "lon": 76.753718
+  },
+  {
+   "name": "Kalkoti",
+   "taluka": "Chakur",
+   "lat": 18.513053,
+   "lon": 76.952512
+  },
+  {
+   "name": "Kanbansangavi",
+   "taluka": "Chakur",
+   "lat": 18.424764,
+   "lon": 76.898686
+  },
+  {
+   "name": "Kawthali",
+   "taluka": "Chakur",
+   "lat": 18.529498,
+   "lon": 76.702005
+  },
+  {
+   "name": "Kendrewadi",
+   "taluka": "Chakur",
+   "lat": 18.607591,
+   "lon": 76.734524
+  },
+  {
+   "name": "Kumbewadi",
+   "taluka": "Chakur",
+   "lat": 18.430953,
+   "lon": 76.914361
+  },
+  {
+   "name": "Latur Road",
+   "taluka": "Chakur",
+   "lat": 18.509407,
+   "lon": 76.843944
+  },
+  {
+   "name": "Limbalwadi",
+   "taluka": "Chakur",
+   "lat": 18.40129,
+   "lon": 76.791709
+  },
+  {
+   "name": "Mahalangi",
+   "taluka": "Chakur",
+   "lat": 18.608892,
+   "lon": 76.753632
+  },
+  {
+   "name": "Mahalangra",
+   "taluka": "Chakur",
+   "lat": 18.449334,
+   "lon": 76.725737
+  },
+  {
+   "name": "Mahalgangrawadi",
+   "taluka": "Chakur",
+   "lat": 18.433436,
+   "lon": 76.718398
+  },
+  {
+   "name": "Mahandol",
+   "taluka": "Chakur",
+   "lat": 18.474129,
+   "lon": 76.966513
+  },
+  {
+   "name": "Mandurki",
+   "taluka": "Chakur",
+   "lat": 18.488777,
+   "lon": 76.908213
+  },
+  {
+   "name": "Mashnerwadi",
+   "taluka": "Chakur",
+   "lat": 18.531375,
+   "lon": 76.934466
+  },
+  {
+   "name": "Mohadal",
+   "taluka": "Chakur",
+   "lat": 18.467479,
+   "lon": 76.766753
+  },
+  {
+   "name": "Murumbi",
+   "taluka": "Chakur",
+   "lat": 18.403326,
+   "lon": 76.703013
+  },
+  {
+   "name": "Nagdarwadi",
+   "taluka": "Chakur",
+   "lat": 18.539914,
+   "lon": 76.991984
+  },
+  {
+   "name": "Nageshwadi",
+   "taluka": "Chakur",
+   "lat": 18.461068,
+   "lon": 76.919714
+  },
+  {
+   "name": "Naigaon",
+   "taluka": "Chakur",
+   "lat": 18.584081,
+   "lon": 76.8643
+  },
+  {
+   "name": "Nalegaon",
+   "taluka": "Chakur",
+   "lat": 18.421278,
+   "lon": 76.812072
+  },
+  {
+   "name": "Nandgaon",
+   "taluka": "Chakur",
+   "lat": 18.49594,
+   "lon": 76.756821
+  },
+  {
+   "name": "Rachanawadi",
+   "taluka": "Chakur",
+   "lat": 18.499786,
+   "lon": 76.969298
+  },
+  {
+   "name": "Raiwadi",
+   "taluka": "Chakur",
+   "lat": 18.59368,
+   "lon": 76.72888
+  },
+  {
+   "name": "Ramwadi",
+   "taluka": "Chakur",
+   "lat": 18.491646,
+   "lon": 76.930089
+  },
+  {
+   "name": "Rohina",
+   "taluka": "Chakur",
+   "lat": 18.44479,
+   "lon": 76.945603
+  },
+  {
+   "name": "Sandol",
+   "taluka": "Chakur",
+   "lat": 18.481291,
+   "lon": 76.970952
+  },
+  {
+   "name": "Sangachiwadi",
+   "taluka": "Chakur",
+   "lat": 18.492572,
+   "lon": 76.994054
+  },
+  {
+   "name": "Saranwadi",
+   "taluka": "Chakur",
+   "lat": 18.531828,
+   "lon": 76.864107
+  },
+  {
+   "name": "Shankarwadi",
+   "taluka": "Chakur",
+   "lat": 18.561341,
+   "lon": 76.89963
+  },
+  {
+   "name": "Shelgaon",
+   "taluka": "Chakur",
+   "lat": 18.503988,
+   "lon": 76.987628
+  },
+  {
+   "name": "Shirnal",
+   "taluka": "Chakur",
+   "lat": 18.518394,
+   "lon": 76.927418
+  },
+  {
+   "name": "Shivankhed Bk",
+   "taluka": "Chakur",
+   "lat": 18.515749,
+   "lon": 76.731005
+  },
+  {
+   "name": "Shivni Majra",
+   "taluka": "Chakur",
+   "lat": 18.528832,
+   "lon": 76.730039
+  },
+  {
+   "name": "Sugao",
+   "taluka": "Chakur",
+   "lat": 18.399417,
+   "lon": 76.731809
+  },
+  {
+   "name": "Takalgaon",
+   "taluka": "Chakur",
+   "lat": 18.518338,
+   "lon": 76.989591
+  },
+  {
+   "name": "Thirthwadi",
+   "taluka": "Chakur",
+   "lat": 18.501078,
+   "lon": 76.901239
+  },
+  {
+   "name": "Tiwatghyal",
+   "taluka": "Chakur",
+   "lat": 18.480159,
+   "lon": 76.864643
+  },
+  {
+   "name": "Tiwghyal",
+   "taluka": "Chakur",
+   "lat": 18.4675,
+   "lon": 76.868945
+  },
+  {
+   "name": "Ujalamb",
+   "taluka": "Chakur",
+   "lat": 18.442357,
+   "lon": 76.902779
+  },
+  {
+   "name": "Wadwal Nagnath",
+   "taluka": "Chakur",
+   "lat": 18.532265,
+   "lon": 76.805382
+  },
+  {
+   "name": "Wagholi",
+   "taluka": "Chakur",
+   "lat": 18.562337,
+   "lon": 76.805162
+  },
+  {
+   "name": "Yellamwadi",
+   "taluka": "Chakur",
+   "lat": 18.433385,
+   "lon": 76.79821
+  },
+  {
+   "name": "Zari Bk",
+   "taluka": "Chakur",
+   "lat": 18.599558,
+   "lon": 76.809883
+  },
+  {
+   "name": "Zari Kh",
+   "taluka": "Chakur",
+   "lat": 18.588088,
+   "lon": 76.778533
+  },
+  {
+   "name": "Aachwala",
+   "taluka": "Deoni",
+   "lat": 18.244162,
+   "lon": 76.996281
+  },
+  {
+   "name": "Ajani",
+   "taluka": "Deoni",
+   "lat": 18.256345,
+   "lon": 77.137059
+  },
+  {
+   "name": "Ambanagar",
+   "taluka": "Deoni",
+   "lat": 18.209601,
+   "lon": 77.033429
+  },
+  {
+   "name": "Ambegaon",
+   "taluka": "Deoni",
+   "lat": 18.220898,
+   "lon": 77.058663
+  },
+  {
+   "name": "Anandwadi",
+   "taluka": "Deoni",
+   "lat": 18.171471,
+   "lon": 77.011027
+  },
+  {
+   "name": "Anantwadi",
+   "taluka": "Deoni",
+   "lat": 18.220874,
+   "lon": 76.949828
+  },
+  {
+   "name": "Arsnal",
+   "taluka": "Deoni",
+   "lat": 18.321978,
+   "lon": 77.030672
+  },
+  {
+   "name": "Batanpur",
+   "taluka": "Deoni",
+   "lat": 18.166078,
+   "lon": 77.101498
+  },
+  {
+   "name": "Bhopani",
+   "taluka": "Deoni",
+   "lat": 18.302544,
+   "lon": 77.110977
+  },
+  {
+   "name": "Bolegaon",
+   "taluka": "Deoni",
+   "lat": 18.189492,
+   "lon": 77.005534
+  },
+  {
+   "name": "Bombli Bk",
+   "taluka": "Deoni",
+   "lat": 18.197366,
+   "lon": 76.963863
+  },
+  {
+   "name": "Bombli Kh",
+   "taluka": "Deoni",
+   "lat": 18.201932,
+   "lon": 76.960816
+  },
+  {
+   "name": "Borol",
+   "taluka": "Deoni",
+   "lat": 18.216715,
+   "lon": 77.114464
+  },
+  {
+   "name": "Chawanhipparga",
+   "taluka": "Deoni",
+   "lat": 18.284625,
+   "lon": 76.968048
+  },
+  {
+   "name": "Darewadi",
+   "taluka": "Deoni",
+   "lat": 18.258656,
+   "lon": 76.971207
+  },
+  {
+   "name": "Dawanhipparga",
+   "taluka": "Deoni",
+   "lat": 18.216796,
+   "lon": 77.000728
+  },
+  {
+   "name": "Deoni",
+   "taluka": "Deoni",
+   "lat": 18.264444,
+   "lon": 77.082135
+  },
+  {
+   "name": "Deoni Kh",
+   "taluka": "Deoni",
+   "lat": 18.236311,
+   "lon": 77.081891
+  },
+  {
+   "name": "Dhanagarwadi",
+   "taluka": "Deoni",
+   "lat": 18.25615,
+   "lon": 76.921978
+  },
+  {
+   "name": "Dhanegaon",
+   "taluka": "Deoni",
+   "lat": 18.197901,
+   "lon": 76.916882
+  },
+  {
+   "name": "Dhanegaon Tanda",
+   "taluka": "Deoni",
+   "lat": 18.206365,
+   "lon": 76.929292
+  },
+  {
+   "name": "Dhotarwadi",
+   "taluka": "Deoni",
+   "lat": 18.318942,
+   "lon": 77.01993
+  },
+  {
+   "name": "Goundagaon",
+   "taluka": "Deoni",
+   "lat": 18.175354,
+   "lon": 77.091242
+  },
+  {
+   "name": "Gurdhal Her",
+   "taluka": "Deoni",
+   "lat": 18.302414,
+   "lon": 77.004413
+  },
+  {
+   "name": "Gurnal",
+   "taluka": "Deoni",
+   "lat": 18.203221,
+   "lon": 77.075765
+  },
+  {
+   "name": "Hanchanal",
+   "taluka": "Deoni",
+   "lat": 18.259849,
+   "lon": 77.10645
+  },
+  {
+   "name": "Helamb",
+   "taluka": "Deoni",
+   "lat": 18.213938,
+   "lon": 76.908599
+  },
+  {
+   "name": "Hisamnagar",
+   "taluka": "Deoni",
+   "lat": 18.234599,
+   "lon": 76.909061
+  },
+  {
+   "name": "Honali",
+   "taluka": "Deoni",
+   "lat": 18.29388,
+   "lon": 77.117683
+  },
+  {
+   "name": "Indral",
+   "taluka": "Deoni",
+   "lat": 18.185339,
+   "lon": 77.04971
+  },
+  {
+   "name": "Ismilewadi",
+   "taluka": "Deoni",
+   "lat": 18.246664,
+   "lon": 76.93835
+  },
+  {
+   "name": "Jawalga",
+   "taluka": "Deoni",
+   "lat": 18.254571,
+   "lon": 76.903492
+  },
+  {
+   "name": "Kamalwadi",
+   "taluka": "Deoni",
+   "lat": 18.293427,
+   "lon": 77.061667
+  },
+  {
+   "name": "Kamarodinpur",
+   "taluka": "Deoni",
+   "lat": 18.295525,
+   "lon": 77.023521
+  },
+  {
+   "name": "Kawathala",
+   "taluka": "Deoni",
+   "lat": 18.267485,
+   "lon": 76.935942
+  },
+  {
+   "name": "Kharabwadi",
+   "taluka": "Deoni",
+   "lat": 18.29331,
+   "lon": 77.002053
+  },
+  {
+   "name": "Konali",
+   "taluka": "Deoni",
+   "lat": 18.31165,
+   "lon": 77.060831
+  },
+  {
+   "name": "Lasona",
+   "taluka": "Deoni",
+   "lat": 18.162398,
+   "lon": 77.070776
+  },
+  {
+   "name": "Laxman Tanda",
+   "taluka": "Deoni",
+   "lat": 18.229601,
+   "lon": 77.038769
+  },
+  {
+   "name": "Mahadevwadi",
+   "taluka": "Deoni",
+   "lat": 18.20369,
+   "lon": 76.987161
+  },
+  {
+   "name": "Manaki",
+   "taluka": "Deoni",
+   "lat": 18.318331,
+   "lon": 77.100892
+  },
+  {
+   "name": "Nagaral",
+   "taluka": "Deoni",
+   "lat": 18.30564,
+   "lon": 77.046518
+  },
+  {
+   "name": "Nagatirthawadi",
+   "taluka": "Deoni",
+   "lat": 18.281625,
+   "lon": 76.977639
+  },
+  {
+   "name": "Neknal",
+   "taluka": "Deoni",
+   "lat": 18.267133,
+   "lon": 77.031927
+  },
+  {
+   "name": "Pethewadi",
+   "taluka": "Deoni",
+   "lat": 18.304438,
+   "lon": 76.995819
+  },
+  {
+   "name": "Sangam",
+   "taluka": "Deoni",
+   "lat": 18.257398,
+   "lon": 77.124329
+  },
+  {
+   "name": "Sawargaon",
+   "taluka": "Deoni",
+   "lat": 18.294583,
+   "lon": 77.135144
+  },
+  {
+   "name": "Sayyadpur",
+   "taluka": "Deoni",
+   "lat": 18.291318,
+   "lon": 76.950994
+  },
+  {
+   "name": "Shindikamath",
+   "taluka": "Deoni",
+   "lat": 18.199333,
+   "lon": 77.095442
+  },
+  {
+   "name": "Shivajinagar Tanda",
+   "taluka": "Deoni",
+   "lat": 18.221342,
+   "lon": 77.128937
+  },
+  {
+   "name": "Takali",
+   "taluka": "Deoni",
+   "lat": 18.174671,
+   "lon": 76.929649
+  },
+  {
+   "name": "Talegaon Bhoge",
+   "taluka": "Deoni",
+   "lat": 18.268982,
+   "lon": 77.007031
+  },
+  {
+   "name": "Togari",
+   "taluka": "Deoni",
+   "lat": 18.278941,
+   "lon": 77.156585
+  },
+  {
+   "name": "Vilegaon",
+   "taluka": "Deoni",
+   "lat": 18.246949,
+   "lon": 77.041572
+  },
+  {
+   "name": "Wadamurambi",
+   "taluka": "Deoni",
+   "lat": 18.197641,
+   "lon": 77.021928
+  },
+  {
+   "name": "Wagadari",
+   "taluka": "Deoni",
+   "lat": 18.2454,
+   "lon": 77.145926
+  },
+  {
+   "name": "Waganalwadi",
+   "taluka": "Deoni",
+   "lat": 18.284676,
+   "lon": 76.917193
+  },
+  {
+   "name": "Walandi",
+   "taluka": "Deoni",
+   "lat": 18.236189,
+   "lon": 76.962436
+  },
+  {
+   "name": "Yengewadi",
+   "taluka": "Deoni",
+   "lat": 18.238309,
+   "lon": 77.068596
+  },
+  {
+   "name": "Atnur",
+   "taluka": "Jalkot",
+   "lat": 18.537132,
+   "lon": 77.258402
+  },
+  {
+   "name": "Belsangavi",
+   "taluka": "Jalkot",
+   "lat": 18.54944,
+   "lon": 77.095522
+  },
+  {
+   "name": "Boragaon Kh",
+   "taluka": "Jalkot",
+   "lat": 18.545611,
+   "lon": 77.1412
+  },
+  {
+   "name": "Chincholi",
+   "taluka": "Jalkot",
+   "lat": 18.536898,
+   "lon": 77.247818
+  },
+  {
+   "name": "Dhangarwadi",
+   "taluka": "Jalkot",
+   "lat": 18.589465,
+   "lon": 77.123238
+  },
+  {
+   "name": "Dhondwadi",
+   "taluka": "Jalkot",
+   "lat": 18.513857,
+   "lon": 77.182013
+  },
+  {
+   "name": "Dongragaon",
+   "taluka": "Jalkot",
+   "lat": 18.550264,
+   "lon": 77.211442
+  },
+  {
+   "name": "Ekurga Kh",
+   "taluka": "Jalkot",
+   "lat": 18.54795,
+   "lon": 77.15562
+  },
+  {
+   "name": "Gavan",
+   "taluka": "Jalkot",
+   "lat": 18.528313,
+   "lon": 77.270182
+  },
+  {
+   "name": "Ghonsi",
+   "taluka": "Jalkot",
+   "lat": 18.508109,
+   "lon": 77.160416
+  },
+  {
+   "name": "Gutti",
+   "taluka": "Jalkot",
+   "lat": 18.500773,
+   "lon": 77.202033
+  },
+  {
+   "name": "Halad Wadhona",
+   "taluka": "Jalkot",
+   "lat": 18.612065,
+   "lon": 77.220143
+  },
+  {
+   "name": "Jalkot",
+   "taluka": "Jalkot",
+   "lat": 18.629061,
+   "lon": 77.178302
+  },
+  {
+   "name": "Karangi",
+   "taluka": "Jalkot",
+   "lat": 18.59729,
+   "lon": 77.143282
+  },
+  {
+   "name": "Kolnoor",
+   "taluka": "Jalkot",
+   "lat": 18.589084,
+   "lon": 77.158903
+  },
+  {
+   "name": "Konali Dongar",
+   "taluka": "Jalkot",
+   "lat": 18.565048,
+   "lon": 77.149655
+  },
+  {
+   "name": "Kunki",
+   "taluka": "Jalkot",
+   "lat": 18.623686,
+   "lon": 77.138379
+  },
+  {
+   "name": "Lali Bk",
+   "taluka": "Jalkot",
+   "lat": 18.575076,
+   "lon": 77.109507
+  },
+  {
+   "name": "Lali Kh",
+   "taluka": "Jalkot",
+   "lat": 18.560364,
+   "lon": 77.103655
+  },
+  {
+   "name": "Mali Hipparga",
+   "taluka": "Jalkot",
+   "lat": 18.583547,
+   "lon": 77.193273
+  },
+  {
+   "name": "Mangrul",
+   "taluka": "Jalkot",
+   "lat": 18.556072,
+   "lon": 77.125418
+  },
+  {
+   "name": "Marsangvi",
+   "taluka": "Jalkot",
+   "lat": 18.557191,
+   "lon": 77.236086
+  },
+  {
+   "name": "Mewapur",
+   "taluka": "Jalkot",
+   "lat": 18.521029,
+   "lon": 77.259153
+  },
+  {
+   "name": "Pathoda Kh",
+   "taluka": "Jalkot",
+   "lat": 18.576995,
+   "lon": 77.183375
+  },
+  {
+   "name": "Patoda Bk",
+   "taluka": "Jalkot",
+   "lat": 18.609645,
+   "lon": 77.166392
+  },
+  {
+   "name": "Rampur Tanda",
+   "taluka": "Jalkot",
+   "lat": 18.508556,
+   "lon": 77.22466
+  },
+  {
+   "name": "Rawankola",
+   "taluka": "Jalkot",
+   "lat": 18.592928,
+   "lon": 77.251305
+  },
+  {
+   "name": "Shivaji Nagar Tanda",
+   "taluka": "Jalkot",
+   "lat": 18.593386,
+   "lon": 77.210482
+  },
+  {
+   "name": "Sonwala",
+   "taluka": "Jalkot",
+   "lat": 18.573016,
+   "lon": 77.126234
+  },
+  {
+   "name": "Sullali",
+   "taluka": "Jalkot",
+   "lat": 18.540682,
+   "lon": 77.223812
+  },
+  {
+   "name": "Tiruka",
+   "taluka": "Jalkot",
+   "lat": 18.552583,
+   "lon": 77.174701
+  },
+  {
+   "name": "Viral",
+   "taluka": "Jalkot",
+   "lat": 18.609899,
+   "lon": 77.134227
+  },
+  {
+   "name": "Yeori",
+   "taluka": "Jalkot",
+   "lat": 18.56874,
+   "lon": 77.092985
+  },
+  {
+   "name": "Akherwai",
+   "taluka": "Latur",
+   "lat": 18.437462,
+   "lon": 76.457956
+  },
+  {
+   "name": "Babalgaon",
+   "taluka": "Latur",
+   "lat": 18.376988,
+   "lon": 76.631634
+  },
+  {
+   "name": "Bamani",
+   "taluka": "Latur",
+   "lat": 18.485379,
+   "lon": 76.689216
+  },
+  {
+   "name": "Bhadi",
+   "taluka": "Latur",
+   "lat": 18.458789,
+   "lon": 76.70378
+  },
+  {
+   "name": "Bhatangali",
+   "taluka": "Latur",
+   "lat": 18.450494,
+   "lon": 76.675794
+  },
+  {
+   "name": "Bhatkheda",
+   "taluka": "Latur",
+   "lat": 18.430892,
+   "lon": 76.668338
+  },
+  {
+   "name": "Bhise Wagholi",
+   "taluka": "Latur",
+   "lat": 18.482952,
+   "lon": 76.295012
+  },
+  {
+   "name": "Bhoisumdraga",
+   "taluka": "Latur",
+   "lat": 18.442729,
+   "lon": 76.466711
+  },
+  {
+   "name": "Bhosa",
+   "taluka": "Latur",
+   "lat": 18.509218,
+   "lon": 76.270866
+  },
+  {
+   "name": "Bindgihal",
+   "taluka": "Latur",
+   "lat": 18.291603,
+   "lon": 76.711972
+  },
+  {
+   "name": "Bodkha",
+   "taluka": "Latur",
+   "lat": 18.531293,
+   "lon": 76.385276
+  },
+  {
+   "name": "Bohira",
+   "taluka": "Latur",
+   "lat": 18.358074,
+   "lon": 76.418645
+  },
+  {
+   "name": "Bokangaon",
+   "taluka": "Latur",
+   "lat": 18.3073,
+   "lon": 76.711049
+  },
+  {
+   "name": "Bopla",
+   "taluka": "Latur",
+   "lat": 18.333659,
+   "lon": 76.376701
+  },
+  {
+   "name": "Borgaon",
+   "taluka": "Latur",
+   "lat": 18.407044,
+   "lon": 76.317051
+  },
+  {
+   "name": "Borgaon Tanda",
+   "taluka": "Latur",
+   "lat": 18.542335,
+   "lon": 76.275845
+  },
+  {
+   "name": "Bori",
+   "taluka": "Latur",
+   "lat": 18.372238,
+   "lon": 76.695798
+  },
+  {
+   "name": "Chamewadi",
+   "taluka": "Latur",
+   "lat": 18.374269,
+   "lon": 76.674507
+  },
+  {
+   "name": "Chandeshwar",
+   "taluka": "Latur",
+   "lat": 18.34811,
+   "lon": 76.553206
+  },
+  {
+   "name": "Chata",
+   "taluka": "Latur",
+   "lat": 18.354103,
+   "lon": 76.383342
+  },
+  {
+   "name": "Chikhurda",
+   "taluka": "Latur",
+   "lat": 18.416395,
+   "lon": 76.428613
+  },
+  {
+   "name": "Chincholi Bk",
+   "taluka": "Latur",
+   "lat": 18.449303,
+   "lon": 76.367072
+  },
+  {
+   "name": "Chincholirao",
+   "taluka": "Latur",
+   "lat": 18.343833,
+   "lon": 76.471539
+  },
+  {
+   "name": "Dhakani",
+   "taluka": "Latur",
+   "lat": 18.347275,
+   "lon": 76.339327
+  },
+  {
+   "name": "Dhanegaon",
+   "taluka": "Latur",
+   "lat": 18.385795,
+   "lon": 76.662222
+  },
+  {
+   "name": "Dhanuri",
+   "taluka": "Latur",
+   "lat": 18.332508,
+   "lon": 76.411897
+  },
+  {
+   "name": "Dhoki",
+   "taluka": "Latur",
+   "lat": 18.481654,
+   "lon": 76.378616
+  },
+  {
+   "name": "Ekurga",
+   "taluka": "Latur",
+   "lat": 18.345931,
+   "lon": 76.356987
+  },
+  {
+   "name": "Gadwad",
+   "taluka": "Latur",
+   "lat": 18.516655,
+   "lon": 76.332536
+  },
+  {
+   "name": "Gangapur",
+   "taluka": "Latur",
+   "lat": 18.343111,
+   "lon": 76.513513
+  },
+  {
+   "name": "Ganjur",
+   "taluka": "Latur",
+   "lat": 18.544651,
+   "lon": 76.409252
+  },
+  {
+   "name": "Gategaon",
+   "taluka": "Latur",
+   "lat": 18.421555,
+   "lon": 76.403893
+  },
+  {
+   "name": "Gondegaon",
+   "taluka": "Latur",
+   "lat": 18.427349,
+   "lon": 76.350946
+  },
+  {
+   "name": "Harangul Bk",
+   "taluka": "Latur",
+   "lat": 18.4147,
+   "lon": 76.499627
+  },
+  {
+   "name": "Hisori",
+   "taluka": "Latur",
+   "lat": 18.43481,
+   "lon": 76.330637
+  },
+  {
+   "name": "Jawala Bk",
+   "taluka": "Latur",
+   "lat": 18.502136,
+   "lon": 76.392016
+  },
+  {
+   "name": "Jewali",
+   "taluka": "Latur",
+   "lat": 18.468105,
+   "lon": 76.489939
+  },
+  {
+   "name": "Karkatta",
+   "taluka": "Latur",
+   "lat": 18.405311,
+   "lon": 76.281118
+  },
+  {
+   "name": "Karsa",
+   "taluka": "Latur",
+   "lat": 18.507743,
+   "lon": 76.450625
+  },
+  {
+   "name": "Kasarjawala",
+   "taluka": "Latur",
+   "lat": 18.49532,
+   "lon": 76.393465
+  },
+  {
+   "name": "Kasarkheda",
+   "taluka": "Latur",
+   "lat": 18.44968,
+   "lon": 76.642846
+  },
+  {
+   "name": "Kawa",
+   "taluka": "Latur",
+   "lat": 18.348619,
+   "lon": 76.58197
+  },
+  {
+   "name": "Khandala",
+   "taluka": "Latur",
+   "lat": 18.433507,
+   "lon": 76.316872
+  },
+  {
+   "name": "Khandapur",
+   "taluka": "Latur",
+   "lat": 18.357296,
+   "lon": 76.495435
+  },
+  {
+   "name": "Khopegaon",
+   "taluka": "Latur",
+   "lat": 18.353762,
+   "lon": 76.561178
+  },
+  {
+   "name": "Khulgapur",
+   "taluka": "Latur",
+   "lat": 18.454764,
+   "lon": 76.609511
+  },
+  {
+   "name": "Khuntephal",
+   "taluka": "Latur",
+   "lat": 18.460193,
+   "lon": 76.29226
+  },
+  {
+   "name": "Kolpa",
+   "taluka": "Latur",
+   "lat": 18.426164,
+   "lon": 76.640722
+  },
+  {
+   "name": "Latur",
+   "taluka": "Latur",
+   "lat": 18.398227,
+   "lon": 76.562591
+  },
+  {
+   "name": "Mahapur",
+   "taluka": "Latur",
+   "lat": 18.468927,
+   "lon": 76.585565
+  },
+  {
+   "name": "Malwati",
+   "taluka": "Latur",
+   "lat": 18.438596,
+   "lon": 76.616013
+  },
+  {
+   "name": "Mamdapur",
+   "taluka": "Latur",
+   "lat": 18.436917,
+   "lon": 76.701747
+  },
+  {
+   "name": "Manjari",
+   "taluka": "Latur",
+   "lat": 18.451481,
+   "lon": 76.417733
+  },
+  {
+   "name": "Masla",
+   "taluka": "Latur",
+   "lat": 18.508025,
+   "lon": 76.296583
+  },
+  {
+   "name": "Matephal",
+   "taluka": "Latur",
+   "lat": 18.449344,
+   "lon": 76.279761
+  },
+  {
+   "name": "Murud",
+   "taluka": "Latur",
+   "lat": 18.403281,
+   "lon": 76.240822
+  },
+  {
+   "name": "Murud Akola",
+   "taluka": "Latur",
+   "lat": 18.39893,
+   "lon": 76.406677
+  },
+  {
+   "name": "Mushirabad",
+   "taluka": "Latur",
+   "lat": 18.364296,
+   "lon": 76.711929
+  },
+  {
+   "name": "Nagzari",
+   "taluka": "Latur",
+   "lat": 18.467904,
+   "lon": 76.5127
+  },
+  {
+   "name": "Nandgaon",
+   "taluka": "Latur",
+   "lat": 18.45228,
+   "lon": 76.547566
+  },
+  {
+   "name": "Neharu Nagar",
+   "taluka": "Latur",
+   "lat": 18.489723,
+   "lon": 76.588703
+  },
+  {
+   "name": "Nikant",
+   "taluka": "Latur",
+   "lat": 18.516909,
+   "lon": 76.284712
+  },
+  {
+   "name": "Niwali",
+   "taluka": "Latur",
+   "lat": 18.362748,
+   "lon": 76.309099
+  },
+  {
+   "name": "Peth",
+   "taluka": "Latur",
+   "lat": 18.330493,
+   "lon": 76.542073
+  },
+  {
+   "name": "Pimpalgaon Amba",
+   "taluka": "Latur",
+   "lat": 18.513602,
+   "lon": 76.28034
+  },
+  {
+   "name": "Pimpri Amba",
+   "taluka": "Latur",
+   "lat": 18.491087,
+   "lon": 76.34584
+  },
+  {
+   "name": "Raiwadi",
+   "taluka": "Latur",
+   "lat": 18.45142,
+   "lon": 76.535402
+  },
+  {
+   "name": "Ramegaon",
+   "taluka": "Latur",
+   "lat": 18.411276,
+   "lon": 76.359068
+  },
+  {
+   "name": "Rameshwar",
+   "taluka": "Latur",
+   "lat": 18.517733,
+   "lon": 76.421703
+  },
+  {
+   "name": "Rui",
+   "taluka": "Latur",
+   "lat": 18.518461,
+   "lon": 76.429884
+  },
+  {
+   "name": "Sai",
+   "taluka": "Latur",
+   "lat": 18.473942,
+   "lon": 76.550516
+  },
+  {
+   "name": "Salgara",
+   "taluka": "Latur",
+   "lat": 18.332091,
+   "lon": 76.696853
+  },
+  {
+   "name": "Samangaon",
+   "taluka": "Latur",
+   "lat": 18.449405,
+   "lon": 76.426649
+  },
+  {
+   "name": "Sarsa",
+   "taluka": "Latur",
+   "lat": 18.561259,
+   "lon": 76.328276
+  },
+  {
+   "name": "Sawergaon",
+   "taluka": "Latur",
+   "lat": 18.333899,
+   "lon": 76.425608
+  },
+  {
+   "name": "Shirala",
+   "taluka": "Latur",
+   "lat": 18.460569,
+   "lon": 76.32333
+  },
+  {
+   "name": "Shiur",
+   "taluka": "Latur",
+   "lat": 18.315184,
+   "lon": 76.454576
+  },
+  {
+   "name": "Shivani KD",
+   "taluka": "Latur",
+   "lat": 18.362153,
+   "lon": 76.680504
+  },
+  {
+   "name": "Sirshi",
+   "taluka": "Latur",
+   "lat": 18.360707,
+   "lon": 76.620101
+  },
+  {
+   "name": "Sonawati",
+   "taluka": "Latur",
+   "lat": 18.396434,
+   "lon": 76.649455
+  },
+  {
+   "name": "Takali B",
+   "taluka": "Latur",
+   "lat": 18.488635,
+   "lon": 76.468942
+  },
+  {
+   "name": "Takali S",
+   "taluka": "Latur",
+   "lat": 18.33756,
+   "lon": 76.40002
+  },
+  {
+   "name": "Tandulja",
+   "taluka": "Latur",
+   "lat": 18.533824,
+   "lon": 76.297753
+  },
+  {
+   "name": "Uti Ku",
+   "taluka": "Latur",
+   "lat": 18.324829,
+   "lon": 76.440704
+  },
+  {
+   "name": "Wadiwagholi",
+   "taluka": "Latur",
+   "lat": 18.483598,
+   "lon": 76.274793
+  },
+  {
+   "name": "Wanjarkheda",
+   "taluka": "Latur",
+   "lat": 18.535271,
+   "lon": 76.361032
+  },
+  {
+   "name": "Wanjerkheda L.T.",
+   "taluka": "Latur",
+   "lat": 18.513918,
+   "lon": 76.357427
+  },
+  {
+   "name": "Yelli",
+   "taluka": "Latur",
+   "lat": 18.473921,
+   "lon": 76.368327
+  },
+  {
+   "name": "Ambegaon",
+   "taluka": "Nilanga",
+   "lat": 18.238135,
+   "lon": 76.730876
+  },
+  {
+   "name": "Ambulga",
+   "taluka": "Nilanga",
+   "lat": 18.161644,
+   "lon": 76.864117
+  },
+  {
+   "name": "Ambulga M",
+   "taluka": "Nilanga",
+   "lat": 18.223665,
+   "lon": 76.738386
+  },
+  {
+   "name": "Ambulga V",
+   "taluka": "Nilanga",
+   "lat": 17.989734,
+   "lon": 76.703453
+  },
+  {
+   "name": "Anandwadi",
+   "taluka": "Nilanga",
+   "lat": 18.267368,
+   "lon": 76.70768
+  },
+  {
+   "name": "Anandwadi AB",
+   "taluka": "Nilanga",
+   "lat": 18.188183,
+   "lon": 76.875179
+  },
+  {
+   "name": "Ansarwada",
+   "taluka": "Nilanga",
+   "lat": 18.095439,
+   "lon": 76.804647
+  },
+  {
+   "name": "Aundha",
+   "taluka": "Nilanga",
+   "lat": 17.944012,
+   "lon": 76.796472
+  },
+  {
+   "name": "Aurad Shahajani",
+   "taluka": "Nilanga",
+   "lat": 18.05553,
+   "lon": 76.928618
+  },
+  {
+   "name": "Badur",
+   "taluka": "Nilanga",
+   "lat": 17.959547,
+   "lon": 76.796622
+  },
+  {
+   "name": "Bamni",
+   "taluka": "Nilanga",
+   "lat": 18.066107,
+   "lon": 76.714783
+  },
+  {
+   "name": "Baspur",
+   "taluka": "Nilanga",
+   "lat": 18.239277,
+   "lon": 76.837542
+  },
+  {
+   "name": "Bendga",
+   "taluka": "Nilanga",
+   "lat": 18.080549,
+   "lon": 76.816964
+  },
+  {
+   "name": "Bhosalewadi",
+   "taluka": "Nilanga",
+   "lat": 18.224898,
+   "lon": 76.689506
+  },
+  {
+   "name": "Bhut Mugali",
+   "taluka": "Nilanga",
+   "lat": 18.017615,
+   "lon": 76.747441
+  },
+  {
+   "name": "Borsuri",
+   "taluka": "Nilanga",
+   "lat": 18.014926,
+   "lon": 76.850148
+  },
+  {
+   "name": "Botkul",
+   "taluka": "Nilanga",
+   "lat": 18.132699,
+   "lon": 76.889126
+  },
+  {
+   "name": "Chandoriwadi",
+   "taluka": "Nilanga",
+   "lat": 18.005397,
+   "lon": 76.828063
+  },
+  {
+   "name": "Chilwantwadi",
+   "taluka": "Nilanga",
+   "lat": 17.968252,
+   "lon": 76.852123
+  },
+  {
+   "name": "Chincholi Bk",
+   "taluka": "Nilanga",
+   "lat": 18.05864,
+   "lon": 76.782117
+  },
+  {
+   "name": "Chincholi P",
+   "taluka": "Nilanga",
+   "lat": 18.284004,
+   "lon": 76.669807
+  },
+  {
+   "name": "Chincholi Sayakhan",
+   "taluka": "Nilanga",
+   "lat": 18.01461,
+   "lon": 76.788533
+  },
+  {
+   "name": "Chndori",
+   "taluka": "Nilanga",
+   "lat": 18.028486,
+   "lon": 76.820183
+  },
+  {
+   "name": "Dadgi",
+   "taluka": "Nilanga",
+   "lat": 18.072512,
+   "lon": 76.761003
+  },
+  {
+   "name": "Dagadwadi",
+   "taluka": "Nilanga",
+   "lat": 18.267255,
+   "lon": 76.65807
+  },
+  {
+   "name": "Dangewadi",
+   "taluka": "Nilanga",
+   "lat": 18.235527,
+   "lon": 76.80233
+  },
+  {
+   "name": "Dapka Tanda",
+   "taluka": "Nilanga",
+   "lat": 18.155068,
+   "lon": 76.75876
+  },
+  {
+   "name": "Dhanora",
+   "taluka": "Nilanga",
+   "lat": 18.064355,
+   "lon": 76.731195
+  },
+  {
+   "name": "Dhobalewadi",
+   "taluka": "Nilanga",
+   "lat": 18.266685,
+   "lon": 76.79821
+  },
+  {
+   "name": "Dongargaon H",
+   "taluka": "Nilanga",
+   "lat": 17.96169,
+   "lon": 76.675612
+  },
+  {
+   "name": "Giraksal",
+   "taluka": "Nilanga",
+   "lat": 18.220781,
+   "lon": 76.888815
+  },
+  {
+   "name": "Gour",
+   "taluka": "Nilanga",
+   "lat": 18.276381,
+   "lon": 76.709968
+  },
+  {
+   "name": "Govindnagarwadi",
+   "taluka": "Nilanga",
+   "lat": 18.238991,
+   "lon": 76.78997
+  },
+  {
+   "name": "Gunewadi",
+   "taluka": "Nilanga",
+   "lat": 18.216878,
+   "lon": 76.703399
+  },
+  {
+   "name": "Gunjarga",
+   "taluka": "Nilanga",
+   "lat": 18.056396,
+   "lon": 76.804712
+  },
+  {
+   "name": "Gural",
+   "taluka": "Nilanga",
+   "lat": 18.134708,
+   "lon": 76.806761
+  },
+  {
+   "name": "Hadga",
+   "taluka": "Nilanga",
+   "lat": 18.189686,
+   "lon": 76.728129
+  },
+  {
+   "name": "Hadoli",
+   "taluka": "Nilanga",
+   "lat": 18.013529,
+   "lon": 76.696672
+  },
+  {
+   "name": "Halasi",
+   "taluka": "Nilanga",
+   "lat": 18.108901,
+   "lon": 76.937727
+  },
+  {
+   "name": "Hallali",
+   "taluka": "Nilanga",
+   "lat": 17.90856,
+   "lon": 76.858335
+  },
+  {
+   "name": "Halsi hattarga",
+   "taluka": "Nilanga",
+   "lat": 17.957046,
+   "lon": 76.720115
+  },
+  {
+   "name": "Hanamantwadi H",
+   "taluka": "Nilanga",
+   "lat": 18.004969,
+   "lon": 76.717603
+  },
+  {
+   "name": "Handral",
+   "taluka": "Nilanga",
+   "lat": 17.97259,
+   "lon": 76.701822
+  },
+  {
+   "name": "Hangarga",
+   "taluka": "Nilanga",
+   "lat": 18.114386,
+   "lon": 76.847627
+  },
+  {
+   "name": "Hanumtwadi AB",
+   "taluka": "Nilanga",
+   "lat": 18.142151,
+   "lon": 76.864021
+  },
+  {
+   "name": "Hari jawalga",
+   "taluka": "Nilanga",
+   "lat": 17.994775,
+   "lon": 76.759501
+  },
+  {
+   "name": "Hattarga Halshi",
+   "taluka": "Nilanga",
+   "lat": 17.949238,
+   "lon": 76.731348
+  },
+  {
+   "name": "Hosur",
+   "taluka": "Nilanga",
+   "lat": 18.142447,
+   "lon": 76.904061
+  },
+  {
+   "name": "Jajnur",
+   "taluka": "Nilanga",
+   "lat": 18.144832,
+   "lon": 76.81587
+  },
+  {
+   "name": "Jamga",
+   "taluka": "Nilanga",
+   "lat": 18.058967,
+   "lon": 76.830847
+  },
+  {
+   "name": "Jewari",
+   "taluka": "Nilanga",
+   "lat": 18.074736,
+   "lon": 76.683927
+  },
+  {
+   "name": "Jotwadi",
+   "taluka": "Nilanga",
+   "lat": 18.260389,
+   "lon": 76.745424
+  },
+  {
+   "name": "Kalkotwadi",
+   "taluka": "Nilanga",
+   "lat": 17.965752,
+   "lon": 76.862701
+  },
+  {
+   "name": "Kalmugli",
+   "taluka": "Nilanga",
+   "lat": 17.988958,
+   "lon": 76.866639
+  },
+  {
+   "name": "Kamlewadi",
+   "taluka": "Nilanga",
+   "lat": 18.04489,
+   "lon": 76.669164
+  },
+  {
+   "name": "Kasar Balkunda",
+   "taluka": "Nilanga",
+   "lat": 17.941542,
+   "lon": 76.848282
+  },
+  {
+   "name": "Kasar Shirasi",
+   "taluka": "Nilanga",
+   "lat": 17.923348,
+   "lon": 76.75486
+  },
+  {
+   "name": "Kathejawalga",
+   "taluka": "Nilanga",
+   "lat": 18.199185,
+   "lon": 76.844902
+  },
+  {
+   "name": "Kelagaon",
+   "taluka": "Nilanga",
+   "lat": 18.188713,
+   "lon": 76.806064
+  },
+  {
+   "name": "Khadakumarga",
+   "taluka": "Nilanga",
+   "lat": 18.218447,
+   "lon": 76.820118
+  },
+  {
+   "name": "Kokalgaon",
+   "taluka": "Nilanga",
+   "lat": 18.041952,
+   "lon": 76.655688
+  },
+  {
+   "name": "Korali",
+   "taluka": "Nilanga",
+   "lat": 17.888733,
+   "lon": 76.791623
+  },
+  {
+   "name": "Koraliwadi",
+   "taluka": "Nilanga",
+   "lat": 17.899576,
+   "lon": 76.77259
+  },
+  {
+   "name": "Koyachiwadi",
+   "taluka": "Nilanga",
+   "lat": 18.06421,
+   "lon": 76.864429
+  },
+  {
+   "name": "Kumtha",
+   "taluka": "Nilanga",
+   "lat": 18.081997,
+   "lon": 76.663885
+  },
+  {
+   "name": "Lambota",
+   "taluka": "Nilanga",
+   "lat": 18.155272,
+   "lon": 76.783018
+  },
+  {
+   "name": "Limbala",
+   "taluka": "Nilanga",
+   "lat": 18.055468,
+   "lon": 76.758503
+  },
+  {
+   "name": "Makni",
+   "taluka": "Nilanga",
+   "lat": 18.095235,
+   "lon": 76.887388
+  },
+  {
+   "name": "Malegaon J",
+   "taluka": "Nilanga",
+   "lat": 18.09599,
+   "lon": 76.67794
+  },
+  {
+   "name": "Malegaon Kalyani",
+   "taluka": "Nilanga",
+   "lat": 17.974345,
+   "lon": 76.894577
+  },
+  {
+   "name": "Mamdapur",
+   "taluka": "Nilanga",
+   "lat": 17.913593,
+   "lon": 76.878784
+  },
+  {
+   "name": "Mandansuri",
+   "taluka": "Nilanga",
+   "lat": 18.033408,
+   "lon": 76.711983
+  },
+  {
+   "name": "Mane Jawalga",
+   "taluka": "Nilanga",
+   "lat": 18.040615,
+   "lon": 76.874975
+  },
+  {
+   "name": "Mannatpur",
+   "taluka": "Nilanga",
+   "lat": 18.09036,
+   "lon": 76.740811
+  },
+  {
+   "name": "Masalga",
+   "taluka": "Nilanga",
+   "lat": 18.251988,
+   "lon": 76.727148
+  },
+  {
+   "name": "Mhasobhachiwadi",
+   "taluka": "Nilanga",
+   "lat": 18.103445,
+   "lon": 76.832135
+  },
+  {
+   "name": "Mirganhalli",
+   "taluka": "Nilanga",
+   "lat": 17.914185,
+   "lon": 76.836061
+  },
+  {
+   "name": "Mubarakhpur",
+   "taluka": "Nilanga",
+   "lat": 18.145398,
+   "lon": 76.742597
+  },
+  {
+   "name": "Mudgad Yekoji",
+   "taluka": "Nilanga",
+   "lat": 18.016896,
+   "lon": 76.631956
+  },
+  {
+   "name": "Mudgadwadi",
+   "taluka": "Nilanga",
+   "lat": 17.934203,
+   "lon": 76.68538
+  },
+  {
+   "name": "Mugaon",
+   "taluka": "Nilanga",
+   "lat": 18.266196,
+   "lon": 76.745703
+  },
+  {
+   "name": "Nelwad",
+   "taluka": "Nilanga",
+   "lat": 17.90708,
+   "lon": 76.816535
+  },
+  {
+   "name": "Nilanga",
+   "taluka": "Nilanga",
+   "lat": 18.129189,
+   "lon": 76.749413
+  },
+  {
+   "name": "Nitur",
+   "taluka": "Nilanga",
+   "lat": 18.242731,
+   "lon": 76.776634
+  },
+  {
+   "name": "Palapur",
+   "taluka": "Nilanga",
+   "lat": 18.089259,
+   "lon": 76.753224
+  },
+  {
+   "name": "Panchincholi",
+   "taluka": "Nilanga",
+   "lat": 18.273429,
+   "lon": 76.687553
+  },
+  {
+   "name": "Pirupatelwadi",
+   "taluka": "Nilanga",
+   "lat": 17.955342,
+   "lon": 76.830204
+  },
+  {
+   "name": "Ramling Mudgad",
+   "taluka": "Nilanga",
+   "lat": 17.935076,
+   "lon": 76.699687
+  },
+  {
+   "name": "Ramtirth",
+   "taluka": "Nilanga",
+   "lat": 18.042319,
+   "lon": 76.68559
+  },
+  {
+   "name": "Rathoda",
+   "taluka": "Nilanga",
+   "lat": 18.203482,
+   "lon": 76.762997
+  },
+  {
+   "name": "Rathoda Tanda",
+   "taluka": "Nilanga",
+   "lat": 18.182102,
+   "lon": 76.762633
+  },
+  {
+   "name": "Sangareddy Wadi",
+   "taluka": "Nilanga",
+   "lat": 18.066086,
+   "lon": 76.885682
+  },
+  {
+   "name": "Sangvi Jewari",
+   "taluka": "Nilanga",
+   "lat": 18.063577,
+   "lon": 76.659014
+  },
+  {
+   "name": "Sardarwadi",
+   "taluka": "Nilanga",
+   "lat": 17.927568,
+   "lon": 76.857905
+  },
+  {
+   "name": "Sarwadi",
+   "taluka": "Nilanga",
+   "lat": 18.011508,
+   "lon": 76.663842
+  },
+  {
+   "name": "Sarwadi West",
+   "taluka": "Nilanga",
+   "lat": 18.010937,
+   "lon": 76.646376
+  },
+  {
+   "name": "Sawangira",
+   "taluka": "Nilanga",
+   "lat": 18.135146,
+   "lon": 76.833336
+  },
+  {
+   "name": "Sawari",
+   "taluka": "Nilanga",
+   "lat": 18.050026,
+   "lon": 76.875018
+  },
+  {
+   "name": "Sawari Zopadpatti",
+   "taluka": "Nilanga",
+   "lat": 18.060283,
+   "lon": 76.879481
+  },
+  {
+   "name": "Shedol",
+   "taluka": "Nilanga",
+   "lat": 18.198701,
+   "lon": 76.648457
+  },
+  {
+   "name": "Shelgi",
+   "taluka": "Nilanga",
+   "lat": 18.030383,
+   "lon": 76.900628
+  },
+  {
+   "name": "Shend",
+   "taluka": "Nilanga",
+   "lat": 18.276659,
+   "lon": 76.760981
+  },
+  {
+   "name": "Shindi Jawalga",
+   "taluka": "Nilanga",
+   "lat": 18.175874,
+   "lon": 76.701018
+  },
+  {
+   "name": "Shiradhon",
+   "taluka": "Nilanga",
+   "lat": 17.931835,
+   "lon": 76.778834
+  },
+  {
+   "name": "Shirasiwadi",
+   "taluka": "Nilanga",
+   "lat": 17.903529,
+   "lon": 76.752164
+  },
+  {
+   "name": "Shirol",
+   "taluka": "Nilanga",
+   "lat": 18.228394,
+   "lon": 76.870694
+  },
+  {
+   "name": "Shiur",
+   "taluka": "Nilanga",
+   "lat": 18.19888,
+   "lon": 76.891776
+  },
+  {
+   "name": "Shivani Kotal",
+   "taluka": "Nilanga",
+   "lat": 18.222218,
+   "lon": 76.704547
+  },
+  {
+   "name": "Shivani Wasti",
+   "taluka": "Nilanga",
+   "lat": 18.220129,
+   "lon": 76.708281
+  },
+  {
+   "name": "Sindkhed",
+   "taluka": "Nilanga",
+   "lat": 18.079652,
+   "lon": 76.783426
+  },
+  {
+   "name": "Singnal",
+   "taluka": "Nilanga",
+   "lat": 18.086424,
+   "lon": 76.696694
+  },
+  {
+   "name": "Sirshi Hangarga",
+   "taluka": "Nilanga",
+   "lat": 18.098172,
+   "lon": 76.847434
+  },
+  {
+   "name": "Sonkhed",
+   "taluka": "Nilanga",
+   "lat": 18.040993,
+   "lon": 76.83619
+  },
+  {
+   "name": "Tadmugli",
+   "taluka": "Nilanga",
+   "lat": 18.007182,
+   "lon": 76.881809
+  },
+  {
+   "name": "Tagarkheda",
+   "taluka": "Nilanga",
+   "lat": 18.074103,
+   "lon": 76.926484
+  },
+  {
+   "name": "Tajpur",
+   "taluka": "Nilanga",
+   "lat": 18.242843,
+   "lon": 76.756454
+  },
+  {
+   "name": "Takli",
+   "taluka": "Nilanga",
+   "lat": 17.980223,
+   "lon": 76.837864
+  },
+  {
+   "name": "Talikhed",
+   "taluka": "Nilanga",
+   "lat": 18.120362,
+   "lon": 76.824517
+  },
+  {
+   "name": "Tambala",
+   "taluka": "Nilanga",
+   "lat": 17.932274,
+   "lon": 76.897709
+  },
+  {
+   "name": "Tambalwadi",
+   "taluka": "Nilanga",
+   "lat": 17.930702,
+   "lon": 76.914243
+  },
+  {
+   "name": "Tambarwadi",
+   "taluka": "Nilanga",
+   "lat": 18.102925,
+   "lon": 76.91464
+  },
+  {
+   "name": "Tupadi",
+   "taluka": "Nilanga",
+   "lat": 18.242751,
+   "lon": 76.684152
+  },
+  {
+   "name": "Umarga Hadga",
+   "taluka": "Nilanga",
+   "lat": 18.176496,
+   "lon": 76.722111
+  },
+  {
+   "name": "Usturi",
+   "taluka": "Nilanga",
+   "lat": 17.985774,
+   "lon": 76.795914
+  },
+  {
+   "name": "Wadgaon",
+   "taluka": "Nilanga",
+   "lat": 18.208949,
+   "lon": 76.703968
+  },
+  {
+   "name": "Wadi Shedol",
+   "taluka": "Nilanga",
+   "lat": 18.218651,
+   "lon": 76.666321
+  },
+  {
+   "name": "Waksa",
+   "taluka": "Nilanga",
+   "lat": 18.004029,
+   "lon": 76.808413
+  },
+  {
+   "name": "Walsangi",
+   "taluka": "Nilanga",
+   "lat": 18.21381,
+   "lon": 76.881101
+  },
+  {
+   "name": "Wanjarkheda",
+   "taluka": "Nilanga",
+   "lat": 18.221199,
+   "lon": 76.863484
+  },
+  {
+   "name": "Yelnur",
+   "taluka": "Nilanga",
+   "lat": 18.045777,
+   "lon": 76.810087
+  },
+  {
+   "name": "Zari",
+   "taluka": "Nilanga",
+   "lat": 18.1704,
+   "lon": 76.818751
+  },
+  {
+   "name": "Zopadpatti Jajnoor",
+   "taluka": "Nilanga",
+   "lat": 18.149746,
+   "lon": 76.820891
+  },
+  {
+   "name": "Anadwadi",
+   "taluka": "Renapur",
+   "lat": 18.5249,
+   "lon": 76.69068
+  },
+  {
+   "name": "Andalgaon",
+   "taluka": "Renapur",
+   "lat": 18.521207,
+   "lon": 76.466598
+  },
+  {
+   "name": "Arajkheda",
+   "taluka": "Renapur",
+   "lat": 18.47563,
+   "lon": 76.534125
+  },
+  {
+   "name": "Bawachi",
+   "taluka": "Renapur",
+   "lat": 18.555533,
+   "lon": 76.534495
+  },
+  {
+   "name": "Bhandarwadi",
+   "taluka": "Renapur",
+   "lat": 18.599161,
+   "lon": 76.607001
+  },
+  {
+   "name": "Bhokramba",
+   "taluka": "Renapur",
+   "lat": 18.574333,
+   "lon": 76.444159
+  },
+  {
+   "name": "Bitargaon",
+   "taluka": "Renapur",
+   "lat": 18.579337,
+   "lon": 76.549693
+  },
+  {
+   "name": "Bitargaon Tanda",
+   "taluka": "Renapur",
+   "lat": 18.56518,
+   "lon": 76.540906
+  },
+  {
+   "name": "Brahmwadi",
+   "taluka": "Renapur",
+   "lat": 18.508327,
+   "lon": 76.539908
+  },
+  {
+   "name": "Chatgaon",
+   "taluka": "Renapur",
+   "lat": 18.60691,
+   "lon": 76.4313
+  },
+  {
+   "name": "Chukarwadi",
+   "taluka": "Renapur",
+   "lat": 18.590345,
+   "lon": 76.615203
+  },
+  {
+   "name": "Darji Borgaon",
+   "taluka": "Renapur",
+   "lat": 18.496074,
+   "lon": 76.524051
+  },
+  {
+   "name": "Dawangaon",
+   "taluka": "Renapur",
+   "lat": 18.590457,
+   "lon": 76.508714
+  },
+  {
+   "name": "Dhaweli",
+   "taluka": "Renapur",
+   "lat": 18.557557,
+   "lon": 76.696361
+  },
+  {
+   "name": "Dighol Deshmukh",
+   "taluka": "Renapur",
+   "lat": 18.56193,
+   "lon": 76.434932
+  },
+  {
+   "name": "Divegaon",
+   "taluka": "Renapur",
+   "lat": 18.659577,
+   "lon": 76.674668
+  },
+  {
+   "name": "Faradpur",
+   "taluka": "Renapur",
+   "lat": 18.599934,
+   "lon": 76.534994
+  },
+  {
+   "name": "Garsoli",
+   "taluka": "Renapur",
+   "lat": 18.61362,
+   "lon": 76.524292
+  },
+  {
+   "name": "Ghansargaon",
+   "taluka": "Renapur",
+   "lat": 18.559347,
+   "lon": 76.605322
+  },
+  {
+   "name": "Ghawan",
+   "taluka": "Renapur",
+   "lat": 18.512051,
+   "lon": 76.553346
+  },
+  {
+   "name": "Godhala",
+   "taluka": "Renapur",
+   "lat": 18.657671,
+   "lon": 76.728998
+  },
+  {
+   "name": "Gopalwadi",
+   "taluka": "Renapur",
+   "lat": 18.619477,
+   "lon": 76.675526
+  },
+  {
+   "name": "HakeTanda",
+   "taluka": "Renapur",
+   "lat": 18.493697,
+   "lon": 76.614854
+  },
+  {
+   "name": "Hanmantwadi",
+   "taluka": "Renapur",
+   "lat": 18.536369,
+   "lon": 76.625007
+  },
+  {
+   "name": "Harwadi",
+   "taluka": "Renapur",
+   "lat": 18.466462,
+   "lon": 76.606743
+  },
+  {
+   "name": "Hotti",
+   "taluka": "Renapur",
+   "lat": 18.63859,
+   "lon": 76.746647
+  },
+  {
+   "name": "Indarthana",
+   "taluka": "Renapur",
+   "lat": 18.475926,
+   "lon": 76.509862
+  },
+  {
+   "name": "Itti",
+   "taluka": "Renapur",
+   "lat": 18.574801,
+   "lon": 76.479263
+  },
+  {
+   "name": "Jawalga",
+   "taluka": "Renapur",
+   "lat": 18.499277,
+   "lon": 76.636151
+  },
+  {
+   "name": "Kalewadi",
+   "taluka": "Renapur",
+   "lat": 18.551586,
+   "lon": 76.581085
+  },
+  {
+   "name": "Kamkheda",
+   "taluka": "Renapur",
+   "lat": 18.592597,
+   "lon": 76.59323
+  },
+  {
+   "name": "Karepur",
+   "taluka": "Renapur",
+   "lat": 18.600473,
+   "lon": 76.691651
+  },
+  {
+   "name": "Khalangri",
+   "taluka": "Renapur",
+   "lat": 18.630955,
+   "lon": 76.717422
+  },
+  {
+   "name": "Khanapur",
+   "taluka": "Renapur",
+   "lat": 18.579194,
+   "lon": 76.495467
+  },
+  {
+   "name": "Kharoala",
+   "taluka": "Renapur",
+   "lat": 18.510835,
+   "lon": 76.66028
+  },
+  {
+   "name": "Kolgaon",
+   "taluka": "Renapur",
+   "lat": 18.527041,
+   "lon": 76.532857
+  },
+  {
+   "name": "Koshtagaon",
+   "taluka": "Renapur",
+   "lat": 18.681791,
+   "lon": 76.689892
+  },
+  {
+   "name": "Kumbhari",
+   "taluka": "Renapur",
+   "lat": 18.555004,
+   "lon": 76.514003
+  },
+  {
+   "name": "Kumbharwadi",
+   "taluka": "Renapur",
+   "lat": 18.540464,
+   "lon": 76.682462
+  },
+  {
+   "name": "Lakhamapur",
+   "taluka": "Renapur",
+   "lat": 18.605191,
+   "lon": 76.470391
+  },
+  {
+   "name": "Makegaon",
+   "taluka": "Renapur",
+   "lat": 18.656309,
+   "lon": 76.706361
+  },
+  {
+   "name": "Manusmarwadi",
+   "taluka": "Renapur",
+   "lat": 18.593919,
+   "lon": 76.64968
+  },
+  {
+   "name": "Mohgaon Talani",
+   "taluka": "Renapur",
+   "lat": 18.555162,
+   "lon": 76.652212
+  },
+  {
+   "name": "Morwad",
+   "taluka": "Renapur",
+   "lat": 18.609619,
+   "lon": 76.459136
+  },
+  {
+   "name": "Motegaon",
+   "taluka": "Renapur",
+   "lat": 18.586389,
+   "lon": 76.41886
+  },
+  {
+   "name": "Murdhav",
+   "taluka": "Renapur",
+   "lat": 18.580176,
+   "lon": 76.624661
+  },
+  {
+   "name": "Musalewadi",
+   "taluka": "Renapur",
+   "lat": 18.664847,
+   "lon": 76.628094
+  },
+  {
+   "name": "Narwatwadi",
+   "taluka": "Renapur",
+   "lat": 18.620646,
+   "lon": 76.658231
+  },
+  {
+   "name": "Niwada",
+   "taluka": "Renapur",
+   "lat": 18.534488,
+   "lon": 76.515237
+  },
+  {
+   "name": "Palshi",
+   "taluka": "Renapur",
+   "lat": 18.589323,
+   "lon": 76.492165
+  },
+  {
+   "name": "Pangaon",
+   "taluka": "Renapur",
+   "lat": 18.630467,
+   "lon": 76.630561
+  },
+  {
+   "name": "Patharwadi",
+   "taluka": "Renapur",
+   "lat": 18.598734,
+   "lon": 76.624414
+  },
+  {
+   "name": "Phawadi Wadi",
+   "taluka": "Renapur",
+   "lat": 18.662947,
+   "lon": 76.600542
+  },
+  {
+   "name": "Pohregaon",
+   "taluka": "Renapur",
+   "lat": 18.541842,
+   "lon": 76.468728
+  },
+  {
+   "name": "Rajewadi",
+   "taluka": "Renapur",
+   "lat": 18.505972,
+   "lon": 76.570598
+  },
+  {
+   "name": "Ramwadi Kharola",
+   "taluka": "Renapur",
+   "lat": 18.537992,
+   "lon": 76.653784
+  },
+  {
+   "name": "Ramwadi Pangaon",
+   "taluka": "Renapur",
+   "lat": 18.633477,
+   "lon": 76.614779
+  },
+  {
+   "name": "Renapur",
+   "taluka": "Renapur",
+   "lat": 18.526431,
+   "lon": 76.596766
+  },
+  {
+   "name": "Rupchand Nagar",
+   "taluka": "Renapur",
+   "lat": 18.51876,
+   "lon": 76.575501
+  },
+  {
+   "name": "Samsapur",
+   "taluka": "Renapur",
+   "lat": 18.530927,
+   "lon": 76.555996
+  },
+  {
+   "name": "Sangvi",
+   "taluka": "Renapur",
+   "lat": 18.497314,
+   "lon": 76.489338
+  },
+  {
+   "name": "Sarola",
+   "taluka": "Renapur",
+   "lat": 18.627631,
+   "lon": 76.685439
+  },
+  {
+   "name": "Selu New",
+   "taluka": "Renapur",
+   "lat": 18.509843,
+   "lon": 76.642347
+  },
+  {
+   "name": "Sewanagar",
+   "taluka": "Renapur",
+   "lat": 18.600046,
+   "lon": 76.551265
+  },
+  {
+   "name": "Shelu Kh",
+   "taluka": "Renapur",
+   "lat": 18.507198,
+   "lon": 76.63673
+  },
+  {
+   "name": "Shera",
+   "taluka": "Renapur",
+   "lat": 18.545819,
+   "lon": 76.497814
+  },
+  {
+   "name": "Sindhgaon",
+   "taluka": "Renapur",
+   "lat": 18.517011,
+   "lon": 76.485819
+  },
+  {
+   "name": "Sumthana",
+   "taluka": "Renapur",
+   "lat": 18.557193,
+   "lon": 76.553684
+  },
+  {
+   "name": "Takalgaon",
+   "taluka": "Renapur",
+   "lat": 18.568432,
+   "lon": 76.569715
+  },
+  {
+   "name": "Talani",
+   "taluka": "Renapur",
+   "lat": 18.563171,
+   "lon": 76.664422
+  },
+  {
+   "name": "Tattapur",
+   "taluka": "Renapur",
+   "lat": 18.635276,
+   "lon": 76.535311
+  },
+  {
+   "name": "Vanjarwadi",
+   "taluka": "Renapur",
+   "lat": 18.57773,
+   "lon": 76.529498
+  },
+  {
+   "name": "Wala",
+   "taluka": "Renapur",
+   "lat": 18.630483,
+   "lon": 76.554746
+  },
+  {
+   "name": "Wangdari",
+   "taluka": "Renapur",
+   "lat": 18.552288,
+   "lon": 76.404709
+  },
+  {
+   "name": "Yashwantwadi",
+   "taluka": "Renapur",
+   "lat": 18.59546,
+   "lon": 76.669593
+  },
+  {
+   "name": "Aari",
+   "taluka": "Shirur Anantpal",
+   "lat": 18.343151,
+   "lon": 76.79685
+  },
+  {
+   "name": "Ajani Budruk",
+   "taluka": "Shirur Anantpal",
+   "lat": 18.296796,
+   "lon": 76.840755
+  },
+  {
+   "name": "Akulga (Sayyad)",
+   "taluka": "Shirur Anantpal",
+   "lat": 18.297899,
+   "lon": 76.79909
+  },
+  {
+   "name": "Ankulga Rani",
+   "taluka": "Shirur Anantpal",
+   "lat": 18.238145,
+   "lon": 76.852284
+  },
+  {
+   "name": "Bakali",
+   "taluka": "Shirur Anantpal",
+   "lat": 18.25238,
+   "lon": 76.83413
+  },
+  {
+   "name": "Bevnal",
+   "taluka": "Shirur Anantpal",
+   "lat": 18.309022,
+   "lon": 76.783179
+  },
+  {
+   "name": "Bevnal wadi",
+   "taluka": "Shirur Anantpal",
+   "lat": 18.321484,
+   "lon": 76.78764
+  },
+  {
+   "name": "Bhingoli",
+   "taluka": "Shirur Anantpal",
+   "lat": 18.326948,
+   "lon": 76.810269
+  },
+  {
+   "name": "Bibral",
+   "taluka": "Shirur Anantpal",
+   "lat": 18.260684,
+   "lon": 76.826921
+  },
+  {
+   "name": "Bolegaon Bk",
+   "taluka": "Shirur Anantpal",
+   "lat": 18.411526,
+   "lon": 76.847665
+  },
+  {
+   "name": "Chamarga",
+   "taluka": "Shirur Anantpal",
+   "lat": 18.410238,
+   "lon": 76.86356
+  },
+  {
+   "name": "Dhamangao",
+   "taluka": "Shirur Anantpal",
+   "lat": 18.388411,
+   "lon": 76.843615
+  },
+  {
+   "name": "Digol",
+   "taluka": "Shirur Anantpal",
+   "lat": 18.395614,
+   "lon": 76.920921
+  },
+  {
+   "name": "Dongargao (Bori)",
+   "taluka": "Shirur Anantpal",
+   "lat": 18.278686,
+   "lon": 76.779864
+  },
+  {
+   "name": "Ganeshwadi",
+   "taluka": "Shirur Anantpal",
+   "lat": 18.358965,
+   "lon": 76.753669
+  },
+  {
+   "name": "Ghugi",
+   "taluka": "Shirur Anantpal",
+   "lat": 18.263486,
+   "lon": 76.862873
+  },
+  {
+   "name": "Halki",
+   "taluka": "Shirur Anantpal",
+   "lat": 18.293743,
+   "lon": 76.757752
+  },
+  {
+   "name": "Hippalgao",
+   "taluka": "Shirur Anantpal",
+   "lat": 18.381284,
+   "lon": 76.750499
+  },
+  {
+   "name": "Hisamabad",
+   "taluka": "Shirur Anantpal",
+   "lat": 18.277087,
+   "lon": 76.80189
+  },
+  {
+   "name": "Honmal",
+   "taluka": "Shirur Anantpal",
+   "lat": 18.30949,
+   "lon": 76.855808
+  },
+  {
+   "name": "Jogyal",
+   "taluka": "Shirur Anantpal",
+   "lat": 18.370339,
+   "lon": 76.816331
+  },
+  {
+   "name": "Kalamgaon",
+   "taluka": "Shirur Anantpal",
+   "lat": 18.312419,
+   "lon": 76.822972
+  },
+  {
+   "name": "Kambalga",
+   "taluka": "Shirur Anantpal",
+   "lat": 18.343365,
+   "lon": 76.760058
+  },
+  {
+   "name": "Karewadi",
+   "taluka": "Shirur Anantpal",
+   "lat": 18.384288,
+   "lon": 76.854247
+  },
+  {
+   "name": "Lakkad Jawalga",
+   "taluka": "Shirur Anantpal",
+   "lat": 18.358273,
+   "lon": 76.822844
+  },
+  {
+   "name": "Nagewadi",
+   "taluka": "Shirur Anantpal",
+   "lat": 18.364029,
+   "lon": 76.850352
+  },
+  {
+   "name": "Pandharwadi",
+   "taluka": "Shirur Anantpal",
+   "lat": 18.34349,
+   "lon": 76.875743
+  },
+  {
+   "name": "Sakol",
+   "taluka": "Shirur Anantpal",
+   "lat": 18.283111,
+   "lon": 76.885253
+  },
+  {
+   "name": "Sangvi Ghugi",
+   "taluka": "Shirur Anantpal",
+   "lat": 18.258585,
+   "lon": 76.862122
+  },
+  {
+   "name": "Shirur Anantpal",
+   "taluka": "Shirur Anantpal",
+   "lat": 18.336732,
+   "lon": 76.839612
+  },
+  {
+   "name": "Shivpur",
+   "taluka": "Shirur Anantpal",
+   "lat": 18.387129,
+   "lon": 76.803639
+  },
+  {
+   "name": "Sumthana",
+   "taluka": "Shirur Anantpal",
+   "lat": 18.377517,
+   "lon": 76.918604
+  },
+  {
+   "name": "Talegao",
+   "taluka": "Shirur Anantpal",
+   "lat": 18.316935,
+   "lon": 76.877176
+  },
+  {
+   "name": "Talegaon(Bori)",
+   "taluka": "Shirur Anantpal",
+   "lat": 18.320165,
+   "lon": 76.739218
+  },
+  {
+   "name": "Thergaon",
+   "taluka": "Shirur Anantpal",
+   "lat": 18.367967,
+   "lon": 76.789659
+  },
+  {
+   "name": "Turukwadi",
+   "taluka": "Shirur Anantpal",
+   "lat": 18.334205,
+   "lon": 76.810535
+  },
+  {
+   "name": "Umardara",
+   "taluka": "Shirur Anantpal",
+   "lat": 18.320073,
+   "lon": 76.765809
+  },
+  {
+   "name": "Yerol",
+   "taluka": "Shirur Anantpal",
+   "lat": 18.37232,
+   "lon": 76.886106
+  },
+  {
+   "name": "आनंदवाडी (Aandwadi)",
+   "taluka": "Shirur Anantpal",
+   "lat": 18.343598,
+   "lon": 76.818533
+  },
+  {
+   "name": "Adolwadi",
+   "taluka": "Udgir",
+   "lat": 18.543754,
+   "lon": 77.049758
+  },
+  {
+   "name": "Anupwadi",
+   "taluka": "Udgir",
+   "lat": 18.480637,
+   "lon": 77.038622
+  },
+  {
+   "name": "Awalkonda",
+   "taluka": "Udgir",
+   "lat": 18.441037,
+   "lon": 77.167631
+  },
+  {
+   "name": "Bamajichiwadi",
+   "taluka": "Udgir",
+   "lat": 18.438418,
+   "lon": 76.978068
+  },
+  {
+   "name": "Bamni",
+   "taluka": "Udgir",
+   "lat": 18.328353,
+   "lon": 77.124131
+  },
+  {
+   "name": "Banashelaki",
+   "taluka": "Udgir",
+   "lat": 18.371123,
+   "lon": 77.082342
+  },
+  {
+   "name": "Belshakarga",
+   "taluka": "Udgir",
+   "lat": 18.323281,
+   "lon": 77.176144
+  },
+  {
+   "name": "Bhakaskheda",
+   "taluka": "Udgir",
+   "lat": 18.359408,
+   "lon": 76.988588
+  },
+  {
+   "name": "Bhakaskheda East",
+   "taluka": "Udgir",
+   "lat": 18.358731,
+   "lon": 77.007251
+  },
+  {
+   "name": "Bhima Tanda",
+   "taluka": "Udgir",
+   "lat": 18.417122,
+   "lon": 77.15407
+  },
+  {
+   "name": "Chandegaon",
+   "taluka": "Udgir",
+   "lat": 18.401371,
+   "lon": 77.217305
+  },
+  {
+   "name": "Chigali",
+   "taluka": "Udgir",
+   "lat": 18.353899,
+   "lon": 77.014294
+  },
+  {
+   "name": "Chimachiwadi",
+   "taluka": "Udgir",
+   "lat": 18.574664,
+   "lon": 77.046121
+  },
+  {
+   "name": "Chondi",
+   "taluka": "Udgir",
+   "lat": 18.46781,
+   "lon": 77.256197
+  },
+  {
+   "name": "Dangewadi",
+   "taluka": "Udgir",
+   "lat": 18.536136,
+   "lon": 77.112619
+  },
+  {
+   "name": "Daul",
+   "taluka": "Udgir",
+   "lat": 18.509665,
+   "lon": 77.104658
+  },
+  {
+   "name": "Dawangaon",
+   "taluka": "Udgir",
+   "lat": 18.335767,
+   "lon": 77.056679
+  },
+  {
+   "name": "Deulwadi",
+   "taluka": "Udgir",
+   "lat": 18.484549,
+   "lon": 77.225631
+  },
+  {
+   "name": "Devarjan",
+   "taluka": "Udgir",
+   "lat": 18.326668,
+   "lon": 76.997316
+  },
+  {
+   "name": "Dhondi Hipparga",
+   "taluka": "Udgir",
+   "lat": 18.324442,
+   "lon": 77.195907
+  },
+  {
+   "name": "Digras",
+   "taluka": "Udgir",
+   "lat": 18.399814,
+   "lon": 76.935089
+  },
+  {
+   "name": "Donagarshelaki",
+   "taluka": "Udgir",
+   "lat": 18.473259,
+   "lon": 77.106729
+  },
+  {
+   "name": "Ekurga",
+   "taluka": "Udgir",
+   "lat": 18.486991,
+   "lon": 77.064972
+  },
+  {
+   "name": "Gaimal Tanda",
+   "taluka": "Udgir",
+   "lat": 18.368756,
+   "lon": 77.201856
+  },
+  {
+   "name": "Ganeshwadi",
+   "taluka": "Udgir",
+   "lat": 18.416086,
+   "lon": 76.943747
+  },
+  {
+   "name": "Gangapur",
+   "taluka": "Udgir",
+   "lat": 18.34726,
+   "lon": 76.971545
+  },
+  {
+   "name": "Gudsur",
+   "taluka": "Udgir",
+   "lat": 18.506888,
+   "lon": 77.127585
+  },
+  {
+   "name": "Gurdhal",
+   "taluka": "Udgir",
+   "lat": 18.389603,
+   "lon": 77.186412
+  },
+  {
+   "name": "Haibatpur",
+   "taluka": "Udgir",
+   "lat": 18.401371,
+   "lon": 77.057827
+  },
+  {
+   "name": "Hakanakwadi",
+   "taluka": "Udgir",
+   "lat": 18.438917,
+   "lon": 77.087535
+  },
+  {
+   "name": "Hali",
+   "taluka": "Udgir",
+   "lat": 18.548978,
+   "lon": 77.016778
+  },
+  {
+   "name": "Hanagaraga Kudar",
+   "taluka": "Udgir",
+   "lat": 18.455155,
+   "lon": 77.039148
+  },
+  {
+   "name": "Handerguli",
+   "taluka": "Udgir",
+   "lat": 18.555401,
+   "lon": 77.021566
+  },
+  {
+   "name": "Hanmantwadi",
+   "taluka": "Udgir",
+   "lat": 18.322777,
+   "lon": 76.97669
+  },
+  {
+   "name": "Her",
+   "taluka": "Udgir",
+   "lat": 18.419328,
+   "lon": 76.978986
+  },
+  {
+   "name": "Hipparaga",
+   "taluka": "Udgir",
+   "lat": 18.506364,
+   "lon": 77.114893
+  },
+  {
+   "name": "Honihipparaga",
+   "taluka": "Udgir",
+   "lat": 18.473117,
+   "lon": 77.014697
+  },
+  {
+   "name": "Ismalpur",
+   "taluka": "Udgir",
+   "lat": 18.470201,
+   "lon": 77.067322
+  },
+  {
+   "name": "Jaibachiwadi",
+   "taluka": "Udgir",
+   "lat": 18.453069,
+   "lon": 76.987837
+  },
+  {
+   "name": "Jakanal",
+   "taluka": "Udgir",
+   "lat": 18.339749,
+   "lon": 77.109596
+  },
+  {
+   "name": "Janapur",
+   "taluka": "Udgir",
+   "lat": 18.377594,
+   "lon": 77.211061
+  },
+  {
+   "name": "Kallur",
+   "taluka": "Udgir",
+   "lat": 18.4762,
+   "lon": 77.081806
+  },
+  {
+   "name": "Karadkhed",
+   "taluka": "Udgir",
+   "lat": 18.395803,
+   "lon": 76.973197
+  },
+  {
+   "name": "Karakheli",
+   "taluka": "Udgir",
+   "lat": 18.356506,
+   "lon": 77.035752
+  },
+  {
+   "name": "Karawandi",
+   "taluka": "Udgir",
+   "lat": 18.316681,
+   "lon": 76.945549
+  },
+  {
+   "name": "Kasral",
+   "taluka": "Udgir",
+   "lat": 18.438894,
+   "lon": 77.224542
+  },
+  {
+   "name": "Kherda Kh",
+   "taluka": "Udgir",
+   "lat": 18.497263,
+   "lon": 77.092465
+  },
+  {
+   "name": "Khetraphal",
+   "taluka": "Udgir",
+   "lat": 18.447996,
+   "lon": 77.022775
+  },
+  {
+   "name": "Kini Yelladevi",
+   "taluka": "Udgir",
+   "lat": 18.510978,
+   "lon": 77.038354
+  },
+  {
+   "name": "Kodali",
+   "taluka": "Udgir",
+   "lat": 18.457817,
+   "lon": 77.206147
+  },
+  {
+   "name": "Koulkhed",
+   "taluka": "Udgir",
+   "lat": 18.371591,
+   "lon": 77.172453
+  },
+  {
+   "name": "Kumadal",
+   "taluka": "Udgir",
+   "lat": 18.398205,
+   "lon": 77.196111
+  },
+  {
+   "name": "Kumatha Kh",
+   "taluka": "Udgir",
+   "lat": 18.421155,
+   "lon": 77.009879
+  },
+  {
+   "name": "Kumdal",
+   "taluka": "Udgir",
+   "lat": 18.34064,
+   "lon": 77.041031
+  },
+  {
+   "name": "Limbagaon",
+   "taluka": "Udgir",
+   "lat": 18.416753,
+   "lon": 77.228479
+  },
+  {
+   "name": "Lohara",
+   "taluka": "Udgir",
+   "lat": 18.389877,
+   "lon": 77.023516
+  },
+  {
+   "name": "Loni",
+   "taluka": "Udgir",
+   "lat": 18.416906,
+   "lon": 77.080754
+  },
+  {
+   "name": "Madalapur",
+   "taluka": "Udgir",
+   "lat": 18.365014,
+   "lon": 77.114899
+  },
+  {
+   "name": "Mahadevwadi",
+   "taluka": "Udgir",
+   "lat": 18.344414,
+   "lon": 76.948594
+  },
+  {
+   "name": "Malewadi",
+   "taluka": "Udgir",
+   "lat": 18.356537,
+   "lon": 77.123594
+  },
+  {
+   "name": "Mallapur",
+   "taluka": "Udgir",
+   "lat": 18.389002,
+   "lon": 77.171885
+  },
+  {
+   "name": "Manajari",
+   "taluka": "Udgir",
+   "lat": 18.447594,
+   "lon": 77.186101
+  },
+  {
+   "name": "Mogha",
+   "taluka": "Udgir",
+   "lat": 18.313279,
+   "lon": 77.143947
+  },
+  {
+   "name": "Moratalwadi",
+   "taluka": "Udgir",
+   "lat": 18.579118,
+   "lon": 77.033869
+  },
+  {
+   "name": "Mortalwadi",
+   "taluka": "Udgir",
+   "lat": 18.491051,
+   "lon": 77.167306
+  },
+  {
+   "name": "Muttalgaon",
+   "taluka": "Udgir",
+   "lat": 18.48925,
+   "lon": 77.209916
+  },
+  {
+   "name": "Nagalgaon",
+   "taluka": "Udgir",
+   "lat": 18.415447,
+   "lon": 77.186702
+  },
+  {
+   "name": "Nagobachiwadi",
+   "taluka": "Udgir",
+   "lat": 18.434044,
+   "lon": 76.988086
+  },
+  {
+   "name": "Nalgir",
+   "taluka": "Udgir",
+   "lat": 18.476653,
+   "lon": 77.171869
+  },
+  {
+   "name": "Nalgir Tanda",
+   "taluka": "Udgir",
+   "lat": 18.480502,
+   "lon": 77.154032
+  },
+  {
+   "name": "Nawandi",
+   "taluka": "Udgir",
+   "lat": 18.46492,
+   "lon": 77.137231
+  },
+  {
+   "name": "Netragaon",
+   "taluka": "Udgir",
+   "lat": 18.343334,
+   "lon": 77.094637
+  },
+  {
+   "name": "Pimpari",
+   "taluka": "Udgir",
+   "lat": 18.429655,
+   "lon": 77.13589
+  },
+  {
+   "name": "Rawangaon",
+   "taluka": "Udgir",
+   "lat": 18.297537,
+   "lon": 77.199791
+  },
+  {
+   "name": "Rudrawadi",
+   "taluka": "Udgir",
+   "lat": 18.554089,
+   "lon": 76.976926
+  },
+  {
+   "name": "Satala Bk",
+   "taluka": "Udgir",
+   "lat": 18.367885,
+   "lon": 76.936513
+  },
+  {
+   "name": "Shambhu Umerga",
+   "taluka": "Udgir",
+   "lat": 18.335885,
+   "lon": 76.939933
+  },
+  {
+   "name": "Shekapur",
+   "taluka": "Udgir",
+   "lat": 18.363049,
+   "lon": 77.06391
+  },
+  {
+   "name": "Shellal",
+   "taluka": "Udgir",
+   "lat": 18.351501,
+   "lon": 77.147434
+  },
+  {
+   "name": "Shirola",
+   "taluka": "Udgir",
+   "lat": 18.376393,
+   "lon": 77.222784
+  },
+  {
+   "name": "Sukani",
+   "taluka": "Udgir",
+   "lat": 18.527499,
+   "lon": 77.040215
+  },
+  {
+   "name": "Sumathana",
+   "taluka": "Udgir",
+   "lat": 18.437915,
+   "lon": 77.212424
+  },
+  {
+   "name": "Tadalapur",
+   "taluka": "Udgir",
+   "lat": 18.324361,
+   "lon": 77.208781
+  },
+  {
+   "name": "Takali",
+   "taluka": "Udgir",
+   "lat": 18.437955,
+   "lon": 77.255012
+  },
+  {
+   "name": "Tiwatghyal",
+   "taluka": "Udgir",
+   "lat": 18.39297,
+   "lon": 77.070288
+  },
+  {
+   "name": "Tondar",
+   "taluka": "Udgir",
+   "lat": 18.422028,
+   "lon": 77.052001
+  },
+  {
+   "name": "Tondarwadi",
+   "taluka": "Udgir",
+   "lat": 18.44308,
+   "lon": 77.076318
+  },
+  {
+   "name": "Tondchir",
+   "taluka": "Udgir",
+   "lat": 18.347764,
+   "lon": 77.171831
+  },
+  {
+   "name": "Udgir",
+   "taluka": "Udgir",
+   "lat": 18.392135,
+   "lon": 77.119612
+  },
+  {
+   "name": "Umerga Manna",
+   "taluka": "Udgir",
+   "lat": 18.496988,
+   "lon": 77.048444
+  },
+  {
+   "name": "Wadgaon Yekki",
+   "taluka": "Udgir",
+   "lat": 18.5211,
+   "lon": 77.000556
+  },
+  {
+   "name": "Wadhawana",
+   "taluka": "Udgir",
+   "lat": 18.521172,
+   "lon": 77.082989
+  },
+  {
+   "name": "Wadhawana Kh",
+   "taluka": "Udgir",
+   "lat": 18.540855,
+   "lon": 77.064757
+  },
+  {
+   "name": "Wagadari",
+   "taluka": "Udgir",
+   "lat": 18.42285,
+   "lon": 77.253145
+  },
+  {
+   "name": "Waigaon",
+   "taluka": "Udgir",
+   "lat": 18.377268,
+   "lon": 76.95675
+  },
+  {
+   "name": "Wanjarwadi",
+   "taluka": "Udgir",
+   "lat": 18.447527,
+   "lon": 77.081639
+  },
+  {
+   "name": "Yenaki",
+   "taluka": "Udgir",
+   "lat": 18.326785,
+   "lon": 77.098784
+  }
+ ]
+}

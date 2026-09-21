@@ -9,7 +9,16 @@ from __future__ import annotations
 
 import pytest
 
-from add_labels_bulk import DUPLICATE_DISTANCE_M, distance_m, fix_order, parse_line, parse_pairs
+from add_labels_bulk import (
+    DUPLICATE_DISTANCE_M,
+    Defaults,
+    distance_m,
+    fix_order,
+    nearest_village,
+    parse_line,
+    parse_pairs,
+    squares_overlap,
+)
 
 SHERA = "18.5527, 76.4970"
 
@@ -163,5 +172,59 @@ def test_distance_between_two_pins_in_the_same_field_is_below_the_duplicate_thre
 
 
 def test_missing_columns_are_reported_clearly():
-    with pytest.raises(ValueError, match="at least"):
+    with pytest.raises(ValueError, match="crop is required"):
         parse_line("18.5527, 76.4970 | Shera", 1)
+
+
+def test_batch_defaults_fill_blank_columns():
+    """A day's batch is usually all one kind — 'all sugarcane, planted
+    December 2025' — so it is stated once instead of on every line."""
+    defaults = Defaults(village="Shera", crop="sugarcane", cane_type="plant", planted="2025-12", source="field")
+    row = parse_line("18.552714, 76.497026", 1, defaults)
+    assert (row.village, row.crop, row.label, row.cane_type, row.planted, row.source) == (
+        "Shera",
+        "sugarcane",
+        1,
+        "plant",
+        "2025-12",
+        "field",
+    )
+
+
+def test_a_line_overrides_the_batch_default():
+    defaults = Defaults(village="Shera", crop="sugarcane", cane_type="plant")
+    row = parse_line("18.552714, 76.497026 | Kumbhari | soybean", 1, defaults)
+    assert row.village == "Kumbhari" and row.label == 0 and row.cane_type == ""
+
+
+def test_village_may_be_blank_only_when_it_will_be_looked_up():
+    defaults = Defaults(crop="sugarcane", cane_type="plant")
+    with pytest.raises(ValueError, match="village is required"):
+        parse_line("18.552714, 76.497026", 1, defaults)
+    lookup = Defaults(crop="sugarcane", cane_type="plant", auto_village=True)
+    assert parse_line("18.552714, 76.497026", 1, lookup).village == ""
+
+
+def test_nearest_village_is_found_with_its_distance():
+    villages = [
+        {"name": "Shera", "taluka": "Renapur", "lat": 18.5583, "lon": 76.4936},
+        {"name": "Kumbhari", "taluka": "Renapur", "lat": 18.5400, "lon": 76.5100},
+    ]
+    name, taluka, metres = nearest_village((18.552714, 76.497026), villages)
+    assert (name, taluka) == ("Shera", "Renapur")
+    assert 400 < metres < 1200
+
+
+def test_no_village_guess_is_made_from_far_away():
+    villages = [{"name": "Shera", "taluka": "Renapur", "lat": 18.5583, "lon": 76.4936}]
+    assert nearest_village((18.9000, 77.2000), villages) is None
+
+
+def test_overlap_depends_on_the_radius_not_a_fixed_distance():
+    """Two real plots here can sit 35 m apart. At the default 25 m radius
+    their squares overlap and the model would read shared pixels; at 12 m
+    they do not, so the second field is usable rather than discarded."""
+    a, b = (18.552714, 76.497026), (18.552686, 76.497343)
+    assert distance_m(a, b) == pytest.approx(33, abs=4)
+    assert squares_overlap(a, 25.0, b, 25.0)
+    assert not squares_overlap(a, 12.0, b, 12.0)
