@@ -30,6 +30,53 @@ def test_accepts_the_shapes_a_phone_produces():
     assert parse_pairs("18.5527° N, 76.4970° E") == [(18.5527, 76.4970)]
 
 
+def test_reads_google_maps_degrees_minutes_seconds():
+    """What Google Maps copies from a dropped pin. 18°33'09.8"N is
+    18 + 33/60 + 9.8/3600."""
+    (lat, lon), = parse_pairs("18°33'09.8\"N 76°29'49.3\"E")
+    assert lat == pytest.approx(18.552722, abs=1e-6)
+    assert lon == pytest.approx(76.497028, abs=1e-6)
+
+
+def test_dms_written_longitude_first_is_still_read_correctly():
+    """The hemisphere letter says which axis each value is, so order
+    cannot be got wrong the way it can in decimal degrees."""
+    (lat, lon), = parse_pairs("76°29'49.3\"E 18°33'09.8\"N")
+    assert lat == pytest.approx(18.552722, abs=1e-6)
+    assert lon == pytest.approx(76.497028, abs=1e-6)
+
+
+def test_dms_without_seconds_is_accepted():
+    (lat, lon), = parse_pairs("18°33'N 76°29'E")
+    assert lat == pytest.approx(18.55, abs=1e-6)
+    assert lon == pytest.approx(76.483333, abs=1e-6)
+
+
+def test_southern_and_western_hemispheres_are_negative():
+    (lat, lon), = parse_pairs("18°33'09.8\"S 76°29'49.3\"W")
+    assert lat < 0 and lon < 0
+
+
+def test_dms_with_two_latitudes_is_rejected():
+    with pytest.raises(ValueError, match="same axis"):
+        parse_pairs("18°33'09.8\"N 19°29'49.3\"N")
+
+
+def test_dms_line_end_to_end():
+    row = parse_line("18°33'09.8\"N 76°29'49.3\"E | Shera | sugarcane | plant | | owner |", 1)
+    assert row.label == 1
+    assert row.centre[0] == pytest.approx(18.552722, abs=1e-5)
+
+
+def test_dms_corners_separated_by_semicolons():
+    line = (
+        "18°33'00\"N 76°29'42\"E; 18°33'02\"N 76°29'45\"E; 18°32'59\"N 76°29'46\"E"
+        " | Shera | sugarcane | ratoon | | field |"
+    )
+    row = parse_line(line, 1)
+    assert len(row.ring) == 4  # three corners, closed
+
+
 def test_swapped_latitude_and_longitude_is_corrected():
     """76 is not a latitude in Maharashtra. Correcting it silently would
     be worse, so parse_line prints what it did — here we check the fix."""

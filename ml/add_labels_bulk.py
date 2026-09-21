@@ -87,16 +87,56 @@ def distance_m(a: tuple[float, float], b: tuple[float, float]) -> float:
     return 2 * 6_371_000 * math.asin(math.sqrt(h))
 
 
+# Degrees/minutes/seconds, which is what Google Maps puts on the
+# clipboard when you copy a dropped pin: 18°33'09.8"N 76°29'49.3"E.
+# Accepts ° or d, ' or ′, " or ″, and tolerates missing seconds.
+_DMS = re.compile(
+    r"""(\d{1,3})\s*[°d]\s*        # degrees
+        (\d{1,2})\s*['′]\s*        # minutes
+        (?:([\d.]+)\s*["″]?\s*)?   # seconds, optional
+        ([NSEW])                   # hemisphere
+    """,
+    re.IGNORECASE | re.VERBOSE,
+)
+
+
+def _from_dms(degrees: str, minutes: str, seconds: str | None, hemisphere: str) -> tuple[float, str]:
+    value = int(degrees) + int(minutes) / 60 + (float(seconds) if seconds else 0.0) / 3600
+    hemisphere = hemisphere.upper()
+    if hemisphere in ("S", "W"):
+        value = -value
+    return value, ("lat" if hemisphere in ("N", "S") else "lon")
+
+
 def parse_pairs(text: str) -> list[tuple[float, float]]:
     """Read one or more `lat,lon` pairs, separated by `;`.
 
     Accepts the shapes a phone actually produces: "18.5527, 76.4970",
-    "18.5527,76.4970", and Google Maps' "18.5527° N, 76.4970° E".
+    "18.5527,76.4970", "18.5527° N, 76.4970° E", and Google Maps' copied
+    pin format 18°33'09.8"N 76°29'49.3"E.
+
+    In degrees/minutes/seconds the hemisphere letter says which value is
+    which, so a pair written longitude-first is still read correctly —
+    unlike decimal degrees, where order is all there is to go on.
     """
-    cleaned = re.sub(r"[°NEne]", " ", text)
     pairs: list[tuple[float, float]] = []
-    for chunk in cleaned.split(";"):
-        numbers = re.findall(r"-?\d+\.?\d*", chunk)
+    for chunk in text.split(";"):
+        if not chunk.strip():
+            continue
+        dms = _DMS.findall(chunk)
+        if dms:
+            if len(dms) != 2:
+                raise ValueError(
+                    f"expected one latitude and one longitude but found {len(dms)} in {chunk.strip()!r}"
+                )
+            parsed = [_from_dms(*match) for match in dms]
+            axes = {axis: value for value, axis in parsed}
+            if len(axes) != 2:
+                raise ValueError(f"{chunk.strip()!r} gives two of the same axis — check N/S and E/W")
+            pairs.append((axes["lat"], axes["lon"]))
+            continue
+
+        numbers = re.findall(r"-?\d+\.?\d*", re.sub(r"[°NEWSnews]", " ", chunk))
         if not numbers:
             continue
         if len(numbers) != 2:
