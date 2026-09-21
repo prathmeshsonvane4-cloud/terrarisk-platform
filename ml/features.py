@@ -47,6 +47,26 @@ GREEN_THRESHOLD = 0.30
 # fallow period.
 MAX_GAP_MONTHS = 2
 
+# When cane is planted around Latur, stated by the founder (who farms
+# here) on 21 Sep 2026: November through March, rarely outside it. Used
+# ONLY to flag a green-up that falls outside the window — most often
+# ratoon regrowth after a harvest, sometimes another long-duration crop.
+# It never moves or overrides an observed date: the observation is the
+# evidence, and this is the sanity check on it.
+PLANTING_MONTHS = (11, 12, 1, 2, 3)
+
+# Months in which a canopy can FIRST become visible from a November-March
+# planting. Planting is not emergence: the first two fields labelled
+# (Shera, planted December 2025) stayed below NDVI 0.30 until April, four
+# months later, because a winter planting grows slowly until the heat
+# arrives. So a green-up anywhere from November to June is consistent
+# with a local planting, and only July-October is not.
+#
+# Inside this window a green-up cannot be told apart from ratoon regrowth
+# by the curve alone — a field cut in March regrows immediately and looks
+# the same. The code says so rather than picking one.
+EMERGENCE_MONTHS = (11, 12, 1, 2, 3, 4, 5, 6)
+
 
 def interpolate_gaps(series: Series, max_gap: int = MAX_GAP_MONTHS) -> Series:
     """Fill short interior gaps by linear interpolation between known
@@ -104,12 +124,79 @@ def _slope(values: list[float]) -> float:
     return numerator / denominator if denominator else 0.0
 
 
+def greenup_index(series: Series, threshold: float = GREEN_THRESHOLD) -> int | None:
+    """Index of the month the canopy last started from bare ground.
+
+    Age is measured from here, not from the start of the observation
+    window: a field planted before the window opens has no visible
+    green-up in it, and pretending otherwise would date every established
+    field to the day we started looking.
+
+    "Started" means a rise from below the threshold to above it and
+    staying there for at least two months — a single cloudy month's
+    artefact is not a planting. The LAST such rise is used, because a
+    harvested field that regrew as ratoon is a new cycle with a new age.
+    """
+    filled = interpolate_gaps(series)
+    onset = None
+    for index in range(1, len(filled)):
+        previous, current = filled[index - 1], filled[index]
+        if previous is None or current is None:
+            continue
+        if previous < threshold <= current:
+            ahead = [v for v in filled[index : index + 2] if v is not None]
+            if len(ahead) >= 2 and all(v >= threshold for v in ahead):
+                onset = index
+    return onset
+
+
+def age_features(ndvi: Series, threshold: float = GREEN_THRESHOLD) -> dict[str, float | None]:
+    """How far through its cycle the crop is, in months.
+
+    `months_since_greenup` is the honest, directly observed quantity: how
+    long the canopy has been continuously green. For cane planted inside
+    the observation window it IS the age, give or take the weeks between
+    planting and the canopy crossing the detection threshold — on the
+    Shera plot, cane planted 20 December 2025 sat at bare-soil NDVI until
+    February, so an age read this way runs about two months young.
+
+    `greenup_observed` says whether the start was actually seen. When it
+    is 0 the field was already green when the window opened, the age is a
+    lower bound, and nothing here should be read as "this cane is N months
+    old" — only "at least N".
+    """
+    filled = interpolate_gaps(ndvi)
+    last = len(filled) - 1
+    onset = greenup_index(ndvi, threshold)
+
+    if onset is None:
+        green_months = [i for i, v in enumerate(filled) if v is not None and v >= threshold]
+        if not green_months:
+            return {"months_since_greenup": None, "greenup_observed": 0, "age_is_lower_bound": 1}
+        # Green from the first observed month: the cycle began before we
+        # were looking, so all we can say is "at least this long".
+        return {
+            "months_since_greenup": last - green_months[0] + 1,
+            "greenup_observed": 0,
+            "age_is_lower_bound": 1,
+        }
+
+    return {
+        "months_since_greenup": last - onset + 1,
+        "greenup_observed": 1,
+        "age_is_lower_bound": 0,
+    }
+
+
 def phenology_features(
     ndvi: Series,
     ndmi: Series | None = None,
     vv: Series | None = None,
     vh: Series | None = None,
     threshold: float = GREEN_THRESHOLD,
+    ndre: Series | None = None,
+    evi: Series | None = None,
+    rvi: Series | None = None,
 ) -> dict[str, float | None]:
     """Every column the model sees, from one field's monthly series.
 
@@ -174,7 +261,7 @@ def phenology_features(
     # Radar carries the monsoon months optical loses entirely. It is
     # speckle-prone on a small plot, so only aggregate statistics are
     # exposed — a single pass is not trustworthy at this scale.
-    for name, radar in (("vv", vv), ("vh", vh)):
+    for name, radar in (("vv", vv), ("vh", vh), ("rvi", rvi)):
         if not radar:
             continue
         values = [value for value in radar if value is not None]
@@ -187,13 +274,52 @@ def phenology_features(
     if features.get("vv_mean") is not None and features.get("vh_mean") is not None:
         features["vv_vh_difference"] = features["vv_mean"] - features["vh_mean"]
 
+    # Red edge and the broader vegetation index carry what plain NDVI
+    # loses once a canopy closes. NDVI saturates around 0.8 — a five-month
+    # cane field and a ten-month one both sit near the ceiling, so NDVI
+    # alone cannot separate them. NDRE keeps responding after that point,
+    # which is why age needs it and detection does not.
+    #
+    # Both come from Sentinel-2's 20 m bands, not the 10 m ones: on a
+    # 0.2 ha plot that is a handful of pixels, so these are worth more on
+    # a one-acre field than on a tiny one.
+    for name, series in (("ndre", ndre), ("evi", evi)):
+        if not series:
+            continue
+        values = [value for value in series if value is not None]
+        if not values:
+            continue
+        features[f"{name}_mean"] = fmean(values)
+        features[f"{name}_max"] = max(values)
+        features[f"{name}_slope"] = _slope(values)
+        # Growth still accelerating at the end of the window means a young
+        # crop; flat at a high value means an established one.
+        tail = [value for value in series[-4:] if value is not None]
+        if len(tail) >= 2:
+            features[f"{name}_slope_recent"] = _slope(tail)
+
+    features.update(age_features(ndvi, threshold))
     return features
+
+
+def in_planting_window(month: int) -> bool:
+    """Is this calendar month (1-12) one in which cane is planted here?"""
+    return month in PLANTING_MONTHS
+
+
+def in_emergence_window(month: int) -> bool:
+    """Could a canopy first appear in this month from a local planting?"""
+    return month in EMERGENCE_MONTHS
 
 
 __all__ = [
     "GREEN_THRESHOLD",
     "MAX_GAP_MONTHS",
+    "PLANTING_MONTHS",
+    "age_features",
     "green_runs",
+    "greenup_index",
+    "in_planting_window",
     "interpolate_gaps",
     "phenology_features",
 ]

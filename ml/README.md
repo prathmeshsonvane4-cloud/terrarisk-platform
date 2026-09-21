@@ -64,7 +64,37 @@ learns from measures nothing at all.
 | `extract_features.py` | Sentinel-2 NDVI/NDMI and Sentinel-1 radar per month per field, to `features.csv` |
 | `features.py` | The phenology features themselves — pure functions, no network, unit-tested |
 | `train.py` | Threshold baseline first, then LightGBM scored leave-one-village-out, then a verdict that is withheld below 30 fields |
+| `estimate_age.py` | Approximate crop age in months, from the curve — a rule, usable today, printed as a range |
+| `train_age.py` | The learned age regressor, refused until planting dates span 4+ months |
 | `plot_report.py` | NDVI curves per field, for eyeballing labels |
+
+## Crop age
+
+Age is months since the canopy left bare soil, plus the weeks the crop
+spent below detection before that. It is reported as a **range**, because
+that lag varies: of three December 2025 plantings in Shera, one crossed
+NDVI 0.30 in February and two not until April.
+
+```bash
+python ml/estimate_age.py ml/features.csv
+```
+
+What the imagery can and cannot say:
+
+- **NDVI alone cannot date a closed canopy.** It saturates near 0.8, so a
+  five-month field and a ten-month field look the same. NDRE (red edge)
+  and EVI keep responding past that point, and radar (VV, VH, RVI) tracks
+  canopy structure through monsoon cloud — all three are extracted.
+- **Finer resolution is not available for free.** Sentinel-2 is 10 m for
+  NDVI and 20 m for the red-edge bands; on a 0.2 ha plot that is a handful
+  of pixels. Planet's 3 m imagery is paid.
+- **A green-up in April–June is ambiguous** — a late-emerging winter
+  planting, or ratoon regrowth after a harvest, look identical. The output
+  says so rather than choosing.
+- **Training an age model needs variation in age.** Fields all planted in
+  the same month teach a regressor to print that month. `train_age.py`
+  refuses until there are 20+ dated fields spanning 4+ planting months
+  across 3+ villages, and it must beat simply counting months to ship.
 
 ## Gates before quoting a number
 

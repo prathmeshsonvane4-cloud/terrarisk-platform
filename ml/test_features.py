@@ -12,7 +12,15 @@ from __future__ import annotations
 
 import pytest
 
-from features import GREEN_THRESHOLD, green_runs, interpolate_gaps, phenology_features
+from features import (
+    GREEN_THRESHOLD,
+    age_features,
+    green_runs,
+    greenup_index,
+    in_planting_window,
+    interpolate_gaps,
+    phenology_features,
+)
 
 # Nov 2025 - Aug 2026, monthly mean NDVI. Cane planted 20 Dec 2025:
 # the previous crop peaks in early December, the field is cleared, and
@@ -132,3 +140,68 @@ class TestRadarFeatures:
 
 def test_green_threshold_sits_between_bare_soil_and_canopy() -> None:
     assert 0.15 < GREEN_THRESHOLD < 0.45
+
+
+# ----------------------------------------------------------------------
+# Age: how long the canopy has been green, and whether the start was seen
+# ----------------------------------------------------------------------
+
+
+def test_greenup_is_the_month_the_canopy_left_bare_soil():
+    """Plant cane: bare until it emerges, then green and staying green."""
+    series = [0.15, 0.16, 0.18, 0.45, 0.62, 0.71, 0.78, 0.80]
+    assert greenup_index(series) == 3
+
+
+def test_a_single_green_month_is_not_a_greenup():
+    """One cloudy month's artefact must not be read as a planting."""
+    series = [0.15, 0.16, 0.55, 0.14, 0.15, 0.16, 0.15, 0.14]
+    assert greenup_index(series) is None
+
+
+def test_the_last_greenup_wins_because_ratoon_starts_a_new_cycle():
+    """Harvested in the middle, regrown after: the age of the crop
+    standing now is counted from the regrowth, not the first planting."""
+    series = [0.15, 0.50, 0.70, 0.75, 0.12, 0.14, 0.48, 0.66, 0.72]
+    assert greenup_index(series) == 6
+
+
+def test_age_is_counted_from_greenup_to_the_end_of_the_window():
+    series = [0.15, 0.16, 0.18, 0.45, 0.62, 0.71, 0.78, 0.80]
+    features = age_features(series)
+    assert features["months_since_greenup"] == 5
+    assert features["greenup_observed"] == 1
+    assert features["age_is_lower_bound"] == 0
+
+
+def test_a_field_already_green_when_the_window_opened_gives_only_a_lower_bound():
+    """Nothing here can date a crop that started before we were looking,
+    and inventing a date is worse than saying 'at least this long'."""
+    series = [0.62, 0.68, 0.72, 0.75, 0.77, 0.79]
+    features = age_features(series)
+    assert features["months_since_greenup"] == 6
+    assert features["greenup_observed"] == 0
+    assert features["age_is_lower_bound"] == 1
+
+
+def test_a_bare_field_has_no_age():
+    features = age_features([0.12, 0.14, 0.13, 0.15])
+    assert features["months_since_greenup"] is None
+    assert features["age_is_lower_bound"] == 1
+
+
+def test_a_monsoon_gap_does_not_restart_the_age():
+    """July and August routinely give no usable optical observation. A
+    gap is 'we did not see', so the green run continues through it."""
+    series = [0.15, 0.45, 0.65, None, None, 0.74, 0.78]
+    assert age_features(series)["months_since_greenup"] == 6
+
+
+def test_planting_window_is_november_to_march():
+    """Stated by the founder for the Latur area, 21 Sep 2026."""
+    assert [m for m in range(1, 13) if in_planting_window(m)] == [1, 2, 3, 11, 12]
+
+
+def test_age_features_are_included_in_the_full_feature_set():
+    series = [0.15, 0.16, 0.18, 0.45, 0.62, 0.71, 0.78, 0.80]
+    assert phenology_features(series)["months_since_greenup"] == 5

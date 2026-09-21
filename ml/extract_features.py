@@ -45,7 +45,7 @@ from pathlib import Path
 import ee
 
 sys.path.insert(0, str(Path(__file__).parent))
-from features import phenology_features  # noqa: E402
+from features import greenup_index, in_planting_window, phenology_features  # noqa: E402
 
 S2 = "COPERNICUS/S2_SR_HARMONIZED"
 S2_CLOUD_PROB = "COPERNICUS/S2_CLOUD_PROBABILITY"
@@ -96,8 +96,29 @@ def monthly_optical(region: ee.Geometry, start: str, months: int) -> list[dict]:
         image = ee.Image(image)
         probability = ee.Image(image.get("cp")).select("probability")
         clear = image.updateMask(probability.lt(CLOUD_PROB_THRESHOLD))
-        return clear.normalizedDifference(["B8", "B4"]).rename("ndvi").addBands(
-            clear.normalizedDifference(["B8", "B11"]).rename("ndmi")
+        # NDVI saturates once a canopy closes, so on its own it cannot
+        # tell a five-month cane field from a ten-month one. NDRE (red
+        # edge, B8A/B5) keeps responding past that point and EVI resists
+        # the same saturation, which is what makes an age estimate
+        # possible at all. Both come from 20 m bands — fine on an acre,
+        # thin on a tenth of one.
+        return (
+            clear.normalizedDifference(["B8", "B4"]).rename("ndvi")
+            .addBands(clear.normalizedDifference(["B8", "B11"]).rename("ndmi"))
+            .addBands(clear.normalizedDifference(["B8A", "B5"]).rename("ndre"))
+            .addBands(
+                clear.expression(
+                    "2.5 * ((nir - red) / (nir + 6 * red - 7.5 * blue + 1))",
+                    {
+                        # Surface reflectance is scaled by 10000 in this
+                        # collection; EVI's coefficients assume 0-1
+                        # reflectance, so it must be divided back down.
+                        "nir": clear.select("B8").divide(10000),
+                        "red": clear.select("B4").divide(10000),
+                        "blue": clear.select("B2").divide(10000),
+                    },
+                ).rename("evi")
+            )
         )
 
     def per_month(offset) -> ee.Feature:
@@ -114,6 +135,8 @@ def monthly_optical(region: ee.Geometry, start: str, months: int) -> list[dict]:
                 # band-less composite, and a bare .get() throws.
                 "ndvi": ee.Algorithms.If(stats.contains("ndvi"), stats.get("ndvi"), None),
                 "ndmi": ee.Algorithms.If(stats.contains("ndmi"), stats.get("ndmi"), None),
+                "ndre": ee.Algorithms.If(stats.contains("ndre"), stats.get("ndre"), None),
+                "evi": ee.Algorithms.If(stats.contains("evi"), stats.get("evi"), None),
             },
         )
 
@@ -147,7 +170,27 @@ def monthly_radar(region: ee.Geometry, start: str, months: int) -> list[dict]:
                 stats.contains(band), ee.Number(stats.get(band)).log10().multiply(10.0), None
             )
 
-        return ee.Feature(None, {"month": month_start.format("YYYY-MM"), "vv": as_db("VV"), "vh": as_db("VH")})
+        # Radar vegetation index, 4*VH/(VV+VH), computed in LINEAR power
+        # where the ratio is meaningful — in dB it would be a difference
+        # of logarithms, which is not the same quantity. It tracks canopy
+        # structure and keeps working through monsoon cloud, so it carries
+        # the growth months optical loses entirely.
+        rvi = ee.Algorithms.If(
+            stats.contains("VV"),
+            ee.Algorithms.If(
+                stats.contains("VH"),
+                ee.Number(stats.get("VH"))
+                .multiply(4)
+                .divide(ee.Number(stats.get("VV")).add(ee.Number(stats.get("VH")))),
+                None,
+            ),
+            None,
+        )
+
+        return ee.Feature(
+            None,
+            {"month": month_start.format("YYYY-MM"), "vv": as_db("VV"), "vh": as_db("VH"), "rvi": rvi},
+        )
 
     collection = ee.FeatureCollection(ee.List.sequence(0, months - 1).map(per_month))
     return [f["properties"] for f in with_retry(collection.getInfo)["features"]]
@@ -199,11 +242,14 @@ def main() -> None:
                 optical = monthly_optical(region, args.start, args.months)
                 ndvi = [row["ndvi"] for row in optical]
                 ndmi = [row["ndmi"] for row in optical]
-                vv = vh = None
+                ndre = [row["ndre"] for row in optical]
+                evi = [row["evi"] for row in optical]
+                vv = vh = rvi = None
                 if not args.skip_radar:
                     radar = monthly_radar(region, args.start, args.months)
                     vv = [row["vv"] for row in radar]
                     vh = [row["vh"] for row in radar]
+                    rvi = [row["rvi"] for row in radar]
 
                 row = {
                     "field_id": field_id,
@@ -211,12 +257,34 @@ def main() -> None:
                     "village": properties.get("village", "unknown"),
                     "crop": properties.get("crop", ""),
                     "cane_type": properties.get("cane_type", ""),
+                    # Carried through so the age tools can compare their
+                    # estimate against the date the farmer gave. Its
+                    # absence was why train_age.py crashed rather than
+                    # reporting that no field had a planting date.
+                    "planted": properties.get("planted", ""),
                     "sown_year": properties.get("sown_year", ""),
                     "source": properties.get("source", ""),
                     "interior_area_m2": round(area),
                     "interior_pixels_10m": round(area / 100),
                 }
-                row.update(phenology_features(ndvi, ndmi, vv, vh))
+                row["window_start"] = optical[0]["month"]
+                row["window_end"] = optical[-1]["month"]
+                row.update(phenology_features(ndvi, ndmi, vv, vh, ndre=ndre, evi=evi, rvi=rvi))
+
+                # The calendar month the canopy started from bare ground,
+                # and whether that falls in the local planting window
+                # (November-March). A green-up outside it is usually
+                # ratoon regrowth after a harvest rather than a planting,
+                # which matters because age is counted from a different
+                # event in each case.
+                onset = greenup_index(ndvi)
+                if onset is not None:
+                    month_label = optical[onset]["month"]
+                    row["greenup_month"] = month_label
+                    row["greenup_in_planting_window"] = int(in_planting_window(int(month_label[5:7])))
+                else:
+                    row["greenup_month"] = ""
+                    row["greenup_in_planting_window"] = ""
                 for month, value in zip((r["month"] for r in optical), ndvi):
                     row[f"ndvi_{month}"] = value
 
