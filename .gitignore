@@ -119,3 +119,12 @@ docs/Bank_Target_Research_2026.md
 .venv-train/
 ml/*.csv
 ml/labels.geojson
+
+# Field labels and extracted features: real coordinates of real farms,
+# collected in person. Kept out of the public repository until there is a
+# licence for them; the template and the tools are versioned, the data is not.
+ml/labels.geojson
+ml/features.csv
+ml/incoming/*.txt
+!ml/incoming/TEMPLATE.txt
+ml/sugarcane_model.txt

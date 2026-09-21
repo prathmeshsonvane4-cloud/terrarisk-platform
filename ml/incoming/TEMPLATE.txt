@@ -1,0 +1,19 @@
+# Copy this file to ml/incoming/<today's date>.txt and fill it in.
+# One field per line. Columns are separated by |. Lines starting with # are ignored.
+#
+# coordinates | village | crop | cane type | planted | source | radius_m
+#
+#   coordinates  one point from the middle of the field ("18.5527, 76.4970"),
+#                or 3+ corners separated by ; for a small or narrow field
+#   village      the real village name — it decides the validation folds
+#   crop         sugarcane / soybean / tur / cotton / banana / fallow / ...
+#   cane type    sugarcane only: plant (new this cycle) or ratoon (regrown)
+#   planted      YYYY-MM-DD or YYYY-MM if known, blank if not
+#   source       how you know: field (you saw it) / owner (they told you) /
+#                mill (factory record) / visual (satellite basemap only)
+#   radius_m     optional, default 25 (a 50 m square). Use less for a small field.
+#
+# Only the first three columns are required. Never label a field from NDVI
+# or from what the model predicts — that measures nothing.
+
+18.5527, 76.4970 | Shera | sugarcane | plant | 2025-12-20 | owner |
