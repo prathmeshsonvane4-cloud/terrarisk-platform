@@ -57,10 +57,14 @@ PLANTING_MONTHS = (11, 12, 1, 2, 3)
 
 # Months in which a canopy can FIRST become visible from a November-March
 # planting. Planting is not emergence: the first two fields labelled
-# (Shera, planted December 2025) stayed below NDVI 0.30 until April, four
-# months later, because a winter planting grows slowly until the heat
-# arrives. So a green-up anywhere from November to June is consistent
-# with a local planting, and only July-October is not.
+# (Shera, recorded as December 2025) stayed below NDVI 0.30 until April.
+#
+# WHY THAT GAP EXISTS IS NOT SETTLED. It could be slow winter emergence,
+# or a sensor/atmospheric artefact, or the sample square sitting partly
+# off the field — the founder, who farms here, rejects the harvest
+# reading (22 Sep 2026) and is supplying exact planting dates. The window
+# is kept wide because a wide window costs only an "ambiguous" label,
+# while a narrow one would confidently mis-date real fields.
 #
 # Inside this window a green-up cannot be told apart from ratoon regrowth
 # by the curve alone — a field cut in March regrows immediately and looks
