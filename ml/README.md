@@ -66,6 +66,7 @@ learns from measures nothing at all.
 | `train.py` | Threshold baseline first, then LightGBM scored leave-one-village-out, then a verdict that is withheld below 30 fields |
 | `estimate_age.py` | Approximate crop age in months, from the curve — a rule, usable today, printed as a range |
 | `train_age.py` | The learned age regressor, refused until planting dates span 4+ months |
+| `compare_fields.py` | Every field's monthly NDVI side by side, the harvest and regrowth month each curve shows, agreement with the farmer's dates, and how alike the curves are |
 | `plot_report.py` | NDVI curves per field, for eyeballing labels |
 
 ## Crop age

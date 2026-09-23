@@ -429,7 +429,15 @@ def main() -> None:
                     "label": row.label,
                     "village": row.village,
                     "crop": row.crop,
+                    # For plant cane this is the planting date. For ratoon
+                    # it is the date the previous crop was CUT, because
+                    # that is when the standing crop's cycle began — the
+                    # original planting may be years back and is usually
+                    # unknown. Both are the cycle start, which is what
+                    # every age calculation counts from; `cut_date`
+                    # repeats it for ratoon so no reader has to infer it.
                     "planted": row.planted,
+                    "cut_date": row.planted if row.cane_type == "ratoon" else "",
                     "cane_type": row.cane_type,
                     "sown_year": row.planted[:4] if row.planted else "",
                     "source": row.source,
