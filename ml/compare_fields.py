@@ -56,7 +56,12 @@ STUBBLE_NDVI = 0.40
 IMPOSSIBLE_REBOUND_NDVI = 0.45
 
 
-def cut_month(months: list[str], series: list[float | None], threshold: float = GREEN_THRESHOLD) -> str | None:
+def cut_month(
+    months: list[str],
+    series: list[float | None],
+    threshold: float = GREEN_THRESHOLD,
+    allowed=None,
+) -> str | None:
     """The month a standing canopy was cut — the largest qualifying fall.
 
     Returns None when no fall in the record looks like a harvest, which
@@ -68,6 +73,8 @@ def cut_month(months: list[str], series: list[float | None], threshold: float = 
     for index in range(1, len(filled)):
         current = filled[index]
         if current is None or current > STUBBLE_NDVI:
+            continue
+        if allowed is not None and not allowed(months[index]):
             continue
         before = [v for v in filled[max(0, index - 2):index] if v is not None]
         if not before:
@@ -82,6 +89,116 @@ def cut_month(months: list[str], series: list[float | None], threshold: float = 
         if best is None or drop > best[0]:
             best = (drop, months[index])
     return best[1] if best else None
+
+
+# Radar harvest: cutting a tall cane canopy removes the volume that
+# scatters radar back as VH (cross-polarised) power, so VH falls. Reported
+# falls for sugarcane harvest are a few dB; 1.5 dB is set deliberately
+# below that as a conservative floor, and — as with the optical rule —
+# NOT tuned against the farmer's dates. Speckle on a plot of a few pixels
+# is large, which is why a monthly mean of several passes is used, never
+# a single pass.
+RADAR_HARVEST_DROP_DB = 1.5
+# A canopy cannot rebuild in a month. A fall that is back within this of
+# the old level the following month was speckle or wet soil, not a cut.
+RADAR_REBOUND_DB = 0.5
+
+
+def series_for(row: dict, prefix: str) -> tuple[list[str], list[float | None]]:
+    months = sorted(key[len(prefix) + 1:] for key in row if key.startswith(f"{prefix}_2"))
+    return months, [float(row[f"{prefix}_{m}"]) if row.get(f"{prefix}_{m}") else None for m in months]
+
+
+def radar_cut_month(months: list[str], vh_db: list[float | None], allowed=None) -> tuple[str, float] | None:
+    """The month VH backscatter fell most, if it fell like a harvest.
+
+    Returns the month and the size of the fall in dB, so a reader can see
+    a marginal detection for what it is.
+    """
+    best: tuple[float, str] | None = None
+    for index in range(1, len(vh_db)):
+        current = vh_db[index]
+        before = [v for v in vh_db[max(0, index - 2):index] if v is not None]
+        if current is None or not before:
+            continue
+        if allowed is not None and not allowed(months[index]):
+            continue
+        prior = fmean(before)
+        drop = prior - current
+        if drop < RADAR_HARVEST_DROP_DB:
+            continue
+        following = vh_db[index + 1] if index + 1 < len(vh_db) else None
+        if following is not None and following > prior - RADAR_REBOUND_DB:
+            continue
+        if best is None or drop > best[0]:
+            best = (drop, months[index])
+    return (best[1], best[0]) if best else None
+
+
+# When cane is cut here: Maharashtra's crushing season runs roughly
+# November to April, and mills do not cut in the monsoon. The search for a
+# harvest is confined to these months because outside them radar VH swings
+# with soil moisture — on the 23 Sep 2026 block, radar alone picked a
+# monsoon month as the "harvest" on two fields out of fourteen.
+#
+# DISCLOSED: this restriction was added after seeing that result. It is a
+# fact about the crop calendar, not a number fitted to the labels, but it
+# means the 23 Sep batch cannot serve as evidence for it. The next batch,
+# ideally from another village, is the test.
+HARVEST_SEASON_MONTHS = (11, 12, 1, 2, 3, 4)
+
+
+def in_harvest_season(month_label: str) -> bool:
+    return int(month_label[5:7]) in HARVEST_SEASON_MONTHS
+
+
+def fused_cut_month(row: dict) -> tuple[str, str] | None:
+    """Harvest month from both sensors, searched only in the harvest season.
+
+    Optical is sharp when it has a clear view; radar always has a view but,
+    on plots of a few pixels, is noisier. So optical is used when it found
+    a cut in season, and radar only fills in when it did not — the case
+    radar exists for, a harvest hidden by cloud.
+
+    The first version let the EARLIER detection win. On the 23 Sep 2026
+    block that made dating worse than optical alone (radar often fell a
+    month early), so it was replaced. This rule was also chosen after
+    seeing that batch, so that batch is not evidence for it.
+    """
+    optical = cut_month(*monthly_series(row), allowed=in_harvest_season)
+    radar = None
+    if any(key.startswith("vh_2") for key in row):
+        found = radar_cut_month(*series_for(row, "vh"), allowed=in_harvest_season)
+        radar = found[0] if found else None
+
+    if optical:
+        agrees = radar is not None and abs(_month_number(optical) - _month_number(radar)) <= 1
+        return optical, "both" if agrees else "optical"
+    if radar:
+        return radar, "radar"
+    return None
+
+
+def _month_number(label: str) -> int:
+    return int(label[:4]) * 12 + int(label[5:7])
+
+
+def month_gap(seen: str, stated: str) -> int:
+    """Months between a detection and what the farmer stated.
+
+    A stated range ("2026-01..2026-02" for "cut between January and
+    February") scores 0 anywhere inside it. Recording such a range as a
+    single month would charge the detector for the vagueness of the label
+    — which is exactly what the first scoring of the 23 Sep batch did.
+    """
+    earliest, _, latest = stated.partition("..")
+    latest = latest or earliest
+    value = _month_number(seen)
+    if value < _month_number(earliest):
+        return value - _month_number(earliest)
+    if value > _month_number(latest):
+        return value - _month_number(latest)
+    return 0
 
 
 def regrowth_month(months: list[str], series: list[float | None], after: str | None,
@@ -159,6 +276,58 @@ def main() -> None:
               f"within one month on {within}/{len(agreements)}")
         print("  A cut is only visible in the month a cloud-free scene caught the bare field,")
         print("  so a one-month lag is the expected resolution, not an error.")
+
+    radar_rows = [row for row in rows if any(key.startswith("vh_2") for key in row)]
+    if radar_rows:
+        print("\nRADAR — Sentinel-1 VH backscatter, dB  (sees through cloud)\n")
+        radar_months, _ = series_for(radar_rows[0], "vh")
+        print("field         " + " ".join(m[2:] for m in radar_months))
+        for row in radar_rows:
+            _, vh_db = series_for(row, "vh")
+            print(f"{row['field_id']:13} " + " ".join(f"{v:5.1f}" if v is not None else "    ." for v in vh_db))
+
+        optical_months = sum(1 for row in rows for m in months if row.get(f"ndvi_{m}"))
+        radar_filled = sum(1 for row in radar_rows for m in radar_months if row.get(f"vh_{m}"))
+        print(f"\n  months with a usable reading: optical {optical_months}/{len(rows) * len(months)}, "
+              f"radar {radar_filled}/{len(radar_rows) * len(radar_months)}")
+
+        print(f"\n{'field':13} {'stated':8} {'optical cut':12} {'radar cut':16} radar vs stated")
+        radar_gaps, optical_gaps = [], []
+        for row in radar_rows:
+            stated = row.get("planted", "")
+            optical = cut_month(*monthly_series(row))
+            found = radar_cut_month(*series_for(row, "vh"))
+            radar_text = f"{found[0]} ({found[1]:.1f} dB)" if found else "none"
+            verdict = "-"
+            if row.get("cane_type") == "ratoon" and stated:
+                if found:
+                    gap = month_gap(found[0], stated)
+                    radar_gaps.append(gap)
+                    verdict = "same month" if gap == 0 else f"{gap:+d} month(s)"
+                if optical:
+                    optical_gaps.append(month_gap(optical, stated))
+            print(f"{row['field_id']:13} {stated:8} {optical or 'none':12} {radar_text:16} {verdict}")
+
+        print(f"\nCOMBINED — both sensors, harvest season only (Nov-Apr)\n")
+        print(f"{'field':13} {'stated':8} {'combined':10} {'from':8} vs stated")
+        fused_gaps = []
+        for row in radar_rows:
+            stated = row.get("planted", "")
+            found = fused_cut_month(row)
+            verdict = "-"
+            if row.get("cane_type") == "ratoon" and stated and found:
+                gap = month_gap(found[0], stated)
+                fused_gaps.append(gap)
+                verdict = "same month" if gap == 0 else f"{gap:+d} month(s)"
+            print(f"{row['field_id']:13} {stated:8} {found[0] if found else 'none':10} "
+                  f"{found[1] if found else '':8} {verdict}")
+
+        ratoon_count = sum(1 for row in radar_rows if row.get("cane_type") == "ratoon" and row.get("planted"))
+        for name, gaps in (("optical", optical_gaps), ("radar", radar_gaps), ("combined", fused_gaps)):
+            exact = sum(1 for g in gaps if g == 0)
+            within = sum(1 for g in gaps if abs(g) <= 1)
+            print(f"  {name:8} found a cut on {len(gaps)}/{ratoon_count} ratoon fields; "
+                  f"exact month {exact}, within one month {within}")
 
     print("\nHOW ALIKE ARE THE CURVES (correlation, and how far apart the fields are)\n")
     pairs = []

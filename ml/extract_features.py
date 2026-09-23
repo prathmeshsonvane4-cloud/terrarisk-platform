@@ -287,6 +287,15 @@ def main() -> None:
                     row["greenup_in_planting_window"] = ""
                 for month, value in zip((r["month"] for r in optical), ndvi):
                     row[f"ndvi_{month}"] = value
+                # Radar month by month as well as in summary. Optical
+                # misses whole months to cloud — over Maharashtra, most of
+                # the monsoon — while Sentinel-1 returns every month, so a
+                # harvest that optical cannot date may still be datable
+                # from the fall in backscatter.
+                if not args.skip_radar:
+                    for month, vh_value, rvi_value in zip((r["month"] for r in radar), vh, rvi):
+                        row[f"vh_{month}"] = vh_value
+                        row[f"rvi_{month}"] = rvi_value
 
             except Exception as error:  # noqa: BLE001 - one bad field must not end the run
                 failures.append((field_id, str(error)[:120]))

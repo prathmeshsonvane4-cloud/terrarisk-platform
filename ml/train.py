@@ -51,6 +51,12 @@ NON_FEATURE_COLUMNS = {
     "source",
     "cane_type",
     "sown_year",
+    # Text and date columns added with the age features. They describe a
+    # field's calendar, not its curve, and are not numbers.
+    "cut_date",
+    "window_start",
+    "window_end",
+    "greenup_month",
 }
 
 
@@ -67,7 +73,7 @@ def _feature_columns(frame: pd.DataFrame) -> list[str]:
         column
         for column in frame.columns
         if column not in NON_FEATURE_COLUMNS
-        and not column.startswith(("ndvi_2", "vv_2", "vh_2"))
+        and not column.startswith(("ndvi_2", "vv_2", "vh_2", "rvi_2"))
     ]
 
 

@@ -277,6 +277,12 @@ def parse_line(line: str, number: int, defaults: Defaults | None = None) -> Row:
             ring.append(ring[0])
         centre = (sum(p[0] for p in fixed) / len(fixed), sum(p[1] for p in fixed) / len(fixed))
 
+    if planted and not re.fullmatch(r"\d{4}-\d{2}(-\d{2})?(\.\.\d{4}-\d{2}(-\d{2})?)?", planted):
+        raise ValueError(
+            f"date {planted!r} must be YYYY-MM, YYYY-MM-DD, or a range YYYY-MM..YYYY-MM "
+            "when the farmer gave one ('harvested Jan to Feb' is 2026-01..2026-02)"
+        )
+
     row = Row(
         line_number=number,
         raw=line.strip(),

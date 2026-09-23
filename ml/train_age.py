@@ -58,6 +58,7 @@ NON_FEATURE_COLUMNS = {
     "window_start",
     "window_end",
     "greenup_month",
+    "cut_date",
     "age_months",
 }
 
@@ -127,7 +128,7 @@ def main() -> None:
     print(f"\nBASELINE months since green-up + {EMERGENCE_LAG_MONTHS}: "
           f"mean absolute error {baseline_error:.2f} months on {usable.sum()} field(s)")
 
-    features = [c for c in frame.columns if c not in NON_FEATURE_COLUMNS and not c.startswith(("ndvi_2", "vv_2", "vh_2"))]
+    features = [c for c in frame.columns if c not in NON_FEATURE_COLUMNS and not c.startswith(("ndvi_2", "vv_2", "vh_2", "rvi_2"))]
     X = frame[features].to_numpy(dtype=float)
     groups = frame["village"].to_numpy()
 

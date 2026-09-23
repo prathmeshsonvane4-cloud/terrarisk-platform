@@ -228,3 +228,13 @@ def test_overlap_depends_on_the_radius_not_a_fixed_distance():
     assert distance_m(a, b) == pytest.approx(33, abs=4)
     assert squares_overlap(a, 25.0, b, 25.0)
     assert not squares_overlap(a, 12.0, b, 12.0)
+
+
+def test_a_date_range_from_the_farmer_is_kept_as_a_range():
+    row = parse_line(f"{SHERA} | Shera | sugarcane | ratoon | 2026-01..2026-02 | owner |", 1)
+    assert row.planted == "2026-01..2026-02"
+
+
+def test_a_malformed_date_is_rejected():
+    with pytest.raises(ValueError, match="YYYY-MM"):
+        parse_line(f"{SHERA} | Shera | sugarcane | ratoon | Jan-Feb | owner |", 1)
