@@ -129,3 +129,6 @@ ml/incoming/*.txt
 !ml/incoming/TEMPLATE.txt
 ml/sugarcane_model.txt
 ml/age_model.txt
+
+# Generated per-field time series and charts (real farm coordinates).
+ml/output/

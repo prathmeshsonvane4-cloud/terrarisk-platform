@@ -67,6 +67,8 @@ learns from measures nothing at all.
 | `estimate_age.py` | Approximate crop age in months, from the curve — a rule, usable today, printed as a range |
 | `train_age.py` | The learned age regressor, refused until planting dates span 4+ months |
 | `compare_fields.py` | Every field's monthly NDVI side by side, the harvest and regrowth month each curve shows, agreement with the farmer's dates, and how alike the curves are |
+| `timeseries.py` | A daily NDVI series for any point or field, fused from Sentinel-2, Landsat 8/9 and Sentinel-1, with every day labelled observed / interpolated / radar-estimated / harvest window / no data |
+| `timeseries_plot.py` | The chart for one field's daily series |
 | `plot_report.py` | NDVI curves per field, for eyeballing labels |
 
 ## Crop age
@@ -96,6 +98,38 @@ What the imagery can and cannot say:
   the same month teach a regressor to print that month. `train_age.py`
   refuses until there are 20+ dated fields spanning 4+ planting months
   across 3+ villages, and it must beat simply counting months to ship.
+
+## A daily series for any farm
+
+```bash
+python ml/timeseries.py --point 18.5527,76.4970 --plot          # any coordinate
+python ml/timeseries.py --field shera-02 --plot                 # a labelled field
+python ml/timeseries.py --all-fields                            # every field + ml/output/summary.csv
+```
+
+What the free satellites actually give over the Shera block, measured
+23 Sep 2026 for the previous twelve months:
+
+| Sensor | Pixel | Bands used | Revisit measured here | Notes |
+|---|---|---|---|---|
+| Sentinel-2A/2B/2C (MSI) | 10 m (20 m red edge) | B2, B4, B5, B8, B8A | every 4.1 days | 2A on an extension campaign to end-2026; 12-bit |
+| Landsat 8 / 9 (OLI) | 30 m | B4, B5 | ~every 9 days combined | Mixed pixels on small plots — calibrated per field |
+| Sentinel-1C/1D (C-band SAR) | 10 m | VV, VH, incidence angle | every ~13 days | One descending track over Shera; since July 2026 only 1D images it |
+| MODIS Terra | 250 m | — | daily | Not used: one pixel is 6 ha, bigger than the farms |
+| NISAR (L-band SAR) | 3–10 m | — | 12 days | Public since June 2026 via NASA ASF, not in Earth Engine yet |
+
+**"Daily" means observed plus honestly-labelled interpolation.** On shera-02
+the pipeline had a clear view on 79 of 365 days (median gap 4 days,
+longest 28 in July), interpolated 74% of days, and could say nothing on 3%.
+Every row carries `days_to_view`, so a value inferred from a view ten days
+old never passes for today's.
+
+**Radar is not used to fill gaps on these fields**, and the pipeline
+refuses it on purpose: on shera-02 a VH/VV model predicted held-out NDVI
+with R² of about 0. C-band backscatter on a 0.1–0.3 ha plot is dominated by
+speckle and soil moisture, and saturates over a tall cane canopy. It still
+shows the harvest (VH fell to −21 dB in the cut week), so it remains
+useful as corroboration, not as a substitute for optical NDVI.
 
 ## Gates before quoting a number
 
