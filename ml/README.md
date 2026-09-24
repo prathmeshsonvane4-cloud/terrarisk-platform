@@ -69,6 +69,8 @@ learns from measures nothing at all.
 | `compare_fields.py` | Every field's monthly NDVI side by side, the harvest and regrowth month each curve shows, agreement with the farmer's dates, and how alike the curves are |
 | `timeseries.py` | A daily NDVI series for any point or field, fused from Sentinel-2, Landsat 8/9 and Sentinel-1, with every day labelled observed / interpolated / radar-estimated / harvest window / no data |
 | `timeseries_plot.py` | The chart for one field's daily series |
+| `farm_context.py` | One row per day per farm: canopy, rainfall, weather, FAO-56 ET0, soil moisture, heat, haze, surface water |
+| `farm_context_plot.py` | The farm's year on one shared time axis |
 | `plot_report.py` | NDVI curves per field, for eyeballing labels |
 
 ## Crop age
@@ -130,6 +132,38 @@ with R² of about 0. C-band backscatter on a 0.1–0.3 ha plot is dominated by
 speckle and soil moisture, and saturates over a tall cane canopy. It still
 shows the harvest (VH fell to −21 dB in the cut week), so it remains
 useful as corroboration, not as a substitute for optical NDVI.
+
+## Everything around the farm
+
+```bash
+python ml/farm_context.py --field shera-13 --plot
+python ml/farm_context.py --point 18.5527,76.4970 --plot
+```
+
+One row per day: fused NDVI, NIRv and NDMI; rainfall (GPM IMERG, ~1 day
+behind; CHIRPS v3, ~3-4 weeks behind); ERA5-Land max/min temperature,
+dewpoint, solar radiation and pressure, with wind averaged from hourly
+components; **FAO-56 Penman-Monteith reference ET0** computed from them
+(checked against FAO-56 Examples 8 and 18); rainfall minus ET0, daily and
+over 30 days; SMAP L4 surface and root-zone soil moisture; MODIS land
+surface temperature; MAIAC aerosol; Dynamic World surface water on the
+field and within 1 km. A JSON file carries the static setting (elevation,
+clay and sand, historical surface water) and each source's freshness.
+
+Why NIRv and not raw NIR: NIR reflectance tracks canopy structure, but on
+its own it also rises with bright soil and falls with haze. NDVI x NIR
+keeps NIR's sensitivity and cancels most of the soil background.
+
+What is not there, and why:
+
+- **Groundwater.** No satellite measures it at farm scale (GRACE-FO is
+  hundreds of km and months late). It needs CGWB / GSDA well readings, and
+  the platform's CGWB table is empty.
+- **Crop water use.** ET0 is the demand of reference grass. Cane water use
+  needs a crop-coefficient curve tied to the crop's stage — a model not
+  yet built, so nothing is labelled as crop water use.
+- **Field-scale weather.** Rain, temperature and soil moisture grids are
+  1-11 km: every farm in a village shares one value.
 
 ## Gates before quoting a number
 

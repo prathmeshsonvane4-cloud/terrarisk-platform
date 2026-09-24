@@ -137,6 +137,14 @@ class Observation:
     ndvi: float | None = None
     ndre: float | None = None
     evi: float | None = None
+    # NIR reflectance and NIRv = NDVI x NIR (Badgley et al. 2017). NIRv keeps
+    # NIR's sensitivity to canopy structure while cancelling the soil
+    # background NIR alone carries, and saturates later than NDVI over a
+    # dense canopy — which is why raw NIR is not used on its own.
+    nir: float | None = None
+    nirv: float | None = None
+    ndmi: float | None = None        # canopy water (NIR vs SWIR-1)
+    mndwi: float | None = None       # open water (green vs SWIR-1)
     vv_db: float | None = None
     vh_db: float | None = None
     rvi: float | None = None
@@ -200,20 +208,21 @@ class Calibration:
         return self.intercept + self.slope * landsat_ndvi
 
 
-def landsat_pairs(observations: list[Observation]) -> list[tuple[float, float]]:
-    """(Sentinel-2 NDVI, Landsat NDVI) for every Landsat view that has a
-    Sentinel-2 view of the same field within CROSS_SENSOR_WINDOW_DAYS."""
-    s2 = [o for o in observations if o.sensor == "S2" and o.ndvi is not None]
+def landsat_pairs(observations: list[Observation], index: str = "ndvi") -> list[tuple[float, float]]:
+    """(Sentinel-2 value, Landsat value) of `index` for every Landsat view
+    that has a Sentinel-2 view of the same field within
+    CROSS_SENSOR_WINDOW_DAYS."""
+    s2 = [o for o in observations if o.sensor == "S2" and getattr(o, index) is not None]
     pairs = []
-    for scene in (o for o in observations if o.sensor in ("L8", "L9") and o.ndvi is not None):
+    for scene in (o for o in observations if o.sensor in ("L8", "L9") and getattr(o, index) is not None):
         near = [o for o in s2 if abs((o.day - scene.day).days) <= CROSS_SENSOR_WINDOW_DAYS]
         if near:
             closest = min(near, key=lambda o: abs((o.day - scene.day).days))
-            pairs.append((closest.ndvi, scene.ndvi))
+            pairs.append((getattr(closest, index), getattr(scene, index)))
     return pairs
 
 
-def cross_sensor_calibration(observations: list[Observation]) -> Calibration:
+def cross_sensor_calibration(observations: list[Observation], index: str = "ndvi") -> Calibration:
     """Map Landsat NDVI onto Sentinel-2's scale, measured on this field.
 
     A 30 m Landsat pixel over a small field also sees the neighbours, which
@@ -224,7 +233,7 @@ def cross_sensor_calibration(observations: list[Observation]) -> Calibration:
     when there are enough pairs and it predicts held-out pairs better than
     the offset does; otherwise the offset; otherwise nothing.
     """
-    pairs = landsat_pairs(observations)
+    pairs = landsat_pairs(observations, index)
     if len(pairs) < CROSS_SENSOR_MIN_PAIRS:
         return Calibration(pairs=len(pairs))
     data = np.array(pairs, dtype=float)
@@ -415,7 +424,14 @@ class DailySeries:
     notes: list[str] = field(default_factory=list)
 
 
-def build_daily(observations: list[Observation], start: date, end: date, harvest_season=None) -> DailySeries:
+def build_daily(
+    observations: list[Observation],
+    start: date,
+    end: date,
+    harvest_season=None,
+    index: str = "ndvi",
+    breaks: list[tuple[date, date]] | None = None,
+) -> DailySeries:
     """Fuse every observation into one labelled value per day.
 
     Order of operations: calibrate Landsat onto Sentinel-2's scale; find
@@ -423,12 +439,18 @@ def build_daily(observations: list[Observation], start: date, end: date, harvest
     on its own, robustly, with the strength chosen by cross-validation;
     label every day; fill from radar only where the optical record cannot
     support a value and only with a radar model that has proved itself.
+
+    `index` picks the quantity fused (NDVI by default, or NIRv, NDMI...).
+    Harvests are only DETECTED on NDVI, whose thresholds come from the crop;
+    for any other index pass the NDVI series' `breaks` so both curves split
+    at the same cut. Radar gap-filling is attempted for NDVI only.
     """
+    index_name = index
     days = [start + timedelta(days=i) for i in range((end - start).days + 1)]
     index = {d: i for i, d in enumerate(days)}
     notes: list[str] = []
 
-    calibration = cross_sensor_calibration(observations)
+    calibration = cross_sensor_calibration(observations, index_name)
     if calibration.method == "linear":
         notes.append(f"Landsat mapped onto Sentinel-2: S2 = {calibration.intercept:+.3f} + "
                      f"{calibration.slope:.2f} x Landsat ({calibration.pairs} pairs; held-out error "
@@ -441,10 +463,11 @@ def build_daily(observations: list[Observation], start: date, end: date, harvest
     values = np.full(len(days), np.nan)
     weights = np.zeros(len(days))
     for obs in observations:
-        if not obs.optical or obs.ndvi is None or obs.day not in index:
+        raw = getattr(obs, index_name)
+        if not obs.optical or raw is None or obs.day not in index:
             continue
         landsat = obs.sensor in ("L8", "L9")
-        value = calibration.apply(obs.ndvi) if landsat else obs.ndvi
+        value = calibration.apply(raw) if landsat else raw
         weight = LANDSAT_WEIGHT if landsat else 1.0
         i = index[obs.day]
         if weights[i] > 0:
@@ -454,7 +477,9 @@ def build_daily(observations: list[Observation], start: date, end: date, harvest
             values[i], weights[i] = value, weight
 
     view_days = [days[i] for i in np.flatnonzero(weights > 0)]
-    breaks = find_breaks(view_days, [float(values[index[d]]) for d in view_days], season=harvest_season)
+    if breaks is None:
+        breaks = (find_breaks(view_days, [float(values[index[d]]) for d in view_days], season=harvest_season)
+                  if index_name == "ndvi" else [])
 
     # Stretches between harvests. Days strictly between the last view of the
     # standing crop and the first view of the cut belong to neither.
@@ -508,7 +533,7 @@ def build_daily(observations: list[Observation], start: date, end: date, harvest
 
     radar = [o for o in observations if o.sensor == "S1" and o.vh_db is not None and o.vv_db is not None]
     model = None
-    if radar:
+    if radar and index_name == "ndvi":
         pairs = []
         for obs in radar:
             if obs.day not in index or in_harvest_gap[index[obs.day]]:
@@ -587,9 +612,14 @@ def fetch_observations(geometry: dict, start: date, end: date, edge_buffer: floa
         image = ee.Image(image)
         clear = image.select("cs_cdf").gte(CLOUD_SCORE_PLUS_CLEAR)
         reflectance = image.divide(10000)
+        ndvi = image.normalizedDifference(["B8", "B4"]).rename("ndvi")
         indices = (
-            image.normalizedDifference(["B8", "B4"]).rename("ndvi")
+            ndvi
             .addBands(image.normalizedDifference(["B8A", "B5"]).rename("ndre"))
+            .addBands(reflectance.select("B8").rename("nir"))
+            .addBands(ndvi.multiply(reflectance.select("B8")).rename("nirv"))
+            .addBands(image.normalizedDifference(["B8", "B11"]).rename("ndmi"))
+            .addBands(image.normalizedDifference(["B3", "B11"]).rename("mndwi"))
             .addBands(reflectance.expression(
                 "2.5 * ((n - r) / (n + 6 * r - 7.5 * b + 1))",
                 {"n": reflectance.select("B8"), "r": reflectance.select("B4"), "b": reflectance.select("B2")},
@@ -608,7 +638,8 @@ def fetch_observations(geometry: dict, start: date, end: date, edge_buffer: floa
             continue
         observations.append(Observation(date.fromisoformat(p["date"]), "S2", p.get("platform", ""),
                                         ndvi=p["ndvi_mean"], ndre=p.get("ndre_mean"), evi=p.get("evi_mean"),
-                                        clear_fraction=clear / total, pixels=total))
+                                        nir=p.get("nir_mean"), nirv=p.get("nirv_mean"), ndmi=p.get("ndmi_mean"),
+                                        mndwi=p.get("mndwi_mean"), clear_fraction=clear / total, pixels=total))
 
     # --- Landsat 8 and 9, Collection 2 Level 2 --------------------------
     for sensor, collection_id in (("L8", "LANDSAT/LC08/C02/T1_L2"), ("L9", "LANDSAT/LC09/C02/T1_L2")):
@@ -619,9 +650,17 @@ def fetch_observations(geometry: dict, start: date, end: date, edge_buffer: floa
             qa = image.select("QA_PIXEL")
             # bits: 1 dilated cloud, 2 cirrus, 3 cloud, 4 cloud shadow
             clear = qa.bitwiseAnd(0b11110).eq(0)
-            sr = image.select(["SR_B4", "SR_B5"]).multiply(0.0000275).add(-0.2)
-            ndvi = sr.normalizedDifference(["SR_B5", "SR_B4"]).rename("ndvi").updateMask(clear)
-            stats = ndvi.addBands(everything).reduceRegion(
+            sr = image.select(["SR_B3", "SR_B4", "SR_B5", "SR_B6"]).multiply(0.0000275).add(-0.2)
+            ndvi = sr.normalizedDifference(["SR_B5", "SR_B4"]).rename("ndvi")
+            bands = (
+                ndvi
+                .addBands(sr.select("SR_B5").rename("nir"))
+                .addBands(ndvi.multiply(sr.select("SR_B5")).rename("nirv"))
+                .addBands(sr.normalizedDifference(["SR_B5", "SR_B6"]).rename("ndmi"))
+                .addBands(sr.normalizedDifference(["SR_B3", "SR_B6"]).rename("mndwi"))
+                .updateMask(clear)
+            )
+            stats = bands.addBands(everything).reduceRegion(
                 ee.Reducer.mean().combine(ee.Reducer.count(), sharedInputs=True), region, 30, maxPixels=1e8)
             return ee.Feature(None, stats).set({"date": image.date().format("YYYY-MM-dd")})
 
@@ -631,6 +670,8 @@ def fetch_observations(geometry: dict, start: date, end: date, edge_buffer: floa
             if not total or p.get("ndvi_mean") is None or clear / total < CLEAR_FRACTION_MIN:
                 continue
             observations.append(Observation(date.fromisoformat(p["date"]), sensor, sensor, ndvi=p["ndvi_mean"],
+                                            nir=p.get("nir_mean"), nirv=p.get("nirv_mean"),
+                                            ndmi=p.get("ndmi_mean"), mndwi=p.get("mndwi_mean"),
                                             clear_fraction=clear / total, pixels=total))
 
     # --- Sentinel-1, gamma-nought, per orbit ----------------------------
@@ -719,11 +760,11 @@ def main() -> None:
     obs_path = args.out_dir / f"{name}_observations.csv"
     with obs_path.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.writer(handle)
-        writer.writerow(["date", "sensor", "platform", "ndvi", "ndre", "evi", "vv_db", "vh_db", "rvi",
-                         "orbit", "clear_fraction", "pixels"])
+        writer.writerow(["date", "sensor", "platform", "ndvi", "ndre", "evi", "nir", "nirv", "ndmi", "mndwi",
+                         "vv_db", "vh_db", "rvi", "orbit", "clear_fraction", "pixels"])
         for o in observations:
-            writer.writerow([o.day, o.sensor, o.platform, o.ndvi, o.ndre, o.evi, o.vv_db, o.vh_db, o.rvi,
-                             o.orbit, o.clear_fraction, o.pixels])
+            writer.writerow([o.day, o.sensor, o.platform, o.ndvi, o.ndre, o.evi, o.nir, o.nirv, o.ndmi, o.mndwi,
+                             o.vv_db, o.vh_db, o.rvi, o.orbit, o.clear_fraction, o.pixels])
     daily_path = args.out_dir / f"{name}_daily.csv"
     with daily_path.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.writer(handle)
